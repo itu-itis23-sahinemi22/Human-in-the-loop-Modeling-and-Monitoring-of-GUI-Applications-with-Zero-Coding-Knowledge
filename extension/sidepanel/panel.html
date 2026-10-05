@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graph Recorder</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header>
+    <h1>Graph Recorder</h1>
+    <p id="status" class="muted"></p>
+  </header>
+
+  <div class="toolbar">
+    <button id="btn-node" class="primary">Node oluştur</button>
+    <button id="btn-export">JSON indir</button>
+    <button id="btn-reset" class="danger">Sıfırla</button>
+  </div>
+
+  <!-- Background'dan gelen hata (kırmızı) ya da bilgi (mavi) mesajı -->
+  <p id="message" class="message" hidden></p>
+
+  <!-- Benzer bir node bulunduğunda kullanıcıya sorulan soru (hibrit yaklaşımın "insan" adımı) -->
+  <section id="confirm" class="card highlight" hidden>
+    <p id="confirm-text"></p>
+    <div class="shots">
+      <figure><img id="confirm-old" alt=""><figcaption>Mevcut node</figcaption></figure>
+      <figure><img id="confirm-new" alt=""><figcaption>Şu anki sayfa</figcaption></figure>
+    </div>
+    <div class="toolbar">
+      <button id="btn-same" class="primary">Evet, aynı node</button>
+      <button id="btn-new">Hayır, yeni node</button>
+    </div>
+  </section>
+
+  <!-- Graph çizimi (Cytoscape.js bu div'in içine çizer) -->
+  <div id="graph"></div>
+
+  <!-- Graph'ta tıklanan node/edge'in detayları -->
+  <section id="details" class="card" hidden>
+    <h2 id="details-title"></h2>
+    <p id="details-subtitle" class="muted small"></p>
+    <label class="field">İsim <input id="details-name" spellcheck="false"></label>
+    <img id="details-shot" alt="">
+    <ol id="details-actions" class="actions"></ol>
+    <div class="toolbar">
+      <button id="btn-save">İsmi kaydet</button>
+      <button id="btn-continue">Buradan devam et</button>
+      <button id="btn-delete" class="danger">Sil</button>
+    </div>
+  </section>
+
+  <!-- Son node'dan beri yapılan, henüz edge'e dönüşmemiş aksiyonlar -->
+  <section class="card">
+    <h2>Bekleyen aksiyonlar <span id="buffer-count" class="badge"></span></h2>
+    <ol id="buffer" class="actions"></ol>
+  </section>
+
+  <!-- Manifest V3 uzaktan (CDN) script yüklemeyi yasaklar; kütüphane eklentinin içinde durur. -->
+  <script src="../lib/cytoscape.min.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

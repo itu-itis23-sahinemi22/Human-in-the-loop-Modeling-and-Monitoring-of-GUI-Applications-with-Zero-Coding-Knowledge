@@ -1,0 +1,102 @@
+/* Yan panelin görünümü. Bilerek sade tutuldu: framework yok, sadece birkaç renk değişkeni. */
+
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #64748b;
+  --primary: #2563eb;
+  --danger: #dc2626;
+  --highlight: #fef3c7;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 16px; margin: 0 0 2px; }
+h2 { font-size: 13px; margin: 0 0 6px; }
+.muted { color: var(--muted); margin: 0; }
+.small { font-size: 11px; word-break: break-all; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+
+button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+button.danger { color: var(--danger); }
+button[hidden] { display: none; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 10px 0;
+}
+.card.highlight { background: var(--highlight); border-color: #f59e0b; }
+
+.message {
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: 6px;
+}
+.message.error { background: #fee2e2; color: var(--danger); }
+.message.notice { background: #dbeafe; color: #1e40af; }
+
+#graph {
+  height: 45vh;
+  min-height: 260px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.shots { display: flex; gap: 8px; }
+.shots figure { flex: 1; margin: 0; }
+.shots img, #details-shot {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.shots figcaption { font-size: 11px; color: var(--muted); text-align: center; }
+
+.field { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.field input {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 12px ui-monospace, Consolas, monospace;
+}
+
+.actions { margin: 0; padding-left: 20px; }
+.actions li { margin: 3px 0; }
+.actions code { display: block; color: var(--muted); font-size: 10px; word-break: break-all; }
+
+.badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--border);
+  font-size: 11px;
+  text-align: center;
+}
