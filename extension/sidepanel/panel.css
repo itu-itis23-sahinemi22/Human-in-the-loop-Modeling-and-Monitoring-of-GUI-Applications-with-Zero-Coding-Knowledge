@@ -139,6 +139,13 @@ button[hidden] { display: none; }
 .effect.changed { color: var(--warn); }
 .effect.unchanged { color: var(--ok); }
 .effect.unknown { color: var(--muted); }
+/* Birleştirme penceresi: aday node listesi (küçük ekran görüntüsü + isim + uygunluk) */
+.merge-options { display: grid; gap: 6px; margin: 8px 0; max-height: 40vh; overflow: auto; }
+.merge-option { display: flex; align-items: center; gap: 8px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.merge-option img { width: 64px; height: 40px; object-fit: cover; border-radius: 3px; border: 1px solid var(--border); }
+.merge-option small { display: block; color: var(--muted); font-size: 11px; }
+.merge-option.disabled { opacity: 0.55; cursor: default; }
+#merge-keep-options label { display: block; margin: 2px 0; cursor: pointer; }
 .reasons { margin: 6px 0; padding-left: 18px; font-size: 12px; }
 .reasons li { margin: 3px 0; }
 

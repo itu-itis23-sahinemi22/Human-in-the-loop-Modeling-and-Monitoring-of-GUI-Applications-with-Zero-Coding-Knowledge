@@ -76,6 +76,7 @@
     <div class="toolbar">
       <button id="btn-save">İsmi kaydet</button>
       <button id="btn-continue">Buradan devam et</button>
+      <button id="btn-merge">Birleştir…</button>
       <button id="btn-delete" class="danger">Sil</button>
     </div>
   </section>
@@ -140,6 +141,31 @@
       <div class="toolbar">
         <button id="btn-delete-action-confirm" class="danger">Yine de sil</button>
         <button id="btn-delete-action-cancel">Vazgeç</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Node birleştirme: seçili node'un birleştirileceği node seçilir. Yalnızca URL şablonu
+       ve edge set'i birebir aynı node'lar seçilebilir; diğerleri sebebiyle pasif görünür.
+       Listeyi panel.js doldurur. -->
+  <dialog id="merge-dialog" class="settings" aria-labelledby="merge-title">
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="merge-title"></h2>
+        <button id="btn-merge-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
+      </div>
+      <p class="hint">Yalnızca URL şablonu ve edge set'i birebir aynı node'lar birleştirilebilir.</p>
+      <div id="merge-options" class="merge-options"></div>
+      <fieldset id="merge-keep" hidden>
+        <legend>Hangi node kalsın?</legend>
+        <p class="hint">Kalan node kendi adını, ekran görüntüsünü ve parmak izini korur; diğerinin edge'leri ona bağlanır.</p>
+        <div id="merge-keep-options"></div>
+      </fieldset>
+      <ul id="merge-warnings" class="reasons"></ul>
+      <p class="hint">Ekranda görünmeyen bir fark varsa (ör. sepetteki ürün sayısı, giriş yapan kullanıcı) birleştirmeyin: test, birleşen node'dan geçerli olmayan bir yolu seçebilir. Birleştirme sonrası tekrar eden edge'lere dokunulmaz.</p>
+      <div class="toolbar">
+        <button id="btn-merge-confirm" class="primary" disabled>Birleştir</button>
+        <button id="btn-merge-cancel">Vazgeç</button>
       </div>
     </div>
   </dialog>

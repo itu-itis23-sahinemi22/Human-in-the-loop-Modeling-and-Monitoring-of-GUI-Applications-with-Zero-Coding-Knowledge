@@ -135,6 +135,7 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Bir edge seçince aksiyonların yanında "ekranı değiştirdi / değiştirmedi" işareti var. Değiştirmeyen aksiyon ✕ ile uyarısız siliniyor; değiştiren aksiyon için gerekçeli uyarı çıkıyor. Tek aksiyon kalınca ✕ pasif.
 - [ ] Bir node'u (ya da edge'i) silince "Geri al" aktifleşiyor; Ctrl+Z ya da butonla node bağlı edge'leriyle geri geliyor.
 - [ ] Çarkın solundaki ay/güneş temayı değiştiriyor; panel kapatılıp açılınca seçim duruyor.
+- [ ] "Hayır, yeni node" ile oluşan kopya node'da **Birleştir…** penceresi açılıyor: kopyanın aslı seçilebilir, edge set'i farklı node'lar sebebiyle pasif. Birleştirince aradaki edge kendine dönen edge oluyor; Ctrl+Z geri alıyor.
 - [ ] Ürün detayından tarayıcının geri tuşuyla dönünce edge adı `e_Back` oluyor.
 - [ ] Node/edge'e tıklayınca detay kartı açılıyor, isim değiştirilebiliyor.
 - [ ] Mevcut node silinince durum satırı "seçili değil" diyor. "Buradan devam et" çalışıyor.
@@ -170,6 +171,7 @@ Not: `--virtual-time-budget` ile çalışan headless modda ikinci ve sonraki `sc
 - **Edge düzenleme:** "noop, noop, toggle" edge'inde işaretler "değiştirmedi, değiştirmedi, değiştirdi". Değiştirmeyen aksiyon uyarısız silindi ve "düzenlendi (kayıtta 3)" göründü. Değiştiren son aksiyon için gerekçeli uyarı ("ortaya çıkan: `a:new-link +1`", "edge'in son aksiyonu") çıktı, Vazgeç silmedi. Tek aksiyon kalınca sil butonu pasif oldu ve background da reddetti. GraphWalker çıktısında `edited`/`recordedActions` var, ekran parmak izleri yok.
 - **Geri al:** Panelden silinen node (bağlı edge'iyle) Ctrl+Z ile, silinen edge "Geri al" butonuyla geri geldi; düzenlenmiş edge düzenlenmiş haliyle döndü.
 - **Tema:** Ay/güneş butonu temayı değiştiriyor, tercih `localStorage`'a yazılıyor, sayfa arka planı ve graph renkleri temaya uyuyor.
+- **Node birleştirme:** Panelde "Hayır, yeni node" ile kopya oluşturuldu. Birleştir penceresinde edge set'i farklı node pasif ve sebebi yazılı ("edge set farklı: `a:new-link` 5 ≠ 4"); kopyanın aslı seçilebilir, varsayılan olarak önce oluşturulan kalıyor. Birleştirince aradaki edge kendine dönen edge oldu, Ctrl+Z geri aldı. Link türü kapatılınca farklı node birleştirilebilir hale geldi ve "yalnızca Ayarlar ... yüzünden eşit" uyarısı çıktı; tür açıkken background aynı isteği reddetti.
 - **Bulunan yarış durumu:** Ayarlar penceresi kapatılıp çok hızlı yeniden açılınca geç gelen `close` olayı yanlışlıkla "kaydedilmemiş değişiklik" uyarısı açıyordu (dört koşunun birinde). Pencere yeniden açıldıysa eski `close` olayı artık yok sayılıyor; düzeltmeden sonra dört koşunun dördü de geçti.
 
 **Sayılı küme (multiset) ölçümleri.** Mock testlerde: aynı butondan 5 ile 4 olan ekran soru sorulmadan ayrı node; aynı sayılar (sıra farklı) aday; aynı anahtarın farklı tür grupları toplanıyor; Ayarlar filtresi tür bazında uygulanıyor; önceki sürümün biçimiyle kaydedilmiş node çökme yapmadan aday dışı kalıyor. Gerçek Chrome'da 20 satırlık kaydırılabilir listeyle ve canlı saucedemo.com'da ölçüm sonuçları: [03 > Edge hedefi](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi).
@@ -186,7 +188,7 @@ Proje "build adımı yok, bağımlılık yok" ilkesini korusun diye bu test beti
 2. **Replay:** Bir edge'in aksiyonlarını Playwright/Selenium koduna dönüştürüp çalıştırmak. Böylece kaydın doğruluğu otomatik doğrulanabilir.
 3. **JSON içe aktarma:** Yarım kalan bir modele daha sonra devam edebilmek için.
 4. **Klavye kısayolu:** `chrome.commands` ile örneğin `Alt+N` = Node oluştur. Kullanıcı farenin panele gitmesine gerek kalmadan çalışır.
-5. **Node birleştirme:** Element kümesi birebir aynı iki kopya node'u tek node'da birleştirmek (edge'leri taşıyarak). Kümesi farklı node'lar birleştirilmemeli.
+5. ~~**Node birleştirme**~~: yapıldı ([01 > Node birleştirme](01-mimari.md#node-birleştirme)). Sonraki adım olabilir: tekrar eden edge'leri tek tıkla birleştirmek için isteğe bağlı bir araç (şu an yönetimi tamamen kullanıcıda).
 6. **Element anahtarı normalizasyonu ve kullanıcı kararlarından öğrenme:** Node sayısını kuralı bozmadan azaltmak ([03 > Geliştirme fikirleri](03-state-eslestirme.md#geliştirme-fikirleri-tez-için))
 7. **Kapsam genişletme:** iframe, Shadow DOM ve çoklu sekme desteği
 8. **Kod büyürse:** WXT + TypeScript'e geçiş ([02 > Vanilla JS](02-teknolojiler.md#4-vanilla-javascript-build-adımı-yok))

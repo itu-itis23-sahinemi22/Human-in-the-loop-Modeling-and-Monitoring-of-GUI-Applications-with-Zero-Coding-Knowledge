@@ -94,6 +94,7 @@ async function handle(message, sender) {
     case 'RESET':       return reset(state);
     case 'SET_SETTINGS': return setSettings(message.settings);
     case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
+    case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO':        return undo(state);
   }
 }
@@ -385,6 +386,16 @@ async function undo(state) {
     if (entry.startNodeId === entry.node.id || !state.startNodeId) state.startNodeId = entry.startNodeId ?? entry.node.id;
     if (entry.currentNodeId === entry.node.id && !state.currentNodeId) state.currentNodeId = entry.node.id;
     notice = `"${entry.node.name}" node'u` + (entry.edges.length ? ` ve ${entry.edges.length} edge'i` : '') + ' geri getirildi.';
+  } else if (entry.kind === 'merge') {
+    // Kaldırılan node eski yerine döner, taşınan edge'ler eski uçlarına bağlanır
+    insert(state.nodes, entry.index, entry.node);
+    for (const { id, source, target } of entry.edges) {
+      const edge = state.edges.find((e) => e.id === id);
+      if (edge) Object.assign(edge, { source, target });
+    }
+    if (entry.startNodeId === entry.node.id && state.startNodeId === entry.keepId) state.startNodeId = entry.node.id;
+    if (entry.currentNodeId === entry.node.id && state.currentNodeId === entry.keepId) state.currentNodeId = entry.node.id;
+    notice = `"${entry.node.name}" node'unun birleştirilmesi geri alındı.`;
   } else if (entry.kind === 'edge') {
     const ends = [entry.edge.source, entry.edge.target].every((id) => state.nodes.some((n) => n.id === id));
     if (!ends) return save(state).then(() => ({ notice: `"${entry.edge.name}" geri getirilemedi: uçlarındaki node artık yok.` }));
@@ -400,6 +411,60 @@ async function undo(state) {
   }
   await save(state);
   return { notice };
+}
+
+// NODE BİRLEŞTİRME: removeId node'u keepId'ye katılır. Ona bağlı tüm edge'ler keepId'ye
+// bağlanır (aradaki edge'ler kendine dönen edge olur), removeId silinir; kalan node kendi
+// adını, ekran görüntüsünü ve parmak izini korur. YALNIZCA URL şablonu ve edge set'i
+// (şu anki ayarlarla) birebir aynı node'lar birleştirilebilir: edge set'i farklı iki node'u
+// birleştirmek, kaldırılan node'dan gelen edge'lerin hedefi kalan node'un ekranında
+// olmayabileceği için çakışma yaratır. Birleştirme sonrası aynı uçlara ve aksiyonlara sahip
+// (tekrar eden) edge'lere dokunulmaz; yönetimi kullanıcıya aittir, sadece sayısı bildirilir.
+async function mergeNodes(state, keepId, removeId) {
+  if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
+  const keep = state.nodes.find((n) => n.id === keepId);
+  const index = state.nodes.findIndex((n) => n.id === removeId);
+  const removed = state.nodes[index];
+  if (!keep || !removed || keepId === removeId) return;
+  const settings = await getSettings();
+  if (keep.urlKey !== removed.urlKey || !sameCounts(stateCounts(keep.elements, settings), stateCounts(removed.elements, settings))) {
+    throw new Error("URL şablonu ya da edge set'i farklı node'lar birleştirilemez.");
+  }
+
+  const moved = state.edges.filter((e) => e.source === removeId || e.target === removeId);
+  pushUndo(state, {
+    kind: 'merge', keepId, node: removed, index,
+    edges: moved.map((e) => ({ id: e.id, source: e.source, target: e.target })),
+    startNodeId: state.startNodeId, currentNodeId: state.currentNodeId,
+  });
+  for (const e of moved) {
+    if (e.source === removeId) e.source = keepId;
+    if (e.target === removeId) e.target = keepId;
+  }
+  state.nodes.splice(index, 1);
+  if (state.startNodeId === removeId) state.startNodeId = keepId;
+  if (state.currentNodeId === removeId) state.currentNodeId = keepId;
+  await save(state);
+
+  const duplicates = countDuplicateEdges(state.edges);
+  return {
+    notice: `"${removed.name}", "${keep.name}" ile birleştirildi; ${moved.length} edge "${keep.name}"e bağlandı.`
+      + (duplicates ? ` Aynı uçlara ve aksiyonlara sahip ${duplicates} tekrar eden edge var; istersen silebilirsin.` : '')
+      + ' Geri almak için "Geri al" ya da Ctrl+Z.',
+  };
+}
+
+// Aynı kaynak, hedef ve aksiyon dizisine sahip edge'lerden fazla olanların sayısı.
+function countDuplicateEdges(edges) {
+  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y])]);
+  const seen = new Set();
+  let duplicates = 0;
+  for (const e of edges) {
+    const key = signature(e);
+    if (seen.has(key)) duplicates++;
+    else seen.add(key);
+  }
+  return duplicates;
 }
 
 // Ekran parmak izleri yalnızca düzenleme analizi içindir; orijinal kaydın özetinde gerekmez.

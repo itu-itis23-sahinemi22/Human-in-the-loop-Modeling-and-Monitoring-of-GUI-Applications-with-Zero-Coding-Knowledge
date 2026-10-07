@@ -12,6 +12,7 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - [Edge oluşturma kuralları](#edge-oluşturma-kuralları)
 - [Aksiyonlar nasıl yakalanıyor?](#aksiyonlar-nasıl-yakalanıyor)
 - [Edge düzenleme](#edge-düzenleme)
+- [Node birleştirme](#node-birleştirme)
 - [Geri al](#geri-al)
 - [Kayıt hangi sekmede?](#kayıt-hangi-sekmede)
 - [Service worker'ın ölümlülüğü](#service-workerın-ölümlülüğü)
@@ -105,7 +106,8 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
 | `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
 | `REMOVE_ACTION` | panel → background | `{ edgeId, index }` | Edge'den bir aksiyonu siler. Tek aksiyon kaldıysa reddeder. İlk silmede orijinal liste `recordedActions`'a kopyalanır; silinen aksiyon geri al yığınına (`state.undo`) girer. |
-| `UNDO` | panel → background | (boş) | Son silmeyi (node, edge ya da aksiyon) geri alır; ne geri getirildiğini `{ notice }` ile bildirir. Bkz. [Geri al](#geri-al) |
+| `UNDO` | panel → background | (boş) | Son silmeyi ya da birleştirmeyi geri alır; ne geri getirildiğini `{ notice }` ile bildirir. Bkz. [Geri al](#geri-al) |
+| `MERGE_NODES` | panel → background | `{ keepId, removeId }` | `removeId` node'unu `keepId`'ye birleştirir. URL şablonu ya da edge set'i farklıysa ya da bekleyen bir soru varsa reddeder. Bkz. [Node birleştirme](#node-birleştirme) |
 | `CANCEL_PENDING` | panel → background | (boş) | Şu anki node seçilip "Node oluşturma, aksiyonlara devam et" denince: bekleyen karar atılır, kesilen aksiyonlar buffer'a geri döner (karar beklerken yapılanların önüne). |
 | `RENAME` | panel → background | `{ id, name }` | Node veya edge ismini değiştirir. |
 | `DELETE` | panel → background | `{ id }` | Node'u (ve bağlı edge'leri) ya da edge'i siler. |
@@ -252,11 +254,28 @@ Aksiyonun öncesi ve sonrası komşu kayıtlardan bulunur: öncesi aksiyonun `sc
 
 ---
 
+## Node birleştirme
+
+Node detayındaki **Birleştir…** butonu, seçili node'u başka bir node ile birleştirir. Tipik kullanım: kullanıcı onay kartında "Hayır, yeni node" demiş, sonra iki node'un aslında aynı durum olduğuna karar vermiş. Birleştirme, o "Evet" kararının sonradan verilmesidir.
+
+**Ne olur:** Kaldırılan node'a gelen ve ondan çıkan tüm edge'ler kalan node'a bağlanır; ikisi arasındaki edge'ler kendine dönen edge (self-loop) olur. Kaldırılan node silinir. Başlangıç ya da şu anki node idiyse bu rol kalan node'a geçer. Kalan node kendi adını, ekran görüntüsünü ve parmak izini korur. Hangisinin kalacağını kullanıcı seçer; varsayılan, önce oluşturulan node'dur.
+
+**Kurallar:**
+
+- **Edge set'i farklı node'lar hiçbir zaman birleştirilemez.** Sadece URL şablonu ve edge set'i (şu anki Ayarlar ile) birebir aynı node'lar seçilebilir. Diğerleri pencerede sebebiyle pasif görünür (ör. "edge set farklı: `button:Sil` 5 ≠ 4"); background da isteği ayrıca reddeder. Sebebi projenin temel kuralı: edge set'i farklı iki node'u birleştirmek, kaldırılan node'dan gelen edge'lerin hedefinin kalan node'un ekranında olmamasına (çakışmaya) yol açar. İki node'u aynı saymak isteyen kullanıcı, farkın kaynağını tanımdan çıkarmalıdır (Ayarlar'da o türün işaretini kaldırmak); o zaman node'lar aynı edge set'e iner ve birleştirilebilir.
+- **Sadece ayar sayesinde eşitlik uyarısı.** Edge set'ler yalnızca Ayarlar'da kapalı türler yüzünden eşitse pencere uyarır: o türler tekrar açılırsa fark geri gelir ama node tek kalır.
+- **Gizli durum notu.** Aynı edge set, aynı durum için gerekli ama yeterli değildir. Ekranda görünmeyen bir fark varsa (sepetteki ürün sayısı, giriş yapan kullanıcı) birleştirmek, testin geçerli olmayan bir yolu seçmesine yol açabilir. Pencere bunu her seferinde hatırlatır.
+- **Tekrar eden edge'ler kullanıcıya aittir.** Birleştirme sonrası aynı kaynak, hedef ve aksiyon dizisine sahip edge'ler olabilir. Bunlara dokunulmaz; panel sadece sayısını bildirir, istenirse elle silinir.
+- **Bekleyen soru varken birleştirme yapılmaz.**
+- **Geri alınabilir:** Geri al / Ctrl+Z kaldırılan node'u eski yerine, taşınan edge'leri eski uçlarına döndürür.
+
+---
+
 ## Geri al
 
 Yanlışlıkla silinen bir node ya da edge graph'ı bozabilir. Bu yüzden her **silme** geri alınabilir: araç çubuğundaki **Geri al** butonu ya da panele odaklıyken **Ctrl+Z** (Mac'te Cmd+Z).
 
-- **Ne kaydedilir:** node silme (bağlı edge'leriyle birlikte), edge silme ve edge'den aksiyon silme. Her silme, silineni ve eski yerini (listedeki sırasını) `state.undo` yığınına yazar (`background.js > remove()`, `removeAction()`).
+- **Ne kaydedilir:** node silme (bağlı edge'leriyle birlikte), edge silme, edge'den aksiyon silme ve node birleştirme. Her işlem, kaldırılanı ve eski yerini (listedeki sırasını, birleştirmede taşınan edge'lerin eski uçlarını) `state.undo` yığınına yazar (`background.js > remove()`, `removeAction()`, `mergeNodes()`).
 - **Nasıl geri alınır:** Son silme tersine çevrilir (`background.js > undo()`). Node, edge'leri ve eski sıralarıyla döner. Başlangıç ya da şu anki node idiyse, bu rolleri de geri gelir (kullanıcı arada başka bir node seçmediyse). Yığında en fazla 20 silme tutulur.
 - **Neden tüm graph'ın kopyası değil:** Her silmede graph'ın kopyasını almak ekran görüntüleri yüzünden depolamayı hızla şişirirdi. Silinen parçayı ve yerini saklamak yeterli, çünkü geri al hep en son silmeden başlar (LIFO).
 - **Sınırlar:** Sadece silmeler geri alınır (node oluşturma, isim değiştirme geri alınmaz). **Sıfırla** geri alınamaz; bu yüzden iki tıklamayla onaylanır. Son node silinince graph sıfırlanmaz, boş kalır; böylece silme geri alınabilir.

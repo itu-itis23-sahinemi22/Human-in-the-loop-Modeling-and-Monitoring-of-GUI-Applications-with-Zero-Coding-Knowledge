@@ -251,7 +251,92 @@ function renderDetails() {
   if (node) $('details-shot').src = node.screenshot;
   $('details-actions').replaceChildren(...(edge ? editableActionItems(edge) : []));
   $('btn-continue').hidden = !node;
+  $('btn-merge').hidden = !node;
+  $('btn-merge').disabled = state.nodes.length < 2 || Boolean(state.pending);
+  $('btn-merge').title = state.pending ? 'Önce bekleyen "aynı node mu?" sorusunu cevaplayın' : 'Bu node\'u aynı edge set\'e sahip başka bir node ile birleştir';
 }
+
+
+// -----------------------------------------------------------------------------
+// NODE BİRLEŞTİRME
+// -----------------------------------------------------------------------------
+// Uygunluk, background'daki kuralla aynıdır: URL şablonu ve edge set'i (şu anki ayarlarla)
+// birebir aynı olmalı. Background isteği ayrıca doğrular. Tekrar eden edge'lere dokunulmaz.
+
+let mergeSourceId = null;
+
+function mergeIssue(a, b) {
+  if (a.urlKey !== b.urlKey) return 'URL şablonu farklı';
+  const ca = stateCounts(a.elements, settings);
+  const cb = stateCounts(b.elements, settings);
+  if (!ca || !cb) return 'eski kayıt biçimi: karşılaştırılamaz';
+  return sameCounts(ca, cb) ? null : "edge set farklı: " + countMismatch(ca, cb);
+}
+
+// İki sayılı kümenin farkı, en fazla 3 tür: "button:Sil 5 ≠ 4, a:menu 1 ≠ 0"
+function countMismatch(a, b) {
+  const keys = [...new Set([...a.keys(), ...b.keys()])].filter((k) => (a.get(k) ?? 0) !== (b.get(k) ?? 0));
+  return keys.slice(0, 3).map((k) => `${k} ${a.get(k) ?? 0} ≠ ${b.get(k) ?? 0}`).join(', ')
+    + (keys.length > 3 ? ` (+${keys.length - 3})` : '');
+}
+
+function openMergeDialog(node) {
+  mergeSourceId = node.id;
+  $('merge-title').textContent = `"${node.name}" node'unu birleştir`;
+  $('merge-options').replaceChildren(...state.nodes.filter((n) => n.id !== node.id).map((other) => {
+    const issue = mergeIssue(node, other);
+    const label = document.createElement('label');
+    label.className = 'merge-option' + (issue ? ' disabled' : '');
+    label.innerHTML = '<input type="radio" name="merge-with"> <img alt=""> <span><b></b><small></small></span>';
+    label.querySelector('input').value = other.id;
+    label.querySelector('input').disabled = Boolean(issue);
+    label.querySelector('img').src = other.screenshot;
+    label.querySelector('b').textContent = other.name;
+    label.querySelector('small').textContent = issue ?? 'birleştirilebilir';
+    return label;
+  }));
+  $('merge-keep').hidden = true;
+  $('merge-warnings').replaceChildren();
+  $('btn-merge-confirm').disabled = true;
+  $('merge-dialog').showModal();
+}
+
+// Aday seçilince: hangi node kalsın (varsayılan önce oluşturulan) ve uyarılar
+$('merge-options').onchange = () => {
+  const node = nodeById(mergeSourceId);
+  const other = nodeById($('merge-options').querySelector('input:checked')?.value);
+  if (!node || !other) return;
+  const ordered = state.nodes.indexOf(node) < state.nodes.indexOf(other) ? [node, other] : [other, node];
+  $('merge-keep-options').replaceChildren(...ordered.map((n, i) => {
+    const label = document.createElement('label');
+    label.innerHTML = '<input type="radio" name="merge-keep"> <span></span>';
+    label.querySelector('input').value = n.id;
+    label.querySelector('input').checked = i === 0;
+    label.querySelector('span').textContent = n.name + (i === 0 ? ' (önce oluşturulan)' : '');
+    return label;
+  }));
+  $('merge-keep').hidden = false;
+
+  // Edge set'ler yalnızca Ayarlar'da kapalı türler yüzünden mi eşit? (tüm türlerle karşılaştır)
+  const all = [stateCounts(node.elements, DEFAULT_SETTINGS), stateCounts(other.elements, DEFAULT_SETTINGS)];
+  const hidden = all.every(Boolean) && !sameCounts(...all) ? countMismatch(...all) : null;
+  $('merge-warnings').replaceChildren(...(hidden ? [Object.assign(document.createElement('li'), {
+    textContent: `Edge set'ler yalnızca Ayarlar'da kapalı türler yüzünden eşit (${hidden}). O türler tekrar açılırsa fark geri gelir ama node tek kalır.`,
+  })] : []));
+  $('btn-merge-confirm').disabled = false;
+};
+
+$('btn-merge').onclick = () => openMergeDialog(nodeById(selectedId));
+$('btn-merge-cancel').onclick = () => $('merge-dialog').close();
+$('btn-merge-close').onclick = () => $('merge-dialog').close();
+$('btn-merge-confirm').onclick = () => {
+  const keepId = $('merge-keep-options').querySelector('input:checked').value;
+  const otherId = $('merge-options').querySelector('input:checked').value;
+  const removeId = keepId === mergeSourceId ? otherId : mergeSourceId;
+  $('merge-dialog').close();
+  if (selectedId === removeId) selectedId = keepId; // detay kartı kalan node'u göstersin
+  send({ type: 'MERGE_NODES', keepId, removeId });
+};
 
 
 // -----------------------------------------------------------------------------
@@ -354,6 +439,7 @@ $('btn-delete-action-cancel').onclick = () => $('delete-action-dialog').close();
 function undoText(entry) {
   if (entry.kind === 'node') return `"${entry.node.name}" node'unun silinmesini geri al`;
   if (entry.kind === 'edge') return `"${entry.edge.name}" edge'inin silinmesini geri al`;
+  if (entry.kind === 'merge') return `"${entry.node.name}" node'unun birleştirilmesini geri al`;
   return `"${entry.action.label}" aksiyonunun silinmesini geri al`;
 }
 
