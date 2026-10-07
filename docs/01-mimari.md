@@ -40,8 +40,8 @@ Bu tablo tasarımı doğrudan belirliyor:
 
 Ziyaret edilen **her** sayfaya Chrome tarafından otomatik olarak eklenir (`manifest.json > content_scripts`).
 
-- **Aksiyon yakalama:** `click`, `change` ve `keydown(Enter)` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, selector, label, value, url, time}`) background'a gönderir.
-- **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde sayfadaki görünür etkileşimli elementlerin listesini döndürür. Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
+- **Aksiyon yakalama:** `click`, `change`, `keydown(Enter)` ve `scrollend` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, target, selector, label, value, url, time}`; kaydırmada `target`/`value` yerine `x, y`) background'a gönderir. `target` hedefi state ile aynı düzeyde tutar: "ekrandaki n'inci `button:Sil`" ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)).
+- **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini döndürür. Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
 - **Selector üretimi:** Her aksiyon için elementi tekil olarak bulan bir CSS selector üretir. Kayıtların ileride tekrar oynatılabilmesi buna bağlıdır.
 
 ### `background.js`: Beyin
@@ -50,14 +50,19 @@ Eklentinin tek "durum sahibi" (single source of truth).
 
 - Content script'ten gelen aksiyonları `buffer` dizisinde biriktirir.
 - Tarayıcı seviyesindeki gezinmeleri (adres çubuğu, geri/ileri, yenile) `chrome.webNavigation` ile kendisi yakalar.
-- "Node oluştur" isteğinde parmak izi ve ekran görüntüsü alır, benzer node arar, node ve edge ekler.
+- "Node oluştur" isteğinde parmak izi ve ekran görüntüsü alır, element kümesi birebir aynı olan node'u arar, node ve edge ekler.
 - Her değişiklikten sonra state'in tamamını `chrome.storage.local`'a yazar.
+- Panelin Ayarlar penceresindeki seçimleri `settings` anahtarında saklar ve uygular: işaretsiz aksiyon tiplerini buffer'a almaz, işaretsiz element türlerini state karşılaştırmasına katmaz.
 
 ### `sidepanel/`: Arayüz
 
-- `panel.html`: iskelet. Butonlar, onay kartı, graph alanı, detay kartı ve bekleyen aksiyonlar listesinden oluşur.
-- `panel.js`: State'i storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir.
+- `panel.html`: iskelet. Butonlar, onay kartı, graph alanı, detay kartı ve bekleyen aksiyonlar listesi. Sağ üstteki çark, panelin üstünde açılan **Ayarlar** penceresini (`<dialog>`) açar; kaydedilmemiş değişiklik uyarısı da ayrı bir `<dialog>`'dur.
+- `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
+
+### `settings.js`: Ortak tanımlar
+
+Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşimli element türleri `INTERACTABLE_TYPES`) ve varsayılan ayarın (`DEFAULT_SETTINGS`) **tek tanımı**. Build adımı olmadığı için üç parça da bu dosyayı ayrıca yükler: content script olarak `content.js`'ten önce (`manifest.json`), service worker'da `importScripts('settings.js')`, panelde `<script>` ile. Listeye yeni bir tip eklemek; yakalamayı, panel checklist'ini ve filtreyi birlikte günceller.
 
 ### `manifest.json`: Kimlik kartı
 
@@ -93,14 +98,16 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 
 | Mesaj | Gönderen → Alan | İçerik | Ne yapar |
 |---|---|---|---|
-| `ACTION` | content → background | `{ action }` | Aksiyonu buffer'a ekler. Kayıt başlamadıysa ya da başka sekmeden geldiyse yok sayar. |
-| `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements[] }` döner. |
+| `ACTION` | content → background | `{ action }` | Aksiyonu buffer'a ekler. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. |
+| `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
-| `RESOLVE` | panel → background | `{ useExisting: bool }` | Onay kartındaki "Evet / Hayır" cevabı |
+| `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
+| `CANCEL_PENDING` | panel → background | (boş) | Şu anki node seçilip "Node oluşturma, aksiyonlara devam et" denince: bekleyen karar atılır, kesilen aksiyonlar buffer'a geri döner (karar beklerken yapılanların önüne). |
 | `RENAME` | panel → background | `{ id, name }` | Node veya edge ismini değiştirir. |
 | `DELETE` | panel → background | `{ id }` | Node'u (ve bağlı edge'leri) ya da edge'i siler. |
-| `SET_CURRENT` | panel → background | `{ id }` | "Buradan devam et": şu anki node'u değiştirir, buffer'ı temizler. |
-| `RESET` | panel → background | (boş) | Her şeyi sıfırlar. |
+| `SET_CURRENT` | panel → background | `{ id, tabId }` | "Buradan devam et": şu anki node'u değiştirir, buffer'ı temizler. Kayıt sekmesi kapandıysa kaydı `tabId` sekmesine bağlar. |
+| `RESET` | panel → background | (boş) | Graph'ı sıfırlar. Ayarlara dokunmaz. |
+| `SET_SETTINGS` | panel → background | `{ settings }` | Ayarlar'daki seçimi kaydeder (`settings` anahtarı). |
 
 Background her mesaja üç cevaptan biriyle döner:
 
@@ -120,28 +127,29 @@ Kullanıcı          panel.js              background.js                 content
     │  Node oluştur    │                       │                            │
     │─────────────────▶│ aktif sekmeyi bul     │                            │
     │                  │ CREATE_NODE{tabId}    │                            │
-    │                  │──────────────────────▶│ GET_FINGERPRINT            │
+    │                  │──────────────────────▶│ ilk node değil VE buffer boş?
+    │                  │◀── { notice } ────────│   └─ evet ─▶ DUR (mavi bilgi mesajı)
+    │                  │                       │                            │
+    │                  │                       │ GET_FINGERPRINT            │
     │                  │                       │───────────────────────────▶│
     │                  │                       │ {url,title,elements}       │
     │                  │                       │◀───────────────────────────│
-    │                  │                       │ findSimilarNode()          │
-    │                  │                       │                            │
-    │                  │                       │ buffer boş VE benzer = şu anki node?
-    │                  │◀── { notice } ────────│   └─ evet ─▶ DUR (mavi bilgi mesajı)
+    │                  │                       │ findSameStateNodes()       │
+    │                  │                       │  (Ayarlar'daki türlerle)   │
     │                  │                       │                            │
     │                  │                       │ captureVisibleTab()        │
     │                  │                       │ actions = buffer           │
     │                  │                       │ buffer  = []               │
     │                  │                       │                            │
-    │                  │                       │   ├─ benzer YOK ─▶ commit(yeni node)
-    │                  │                       │   └─ benzer VAR ─▶ state.pending = {...}
+    │                  │                       │   ├─ birebir eşleşen YOK ─▶ commit(yeni node)
+    │                  │                       │   └─ birebir eşleşen VAR ─▶ state.pending = {...}
     │                  │                       │ save() ──▶ storage         │
     │                  │◀── storage.onChanged ─│                            │
     │                  │ render()              │                            │
     │                  │                       │                            │
-    │   (benzer varsa onay kartı görünür)      │                            │
-    │  Evet / Hayır    │                       │                            │
-    │─────────────────▶│ RESOLVE{useExisting}  │                            │
+    │   (eşleşen varsa onay kartı görünür)     │                            │
+    │  aday seç / yeni │                       │                            │
+    │─────────────────▶│ RESOLVE{targetId}     │                            │
     │                  │──────────────────────▶│ commit(mevcut / yeni node) │
     │                  │                       │ save() ──▶ storage         │
     │                  │◀── storage.onChanged ─│                            │
@@ -150,7 +158,7 @@ Kullanıcı          panel.js              background.js                 content
 
 Dikkat edilecek üç nokta:
 
-1. **Erken çıkış:** Son node'dan beri hiç aksiyon kaydedilmediyse ve sayfa hâlâ şu anki node'a benziyorsa, çizilecek bir edge yoktur. Kullanıcıya "aynı mı?" diye sorulmaz (cevap "evet" olsa da hiçbir şey değişmeyecekti). Panel *"Son node'dan beri aksiyon kaydedilmedi. Hâlâ v_X node'undasınız."* der. Ekran görüntüsü de alınmaz.
+1. **Bekleyen aksiyon yoksa node oluşturulmaz:** İlk node dışında, son node'dan beri hiç aksiyon kaydedilmediyse akış en başta durur, çünkü aksiyonsuz bir edge tekrar oynatılamaz. Panel bu durumda "Node oluştur" butonunu zaten kilitler. Background da ayrıca kontrol eder ve *"Bekleyen aksiyon yok. Node oluşturmak için önce sayfada bir aksiyon yapın."* bilgisiyle döner. Ayarlar'da işaretsiz tipteki aksiyonlar buffer'a hiç girmediği için sayılmaz. Parmak izi ve ekran görüntüsü alınmaz.
 2. **Buffer'ın kesildiği an:** `actions = buffer; buffer = []` satırı onay beklenmeden **hemen** çalışır. Kullanıcı karar verirken sayfada başka bir şey yaparsa, o aksiyonlar bir *sonraki* edge'e aittir. Bekleyen karar ise kendi aksiyonlarını `state.pending.actions` içinde saklar.
 3. **Bekleyen karar varken** "Node oluştur" butonu kilitlenir. Önce soru cevaplanmalıdır.
 
@@ -158,24 +166,28 @@ Dikkat edilecek üç nokta:
 
 ## Edge oluşturma kuralları
 
-**Temel kural:** Şu anki node (`from`) varsa, hedef ister yeni ister mevcut node olsun, `from → hedef` edge'i **her zaman** çizilir. Kullanıcı onay kartında **"Evet, aynı node"** derse edge, şu anki node'dan aynı olduğu düşünülen node'a çizilir. İkisi aynı node ise edge bir **self-loop** olur.
+**Temel kural:** Şu anki node (`from`) varsa, hedef ister yeni ister mevcut node olsun, `from → hedef` edge'i **her zaman** çizilir. Kullanıcı onay kartında bir aday için **"Evet, bu node"** derse edge, şu anki node'dan o node'a çizilir. İkisi aynı node ise edge bir **self-loop** olur.
+
+**Birden fazla eşleşme:** Element kümesi birden fazla node ile birebir aynı olabilir (daha önce aynı küme için "yeni node" denmiş ya da Ayarlar'da bir türün işareti kaldırılmışsa). Onay kartı eşleşen **tüm** node'ları ekran görüntüleriyle seçenek olarak gösterir. Sıra: şu anki node önce, sonra oluşturulma sırası. Kullanıcı doğru olanı seçer ya da **"Hiçbiri, yeni node"** der. Karar beklerken bir aday silinirse listeden düşer.
+
+**Eşleşme kuralı:** Mevcut bir node, ancak URL şablonu ve etkileşimli element kümesi (edge set: ekranda tıklanabilen, devre dışı olmayan elementler) sayfayla **birebir aynıysa** eşleşir. Tek bir element bile farklıysa, sayfa ne kadar benzer olursa olsun soru sorulmadan yeni node oluşur. Gerekçe: [03 > Neden birebir eşitlik?](03-state-eslestirme.md#neden-benzerlik-değil-birebir-eşitlik)
 
 Durumların tamamı (`from` = şu anki node):
 
 | Durum | Sonuç |
 |---|---|
 | İlk node (`from` yok) | Sadece node oluşur, edge yok. Bu node `startNodeId` olur. |
-| Benzer node yok | Yeni node + `from → yeni` edge |
-| Benzer node var, kullanıcı **"Hayır, yeni node"** dedi | Yeni node + `from → yeni` edge |
-| Benzer node var, kullanıcı **"Evet, aynı node"** dedi | Yeni node oluşmaz. `from → mevcut` edge çizilir. `from == mevcut` ise **self-loop** olur. |
-| Aksiyon yok, sayfa başka bir node'a benziyor | Soru sorulur. Cevap ne olursa olsun edge çizilir; adı `e_Transition` olur, aksiyon listesi boştur. Sayfa kaydedilemeyen bir şekilde değişmiş demektir, ör. bir iframe içinden ya da sayfanın kendi kodu yönlendirdi. |
-| Aksiyon yok, sayfa hâlâ `from`'a benziyor | **Soru sorulmaz, hiçbir şey değişmez.** Panel mavi bir bilgi mesajı gösterir (bkz. yukarıdaki "Erken çıkış"). |
+| Birebir eşleşen node yok (element kümesi tüm node'lardan farklı) | **Soru sorulmaz.** Yeni node + `from → yeni` edge |
+| Birebir eşleşen node(lar) var, kullanıcı **"Hayır / Hiçbiri, yeni node"** dedi | Yeni node + `from → yeni` edge |
+| Birebir eşleşen node(lar) var, kullanıcı başka bir aday için **"Evet, bu node"** dedi | Yeni node oluşmaz. `from → seçilen` edge çizilir. Seçilen node'un kayıtlı verisi (ekran görüntüsü, elementler) değişmez. |
+| Kullanıcı **şu anki node** (`from`) için "Evet, bu node" dedi | İki seçenek sorulur. **Kendine dönen edge olarak kaydet:** `from → from` **self-loop** çizilir. **Node oluşturma, aksiyonlara devam et:** node ve edge oluşmaz, aksiyonlar buffer'a geri döner ve bir sonraki "Node oluştur"a kadar birikmeye devam eder. |
+| Bekleyen aksiyon yok (ilk node hariç) | **Node oluşturulmaz, hiçbir şey değişmez.** Buton kilitlidir; background mavi bir bilgi mesajıyla döner. Sayfa kaydedilemeyen bir şekilde değiştiyse (iframe içi, hover menü, sayfanın kendi yönlendirmesi) önce kaydedilebilen bir aksiyon gerekir. |
 | `from` silinmiş | Node oluşur ama edge oluşmaz. Kullanıcı "Buradan devam et" ile bir başlangıç seçmelidir. |
 
 **İsimlendirme:**
 
 - Node: `v_` + URL'nin son anlamlı parçası (`/inventory.html` → `v_Inventory`). Yoksa sayfa başlığı kullanılır (`Swag Labs` → `v_SwagLabs`). Aynı isim varsa sonuna `_2`, `_3` eklenir.
-- Edge: `e_` + son aksiyonun etiketi (`Login` butonu → `e_Login`, `Add to cart` → `e_AddToCart`).
+- Edge: `e_` + son aksiyonun etiketi (`Login` butonu → `e_Login`, `Add to cart` → `e_AddToCart`). Kaydırmalar atlanır: bir linke tıklandıktan sonra sayfa kendini başa kaydırsa da edge `e_Product` olur. Edge yalnızca kaydırmalardan oluşuyorsa adı `e_ScrollDown` / `e_ScrollUp` olur.
 - Türkçe karakterler sadeleştirilir (`Giriş yap` → `GirisYap`), çünkü bu isimler ileride Java/JS metot adı olacak.
 
 ---
@@ -189,6 +201,9 @@ Durumların tamamı (`from` = şu anki node):
 | `click` | `click` | Form alanlarına tıklamalar yok sayılır (bkz. aşağıda). Hedef, `closest()` ile en yakın etkileşimli elemente yükseltilir: butonun içindeki `<span>`'e tıklanınca butonun kendisi kaydedilir. |
 | `change` | `input` | text, select, checkbox, radio... Değer kaydedilir. Şifreler maskelenir. |
 | `keydown` + Enter (input içinde) | önce `input`, sonra `enter` | Enter, `change`'den *önce* tetiklenir. Sıra doğru olsun diye değer burada kaydedilir. |
+
+content.js tüm aksiyonları yakalar ve gönderir. Ayarlar'da işaretli olmayan tipleri `background.js > addAction()` buffer'a eklemez; tarayıcı seviyesindeki gezinmeler de (aşağıda) aynı süzgeçten geçer.
+| `scrollend` (sayfa ya da kaydırılabilir kutu) | `scroll` | `scroll` olayı kaydırma boyunca onlarca kez gelir; `scrollend` hareket bitince bir kez gelir. Vardığı konum (`x`, `y`) kaydedilir. Sayfanın kendi yaptığı kaydırmalar da kaydedilir (tarayıcı bunları kullanıcınınkinden ayırmaz); konum mutlak olduğu için tekrar oynatmada zararsızdır. |
 
 Üç teknik detay:
 
@@ -218,7 +233,7 @@ Adres çubuğuna URL yazmak ya da geri tuşuna basmak sayfanın *içinde* olmaz,
 
 - Kayıt, **ilk "Node oluştur"un yapıldığı sekmeye** bağlanır (`state.tabId`). Diğer sekmelerdeki aksiyonlar yok sayılır. Kullanıcı arada başka bir sekmede bir şey araştırırsa graph kirlenmez.
 - Başka bir sekmede "Node oluştur"a basılırsa hata verilir: *"Kayıt başka bir sekmede sürüyor."*
-- Kayıt sekmesi **kapatılırsa** `tabId` boşaltılır. Kullanıcı yeni bir sekmede "Node oluştur"a basarak kaldığı yerden devam edebilir.
+- Kayıt sekmesi **kapatılırsa** `tabId` boşaltılır ve aksiyon kaydı durur. Bekleyen aksiyon olmadan node oluşturulamadığı için devam etmenin yolu şudur: yeni sekmede bilinen bir duruma gidin, graph'ta o node'u seçin ve **Buradan devam et**'e basın. Kayıt o sekmede sürer. Panelin durum satırı bu durumu hatırlatır.
 
 ---
 
@@ -238,5 +253,7 @@ Bu yüzden `background.js`:
      return statePromise;
    }
    ```
+
+   Ayarlar da aynı desenle okunur (`getSettings()`), ama ayrı bir anahtarda (`settings`) durur; bu yüzden "Sıfırla" ayarları silmez.
 
    Aynı anda gelen iki mesaj aynı `statePromise`'i paylaşır, yani **aynı nesne** üzerinde çalışır. Her mesaj storage'dan kendi kopyasını okusaydı, hızlı art arda gelen iki aksiyondan biri diğerinin kaydını ezebilirdi (ör. bir input'tan çıkıp hemen butona tıklamak, `change` ve `click` olaylarını milisaniyeler içinde üretir).

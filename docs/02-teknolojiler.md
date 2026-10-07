@@ -14,7 +14,7 @@ Genel ilke: **demo, en az parçayla çalışan ve her satırı okunabilen bir pr
 6. [chrome.storage.local](#6-chromestoragelocal)
 7. [Ekran görüntüsü: captureVisibleTab](#7-ekran-görüntüsü-capturevisibletab)
 8. [Kendi selector üreticimiz](#8-kendi-selector-üreticimiz)
-9. [State eşleştirme: Jaccard benzerliği](#9-state-eşleştirme-jaccard-benzerliği)
+9. [State eşleştirme: element kümesi birebir eşitliği](#9-state-eşleştirme-element-kümesi-birebir-eşitliği)
 10. [Hangi izin neden gerekli?](#hangi-izin-neden-gerekli)
 
 ---
@@ -161,13 +161,15 @@ Genel ilke: **demo, en az parçayla çalışan ve her satırı okunabilen bir pr
 
 ---
 
-## 9. State eşleştirme: Jaccard benzerliği
+## 9. State eşleştirme: element kümesi birebir eşitliği
 
-**Ne için:** "Bu sayfa daha önce kaydedilmiş bir node mu?" sorusuna öneri üretmek.
+**Ne için:** "Bu sayfa daha önce kaydedilmiş bir node mu?" sorusunu cevaplamak.
 
-**Neden:** Basit, hızlı ve **açıklanabilir.** Kullanıcıya "%92 benziyor" denebiliyor ve bu sayının ne anlama geldiği tek cümleyle anlatılabiliyor. Son kararı zaten kullanıcı verdiği için algoritmanın kusursuz olması gerekmiyor; iyi bir *öneri* yapması yeterli.
+**Neden:** Bir node'dan çıkan edge'ler o node'daki etkileşimli elementlere dayanır. Element kümesi (edge set) farklı iki sayfayı tek node saymak edge'lerin çakışmasına yol açar. Bu yüzden küme farklıysa sistem soru sormadan yeni node oluşturur; yalnızca birebir aynıysa kullanıcıya "aynı state mi?" diye sorar. Ayarlanacak eşik yoktur, karar deterministiktir ve tek cümleyle açıklanabilir.
 
-Algoritmanın tam açıklaması, gerçek ölçümler ve elenen alternatifler (DOM ağacı karşılaştırma, görsel karşılaştırma, makine öğrenmesi): [03-state-eslestirme.md](03-state-eslestirme.md)
+**Elenen alternatif:** Önceki sürümde Jaccard benzerliği (eşik 0.6) kullanılıyordu. "%92 benziyor" sorusuna "Evet" demek farklı edge set'leri birleştirip tam olarak bu çakışmayı üretiyordu.
+
+Algoritmanın tam açıklaması, ölçümler ve diğer elenen alternatifler (DOM ağacı karşılaştırma, görsel karşılaştırma, makine öğrenmesi): [03-state-eslestirme.md](03-state-eslestirme.md)
 
 ---
 

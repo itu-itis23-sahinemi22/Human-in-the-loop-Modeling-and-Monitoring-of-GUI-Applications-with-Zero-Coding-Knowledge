@@ -8,28 +8,38 @@
 </head>
 <body>
   <header>
-    <h1>Graph Recorder</h1>
+    <div class="title-row">
+      <h1>Graph Recorder</h1>
+      <!-- Ayarlar penceresini açar (çark simgesi: Feather Icons "settings", MIT) -->
+      <button id="btn-settings" class="icon" title="Ayarlar" aria-label="Ayarlar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
     <p id="status" class="muted"></p>
   </header>
 
   <div class="toolbar">
     <button id="btn-node" class="primary">Node oluştur</button>
-    <button id="btn-export">JSON indir</button>
+    <button id="btn-export" title="Graph'ı GraphWalker JSON modeli olarak indirir (Studio'da açılır, CLI ile çalışır)">GraphWalker JSON</button>
     <button id="btn-reset" class="danger">Sıfırla</button>
   </div>
 
   <!-- Background'dan gelen hata (kırmızı) ya da bilgi (mavi) mesajı -->
   <p id="message" class="message" hidden></p>
 
-  <!-- Benzer bir node bulunduğunda kullanıcıya sorulan soru (hibrit yaklaşımın "insan" adımı) -->
+  <!-- Etkileşimli element kümesi birebir aynı node(lar) bulunduğunda kullanıcıya sorulan soru
+       (hibrit yaklaşımın "insan" adımı). Eşleşen her node bir seçenektir; panel.js doldurur.
+       Küme farklıysa soru sorulmaz, yeni node oluşur. -->
   <section id="confirm" class="card highlight" hidden>
     <p id="confirm-text"></p>
     <div class="shots">
-      <figure><img id="confirm-old" alt=""><figcaption>Mevcut node</figcaption></figure>
       <figure><img id="confirm-new" alt=""><figcaption>Şu anki sayfa</figcaption></figure>
+      <div id="confirm-candidates"></div>
     </div>
     <div class="toolbar">
-      <button id="btn-same" class="primary">Evet, aynı node</button>
       <button id="btn-new">Hayır, yeni node</button>
     </div>
   </section>
@@ -57,8 +67,66 @@
     <ol id="buffer" class="actions"></ol>
   </section>
 
+  <!-- AYARLAR penceresi (sağ üstteki çark açar). Hangi aksiyon tipleri kaydedilsin, hangi
+       etkileşimli türler state'e girsin. Listeleri panel.js, settings.js'ten doldurur.
+       Değişiklik "Kaydet"e basılınca uygulanır. "Sıfırla" ayarları silmez. -->
+  <dialog id="settings-dialog" class="settings" aria-labelledby="settings-title">
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="settings-title">Ayarlar</h2>
+        <button id="btn-settings-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
+      </div>
+      <fieldset>
+        <legend>Kaydedilecek aksiyonlar</legend>
+        <p class="hint">İşaretli olmayan aksiyonlar "Bekleyen aksiyonlar" listesine eklenmez.</p>
+        <div id="settings-actions" class="checklist"></div>
+      </fieldset>
+      <fieldset>
+        <legend>State'e dahil edilecek etkileşimli elementler</legend>
+        <p class="hint">İşaretli olmayan türdeki elementler state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut node'lar o anki seçime göre karşılaştırılır.</p>
+        <div id="settings-interactables" class="checklist"></div>
+      </fieldset>
+      <div class="toolbar">
+        <button id="btn-settings-save" class="primary" disabled>Kaydet</button>
+        <span id="settings-saved" class="hint" hidden>Kaydedildi.</span>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Onay kartında ŞU ANKİ node seçilince: aksiyonlar self-loop mu olsun, yoksa hiç
+       kaydedilmeden "Bekleyen aksiyonlar"da birikmeye devam mı etsin? Metinleri panel.js doldurur. -->
+  <dialog id="loop-dialog" class="alert" aria-labelledby="loop-text">
+    <div class="dialog-body">
+      <p id="loop-text"></p>
+      <div class="choice">
+        <button id="btn-loop-edge" class="primary">Kendine dönen edge olarak kaydet</button>
+        <p id="loop-edge-hint" class="hint"></p>
+      </div>
+      <div class="choice">
+        <button id="btn-loop-continue">Node oluşturma, aksiyonlara devam et</button>
+        <p id="loop-continue-hint" class="hint"></p>
+      </div>
+      <div class="toolbar">
+        <button id="btn-loop-back">Geri dön</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Ayarlar kaydedilmeden kapatılmaya çalışılınca çıkan uyarı -->
+  <dialog id="unsaved-dialog" class="alert" aria-labelledby="unsaved-text">
+    <div class="dialog-body">
+      <p id="unsaved-text">Kaydedilmemiş değişiklikler var. Kaydetmeden çıkılsın mı?</p>
+      <div class="toolbar">
+        <button id="btn-unsaved-save" class="primary">Kaydet ve çık</button>
+        <button id="btn-unsaved-discard" class="danger">Kaydetmeden çık</button>
+        <button id="btn-unsaved-back">Geri dön</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Manifest V3 uzaktan (CDN) script yüklemeyi yasaklar; kütüphane eklentinin içinde durur. -->
   <script src="../lib/cytoscape.min.js"></script>
+  <script src="../settings.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

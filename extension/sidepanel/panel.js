@@ -1,9 +1,9 @@
 // =============================================================================
 // panel.js — ARAYÜZ (yan panel)
 // -----------------------------------------------------------------------------
-// Bu dosya state'i ASLA kendisi değiştirmez. Sadece:
-//   - chrome.storage.local'daki state'i okuyup ekrana çizer,
-//   - kullanıcı bir butona basınca background.js'e istek (mesaj) gönderir.
+// Bu dosya state'i ve ayarları ASLA kendisi değiştirmez. Sadece:
+//   - chrome.storage.local'daki state'i ve ayarları okuyup ekrana çizer,
+//   - kullanıcı bir butona / ayara basınca background.js'e istek (mesaj) gönderir.
 //
 // Veri akışı tek yönlüdür:
 //   buton -> mesaj -> background state'i değiştirir -> storage'a yazar
@@ -15,12 +15,13 @@ const $ = (id) => document.getElementById(id);
 const EMPTY_STATE = { tabId: null, currentNodeId: null, startNodeId: null, nodes: [], edges: [], buffer: [], pending: null };
 
 let state = EMPTY_STATE;
+let settings = DEFAULT_SETTINGS; // settings.js
 let selectedId = null;   // graph'ta tıklanan node/edge
 let busy = false;        // "Node oluştur" isteği sürerken butonu kilitlemek için
 let lastGraphKey = '';   // graph değişmediyse yeniden çizmemek için
 
-// Aksiyon tiplerinin ekranda görünen adları
-const ACTION_TEXT = { click: 'Tıkla', input: 'Yaz', enter: 'Enter', navigate: 'Git', history: 'Geri/İleri', reload: 'Yenile' };
+// Aksiyon tiplerinin ekranda görünen adları (settings.js)
+const ACTION_TEXT = Object.fromEntries(ACTION_TYPES.map((a) => [a.type, a.text]));
 
 
 // -----------------------------------------------------------------------------
@@ -132,20 +133,70 @@ function renderStatus() {
     $('status').textContent = 'Kayıt başlamadı. Graph\'ını çıkarmak istediğin sayfaya git ve "Node oluştur"a bas.';
   } else {
     $('status').textContent = `${state.nodes.length} node · ${state.edges.length} edge · Şu an: `
-      + (current ? current.name : 'seçili değil (bir node seçip "Buradan devam et"e bas)');
+      + (current ? current.name : 'seçili değil (bir node seçip "Buradan devam et"e bas)')
+      + (state.tabId === null ? ' · Kayıt sekmesi kapandı: devam edeceğin sekmede bir node seçip "Buradan devam et"e bas.' : '');
   }
-  $('btn-node').disabled = busy || Boolean(state.pending);
+  // İlk node dışında, bekleyen aksiyon yoksa node oluşturulamaz (aksiyonsuz edge tekrar oynatılamaz).
+  const noActions = state.nodes.length > 0 && state.buffer.length === 0;
+  $('btn-node').disabled = busy || Boolean(state.pending) || noActions;
+  $('btn-node').title = noActions ? 'Bekleyen aksiyon yok: önce sayfada bir aksiyon yap.' : '';
 }
+
+// Eşleşen her node bir seçenek: ekran görüntüsü, ismi ve "Evet, bu node" butonu.
+// Kart her storage değişikliğinde (ör. gelen aksiyon) yeniden kurulmasın diye anahtar tutulur.
+let lastConfirmKey = '';
 
 function renderConfirm() {
   const pending = state.pending;
   $('confirm').hidden = !pending;
-  if (!pending) return;
-  const candidate = nodeById(pending.candidateId);
-  $('confirm-text').textContent = `Bu sayfa mevcut "${candidate?.name}" node'una %${Math.round(pending.similarity * 100)} benziyor. Aynı state mi?`;
-  $('confirm-old').src = candidate?.screenshot ?? '';
+  if (!pending) {
+    lastConfirmKey = '';
+    return;
+  }
+  const candidates = pending.candidateIds.map(nodeById).filter(Boolean);
+  const key = JSON.stringify([state.currentNodeId, candidates.map((n) => [n.id, n.name])]);
+  if (key === lastConfirmKey) return;
+  lastConfirmKey = key;
+
+  $('confirm-text').textContent = candidates.length === 1
+    ? `Bu sayfanın etkileşimli elementleri mevcut "${candidates[0].name}" node'u ile birebir aynı. Aynı state mi?`
+    : candidates.length > 1
+      ? `Bu sayfanın etkileşimli elementleri ${candidates.length} node ile birebir aynı. Hangisiyle aynı state? Hiçbiri değilse yeni node oluştur.`
+      : 'Eşleşen node silindi. Sayfa yeni node olarak eklenebilir.';
   $('confirm-new').src = pending.capture.screenshot;
+  $('confirm-candidates').replaceChildren(...candidates.map(candidateFigure));
+  $('btn-new').textContent = candidates.length > 1 ? 'Hiçbiri, yeni node' : candidates.length ? 'Hayır, yeni node' : 'Yeni node';
 }
+
+function candidateFigure(node) {
+  const figure = document.createElement('figure');
+  figure.innerHTML = '<img alt=""><figcaption></figcaption><button class="primary">Evet, bu node</button>';
+  figure.querySelector('img').src = node.screenshot;
+  figure.querySelector('figcaption').textContent = node.name + (node.id === state.currentNodeId ? ' (şu anki node)' : '');
+  // Şu anki node seçilirse edge kendine döner; önce bunun mu yoksa hiç kaydetmemenin mi
+  // istendiği sorulur. Diğer adaylarda edge doğrudan o node'a çizilir.
+  figure.querySelector('button').onclick = () =>
+    node.id === state.currentNodeId ? openLoopDialog(node) : send({ type: 'RESOLVE', targetId: node.id });
+  return figure;
+}
+
+function openLoopDialog(node) {
+  const count = state.pending.actions.length;
+  $('loop-text').textContent = `Sayfa hâlâ şu anki node'un ("${node.name}") durumunda. Son ${count} aksiyon ne olsun?`;
+  $('loop-edge-hint').textContent = `Aksiyonlar ${node.name} → ${node.name} edge'i olur. Sayfanın durumunu değiştirmeyen bir işlemi (ör. sıralama, arama) modellemek için.`;
+  $('loop-continue-hint').textContent = `Node ve edge oluşmaz. ${count} aksiyon "Bekleyen aksiyonlar"da kalır; yeni aksiyonlar eklenmeye devam eder.`;
+  $('btn-loop-edge').onclick = () => {
+    $('loop-dialog').close();
+    send({ type: 'RESOLVE', targetId: node.id });
+  };
+  $('loop-dialog').showModal();
+}
+
+$('btn-loop-continue').onclick = () => {
+  $('loop-dialog').close();
+  send({ type: 'CANCEL_PENDING' });
+};
+$('btn-loop-back').onclick = () => $('loop-dialog').close();
 
 function renderDetails() {
   const node = nodeById(selectedId);
@@ -175,7 +226,7 @@ function renderBuffer() {
 // Tek bir aksiyonu liste satırı olarak gösterir: "Tıkla  Login   #login-button"
 function actionItem(action) {
   const li = document.createElement('li');
-  const value = action.type === 'input' ? ` = "${action.value}"` : '';
+  const value = action.type === 'input' ? ` = "${action.value}"` : action.type === 'scroll' ? ` → ${action.x}, ${action.y}` : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
   li.querySelector('b').textContent = ACTION_TEXT[action.type] ?? action.type;
   li.querySelector('span').textContent = action.label + value;
@@ -216,12 +267,15 @@ $('btn-node').onclick = async () => {
   renderStatus();
 };
 
-$('btn-same').onclick = () => send({ type: 'RESOLVE', useExisting: true });
-$('btn-new').onclick = () => send({ type: 'RESOLVE', useExisting: false });
+$('btn-new').onclick = () => send({ type: 'RESOLVE', targetId: null });
 
 $('btn-save').onclick = () => send({ type: 'RENAME', id: selectedId, name: $('details-name').value });
 $('details-name').onkeydown = (e) => { if (e.key === 'Enter') $('btn-save').click(); };
-$('btn-continue').onclick = () => send({ type: 'SET_CURRENT', id: selectedId });
+$('btn-continue').onclick = async () => {
+  // Kayıt sekmesi kapatılmışsa kayıt bu sekmede sürer (bkz. background.js > setCurrent).
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  send({ type: 'SET_CURRENT', id: selectedId, tabId: tab?.id });
+};
 $('btn-delete').onclick = () => {
   send({ type: 'DELETE', id: selectedId });
   selectedId = null;
@@ -241,33 +295,181 @@ $('btn-reset').onclick = () => {
 };
 
 $('btn-export').onclick = () => {
-  const data = {
-    format: 'graph-recorder/v1',
-    exportedAt: new Date().toISOString(),
-    startNodeId: state.startNodeId,
-    nodes: state.nodes,
-    edges: state.edges,
-  };
+  const data = graphWalkerModel();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `graph-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+  link.download = `${data.name}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 };
 
+// Graph'ı GraphWalker JSON model formatına çevirir (GraphWalker Studio'nun kaydettiği ve
+// CLI'ın okuduğu format). Kayda özel veriler GraphWalker'ın serbest "properties"
+// alanlarında taşınır. GraphWalker'ın kendi edge "actions" alanına DOKUNULMAZ: o alan
+// modelin değişkenlerini güncelleyen JavaScript içindir, tarayıcı aksiyonu değil
+// (bkz. docs/04-veri-modeli.md > GraphWalker formatı).
+function graphWalkerModel() {
+  const name = nodeById(state.startNodeId)?.name.replace(/^v_/, '') || 'GraphRecorder';
+  const position = (id) => cy.getElementById(id).position(); // Studio'da aynı yerleşim için
+  return {
+    name,
+    models: [{
+      id: crypto.randomUUID(),
+      name,
+      generator: 'random(edge_coverage(100))',
+      startElementId: state.startNodeId ?? '',
+      properties: {
+        graphRecorder: { format: 'graph-recorder/v4', exportedAt: new Date().toISOString(), settings },
+      },
+      vertices: state.nodes.map((n) => ({
+        id: n.id,
+        name: n.name,
+        properties: {
+          x: Math.round(position(n.id).x),
+          y: Math.round(position(n.id).y),
+          description: n.title ? `${n.title} (${n.url})` : n.url,
+          url: n.url,
+          urlKey: n.urlKey,
+          title: n.title,
+          elements: n.elements, // sayılı küme ({ key, types, count }); state = settings'te işaretli türler
+          screenshot: n.screenshot,
+        },
+      })),
+      edges: state.edges.map((e) => ({
+        id: e.id,
+        name: e.name,
+        sourceVertexId: e.source,
+        targetVertexId: e.target,
+        properties: {
+          description: e.actions.map((a) => a.label).join(' → '),
+          uiActions: e.actions, // tekrar oynatılacak tarayıcı aksiyonları (click, input, scroll...)
+        },
+      })),
+    }],
+    selectedModelIndex: 0,
+    selectedElementId: null,
+  };
+}
+
 
 // -----------------------------------------------------------------------------
-// BAŞLANGIÇ: state'i oku, sonra her değişiklikte yeniden çiz
+// AYARLAR PENCERESİ: iki checklist (settings.js'teki listelerden)
+// -----------------------------------------------------------------------------
+// Kutular bir TASLAK'tır: işaretlemek hiçbir şeyi değiştirmez. "Kaydet" taslağı
+// background'a gönderir; taslak kaydedilmiş ayarlardan farklıysa (kirliyse) buton
+// aktiftir. Kirli taslakla pencere kapatılmak istenirse uyarı penceresi açılır.
+
+const CHECKLISTS = [
+  { id: 'settings-actions', key: 'disabledActions', items: ACTION_TYPES.map((a) => [a.type, a.text]) },
+  { id: 'settings-interactables', key: 'disabledInteractables', items: INTERACTABLE_TYPES.map((t) => [t.selector, t.text]) },
+];
+
+for (const { id, items } of CHECKLISTS) {
+  $(id).replaceChildren(...items.map(([value, text]) => {
+    const label = document.createElement('label');
+    label.innerHTML = '<input type="checkbox"> <span><b></b> <code></code></span>';
+    label.querySelector('input').value = value;
+    label.querySelector('b').textContent = text;
+    label.querySelector('code').textContent = value;
+    return label;
+  }));
+  $(id).onchange = renderSaveButton;
+}
+
+// Taslak: kutuların o anki hali (işareti kaldırılanlar).
+function settingsFromChecklists() {
+  return Object.fromEntries(CHECKLISTS.map(({ id, key }) =>
+    [key, [...$(id).querySelectorAll('input:not(:checked)')].map((box) => box.value)]));
+}
+
+function isDirty() {
+  const draft = settingsFromChecklists();
+  const same = (a, b) => [...a].sort().join('\n') === [...b].sort().join('\n');
+  return CHECKLISTS.some(({ key }) => !same(draft[key], settings[key]));
+}
+
+// Kutuları kaydedilmiş ayarlara eşitler (taslağı atar).
+function loadDraft() {
+  for (const { id, key } of CHECKLISTS) {
+    for (const box of $(id).querySelectorAll('input')) box.checked = !settings[key].includes(box.value);
+  }
+  renderSaveButton();
+}
+
+function renderSaveButton() {
+  const dirty = isDirty();
+  $('btn-settings-save').disabled = !dirty;
+  if (dirty) $('settings-saved').hidden = true;
+}
+
+async function saveSettings() {
+  await send({ type: 'SET_SETTINGS', settings: settingsFromChecklists() });
+  settings = { ...DEFAULT_SETTINGS, ...settingsFromChecklists() }; // storage bildirimi gelmeden buton doğru görünsün
+  renderSaveButton();
+  $('settings-saved').hidden = false;
+}
+
+// Kapatma isteği (✕, Esc, pencere dışına tıklama): taslak kirliyse önce uyarı.
+function requestCloseSettings() {
+  if (isDirty()) $('unsaved-dialog').showModal();
+  else $('settings-dialog').close();
+}
+
+$('btn-settings').onclick = () => {
+  loadDraft();
+  $('settings-saved').hidden = true;
+  $('settings-dialog').showModal();
+};
+$('btn-settings-save').onclick = saveSettings;
+$('btn-settings-close').onclick = requestCloseSettings;
+$('settings-dialog').oncancel = (event) => { // Esc
+  event.preventDefault();
+  requestCloseSettings();
+};
+$('settings-dialog').onclick = (event) => { // pencere dışı (karartılmış alan) tıklanınca hedef dialog'un kendisidir
+  if (event.target === $('settings-dialog')) requestCloseSettings();
+};
+// Chrome, kullanıcı etkileşimi olmadan basılan Esc'te 'cancel'ı iptal ettirmeyebilir ve
+// pencereyi doğrudan kapatır. Taslak kirliyken kapandıysa pencereyi uyarıyla geri aç.
+$('settings-dialog').onclose = () => {
+  if (!isDirty()) return;
+  $('settings-dialog').showModal();
+  $('unsaved-dialog').showModal();
+};
+
+$('btn-unsaved-save').onclick = async () => {
+  await saveSettings();
+  $('unsaved-dialog').close();
+  $('settings-dialog').close();
+};
+$('btn-unsaved-discard').onclick = () => {
+  loadDraft();
+  $('unsaved-dialog').close();
+  $('settings-dialog').close();
+};
+$('btn-unsaved-back').onclick = () => $('unsaved-dialog').close();
+
+
+// -----------------------------------------------------------------------------
+// BAŞLANGIÇ: state'i ve ayarları oku, sonra her değişiklikte yeniden çiz
 // -----------------------------------------------------------------------------
 
-chrome.storage.local.get('state').then((r) => {
+chrome.storage.local.get(['state', 'settings']).then((r) => {
   state = r.state ?? EMPTY_STATE;
+  settings = { ...DEFAULT_SETTINGS, ...r.settings };
   render();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes.state) return;
-  state = changes.state.newValue ?? EMPTY_STATE;
-  render();
+  if (area !== 'local') return;
+  if (changes.state) {
+    state = changes.state.newValue ?? EMPTY_STATE;
+    render();
+  }
+  if (changes.settings) {
+    // Kaydedilmiş ayarlar değişti. Açık pencerede taslak korunur, sadece buton güncellenir.
+    settings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
+    renderSaveButton();
+  }
 });
