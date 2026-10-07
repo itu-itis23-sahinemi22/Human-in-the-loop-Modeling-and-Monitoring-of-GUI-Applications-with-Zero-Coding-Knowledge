@@ -1,4 +1,6 @@
-/* Yan panelin görünümü. Bilerek sade tutuldu: framework yok, sadece birkaç renk değişkeni. */
+/* Yan panelin görünümü. Bilerek sade tutuldu: framework yok, sadece renk değişkenleri.
+   Tema theme.js'te <html data-theme="light|dark"> ile seçilir; tüm renkler buradaki
+   değişkenlerden gelir (graph renkleri dahil, panel.js > graphStyle). */
 
 :root {
   --bg: #f8fafc;
@@ -8,8 +10,42 @@
   --muted: #64748b;
   --primary: #2563eb;
   --danger: #dc2626;
+  --ok: #15803d;
+  --warn: #b45309;
   --highlight: #fef3c7;
+  --highlight-border: #f59e0b;
+  --error-bg: #fee2e2;
+  --notice-bg: #dbeafe;
+  --notice-text: #1e40af;
+  --graph-node: #e2e8f0;
+  --graph-node-border: #94a3b8;
+  --graph-edge: #64748b;
+  --graph-label-bg: #ffffff;
+  --graph-current: #16a34a;
   color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --primary: #3b82f6;
+  --danger: #f87171;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --highlight: #3b2f12;
+  --highlight-border: #b45309;
+  --error-bg: #450a0a;
+  --notice-bg: #172554;
+  --notice-text: #93c5fd;
+  --graph-node: #334155;
+  --graph-node-border: #64748b;
+  --graph-edge: #94a3b8;
+  --graph-label-bg: #1e293b;
+  --graph-current: #22c55e;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -51,15 +87,15 @@ button[hidden] { display: none; }
   padding: 10px;
   margin: 10px 0;
 }
-.card.highlight { background: var(--highlight); border-color: #f59e0b; }
+.card.highlight { background: var(--highlight); border-color: var(--highlight-border); }
 
 .message {
   margin: 8px 0;
   padding: 8px;
   border-radius: 6px;
 }
-.message.error { background: #fee2e2; color: var(--danger); }
-.message.notice { background: #dbeafe; color: #1e40af; }
+.message.error { background: var(--error-bg); color: var(--danger); }
+.message.notice { background: var(--notice-bg); color: var(--notice-text); }
 
 #graph {
   height: 45vh;
@@ -87,6 +123,8 @@ button[hidden] { display: none; }
   padding: 4px 6px;
   border: 1px solid var(--border);
   border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
   font: 12px ui-monospace, Consolas, monospace;
 }
 
@@ -94,8 +132,21 @@ button[hidden] { display: none; }
 .actions li { margin: 3px 0; }
 .actions code { display: block; color: var(--muted); font-size: 10px; word-break: break-all; }
 
+/* Edge detayındaki aksiyon: etki işareti ve sil butonu */
+.actions li.editable { position: relative; padding-right: 24px; }
+.actions li.editable .delete-action { position: absolute; top: 0; right: 0; }
+.effect { margin-left: 4px; padding: 0 5px; border-radius: 8px; border: 1px solid currentColor; font-size: 10px; white-space: nowrap; }
+.effect.changed { color: var(--warn); }
+.effect.unchanged { color: var(--ok); }
+.effect.unknown { color: var(--muted); }
+.reasons { margin: 6px 0; padding-left: 18px; font-size: 12px; }
+.reasons li { margin: 3px 0; }
+
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .title-row h1, .title-row h2 { margin: 0; }
+.header-actions { display: flex; gap: 2px; }
+/* Tema butonu: aydınlıkta ay (karanlığa geç), karanlıkta güneş (aydınlığa geç) */
+:root[data-theme="dark"] .icon-moon, :root:not([data-theme="dark"]) .icon-sun { display: none; }
 button.icon {
   display: inline-flex;
   padding: 4px;
@@ -113,9 +164,9 @@ dialog {
   border-radius: 10px;
   background: var(--card);
   color: var(--text);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
-dialog::backdrop { background: rgba(15, 23, 42, 0.35); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
 .dialog-body { padding: 12px; }
 dialog.alert { width: min(86vw, 320px); }
 dialog.alert p { margin: 0 0 4px; }

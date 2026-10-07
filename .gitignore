@@ -1,0 +1,7 @@
+# Claude Code'un yerel ayarları
+.claude/
+
+# Projeye ait olmayan yerel dosyalar
+/test*.json
+*.pdf
+/bitirme adi.txt

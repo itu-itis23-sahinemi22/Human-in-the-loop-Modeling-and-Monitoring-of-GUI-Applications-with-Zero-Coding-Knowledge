@@ -34,6 +34,9 @@ const lastRecordedValue = new WeakMap();
 // Sayfanın kendisi `document` ile temsil edilir.
 const lastScrollPosition = new WeakMap([[document, { x: Math.round(scrollX), y: Math.round(scrollY) }]]);
 
+// Kaydırma başladığındaki ekran: kaydırılan kutu -> edge set (bkz. onScroll).
+const scrollStartScreen = new WeakMap();
+
 
 // -----------------------------------------------------------------------------
 // 1) AKSİYON KAYDI
@@ -46,7 +49,13 @@ const lastScrollPosition = new WeakMap([[document, { x: Math.round(scrollX), y: 
 document.addEventListener('click', onClick, true);
 document.addEventListener('change', onChange, true);
 document.addEventListener('keydown', onKeyDown, true);
+document.addEventListener('scroll', onScroll, true);
 document.addEventListener('scrollend', onScrollEnd, true);
+
+// Her aksiyon, yapıldığı andaki ekranın edge set'ini de saklar (screenBefore; kaydırmada
+// ayrıca screenAfter). Panel bununla bir aksiyonun ekranı değiştirip değiştirmediğini
+// gösterir; edge düzenlenirken silinmesi güvenli mi diye uyarır (docs/01 > Edge düzenleme).
+// Tıklama capture phase'de yakalandığı için o anki ekran, aksiyonun ÖNCESİDİR.
 
 function onClick(event) {
   // isTrusted=false olan olayları sayfanın kendi kodu üretmiştir (ör. el.click()); kullanıcı değil.
@@ -58,7 +67,8 @@ function onClick(event) {
   // Bir form alanına tıklamak sadece "odaklanmak"tır. Değeri 'change' olayıyla kaydedilecek.
   if (isFormField(el)) return;
 
-  send({ type: 'click', target: targetOf(el), selector: cssSelector(el), label: visibleText(el) || el.tagName.toLowerCase() });
+  const visible = interactableElements();
+  send({ type: 'click', target: targetOf(el, visible), screenBefore: countElements(visible), selector: cssSelector(el), label: visibleText(el) || el.tagName.toLowerCase() });
 }
 
 function onChange(event) {
@@ -74,7 +84,8 @@ function onKeyDown(event) {
   // Enter'a basıldığında tarayıcı önce 'keydown', sonra 'change' üretir.
   // Kayıttaki sıra "önce yaz, sonra Enter" olsun diye değeri burada kaydediyoruz.
   recordValue(el);
-  send({ type: 'enter', target: targetOf(el), selector: cssSelector(el), label: 'Submit ' + fieldName(el) });
+  const visible = interactableElements();
+  send({ type: 'enter', target: targetOf(el, visible), screenBefore: countElements(visible), selector: cssSelector(el), label: 'Submit ' + fieldName(el) });
 }
 
 // Aksiyonun hedefi, state ile AYNI düzeyde: anahtar (tür) + ekranda görünen aynı anahtarlı
@@ -82,9 +93,9 @@ function onKeyDown(event) {
 // için (bkz. fingerprint) aynı state sayılan her ekranda "bu türün n'incisi" de bulunur.
 // Tekrar oynatırken önce bu hedef, bulunamazsa selector kullanılır. Element o an ekranda
 // tıklanabilir değilse index null'dır.
-function targetOf(el) {
+function targetOf(el, visible = interactableElements()) {
   const key = elementKey(el);
-  const index = interactableElements().filter((x) => elementKey(x) === key).indexOf(el);
+  const index = visible.filter((x) => elementKey(x) === key).indexOf(el);
   return { key, index: index >= 0 ? index + 1 : null };
 }
 
@@ -94,9 +105,18 @@ function targetOf(el) {
 // Not: Kaydırma olaylarını tarayıcı ürettiği için sayfanın kendi kaydırmaları da (ör. bir
 // link sayfayı başa kaydırdığında) isTrusted=true gelir ve kaydedilir. Konum mutlak
 // olduğu için bu, tekrar oynatmada zararsızdır.
+// Kaydırma hareketinin ilk 'scroll' olayında ekranın edge set'i alınır (kaydırmanın öncesi).
+// İlk olay konum biraz değiştikten sonra gelir; bu yüzden "öncesi" yaklaşıktır.
+function onScroll(event) {
+  if (!event.isTrusted || scrollStartScreen.has(event.target)) return;
+  scrollStartScreen.set(event.target, countElements(interactableElements()));
+}
+
 function onScrollEnd(event) {
   if (!event.isTrusted) return;
   const box = event.target; // sayfanın kendisi kaydırıldıysa document, değilse kaydırılan kutu
+  const screenBefore = scrollStartScreen.get(box);
+  scrollStartScreen.delete(box);
   const page = box === document;
   const x = Math.round(page ? scrollX : box.scrollLeft);
   const y = Math.round(page ? scrollY : box.scrollTop);
@@ -107,7 +127,8 @@ function onScrollEnd(event) {
 
   const direction = y !== previous.y ? (y > previous.y ? 'down' : 'up') : (x > previous.x ? 'right' : 'left');
   // selector null = sayfanın kendisi kaydırıldı (window.scrollTo); değilse kaydırılan kutu.
-  send({ type: 'scroll', selector: page ? null : cssSelector(box), x, y, label: 'Scroll ' + direction });
+  send({ type: 'scroll', selector: page ? null : cssSelector(box), x, y, label: 'Scroll ' + direction,
+    screenBefore, screenAfter: countElements(interactableElements()) });
 }
 
 function recordValue(el) {
@@ -117,7 +138,8 @@ function recordValue(el) {
 
   const value = el.type === 'password' && MASK_PASSWORDS ? '******' : realValue;
   const verb = el.tagName === 'SELECT' ? 'Select' : el.type === 'checkbox' || el.type === 'radio' ? 'Check' : 'Fill';
-  send({ type: 'input', target: targetOf(el), selector: cssSelector(el), value, label: verb + ' ' + fieldName(el) });
+  const visible = interactableElements();
+  send({ type: 'input', target: targetOf(el, visible), screenBefore: countElements(visible), selector: cssSelector(el), value, label: verb + ' ' + fieldName(el) });
 }
 
 // Metin girilen / seçim yapılan alanlar. Butonlar (submit, button...) bu gruba girmez.
@@ -157,16 +179,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // hangilerinin state'e gireceğine background karar verir (ayar sonradan değişse de eski
 // node'lar yeni seçimle karşılaştırılabilir).
 function fingerprint() {
+  return { url: location.href, title: document.title, elements: countElements(interactableElements()) };
+}
+
+// Elementleri anahtar + tür grubuna göre sayar (yukarıdaki biçim).
+function countElements(visible) {
   const groups = new Map(); // "anahtar|türler" -> { key, types, count }
-  for (const el of interactableElements()) {
+  for (const el of visible) {
     const key = elementKey(el);
     const types = INTERACTABLE_TYPES.filter((t) => el.matches(t.selector)).map((t) => t.selector);
     const id = key + '|' + types.join(' ');
     if (groups.has(id)) groups.get(id).count++;
     else groups.set(id, { key, types, count: 1 });
   }
-  const elements = [...groups.values()].sort((a, b) => a.key.localeCompare(b.key) || a.types.join().localeCompare(b.types.join()));
-  return { url: location.href, title: document.title, elements };
+  return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key) || a.types.join().localeCompare(b.types.join()));
 }
 
 // Kullanıcının ŞU AN etkileşime girebileceği elementler, yani node'un edge set'i.

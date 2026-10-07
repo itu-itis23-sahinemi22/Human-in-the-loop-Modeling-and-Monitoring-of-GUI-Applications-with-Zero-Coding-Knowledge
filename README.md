@@ -84,9 +84,12 @@ Panelde diğer işlemler:
 
 - **Graph'taki bir node veya edge'e tıklamak:** detay kartını açar. Node için ekran görüntüsünü, edge için kaydedilmiş aksiyon listesini gösterir.
 - **İsmi kaydet:** otomatik verilen ismi (`e_Cart1Items` gibi) daha anlamlı bir isimle değiştirir.
+- **Edge aksiyonlarını düzenlemek:** edge detayında her aksiyonun yanında "ekranı değiştirdi / değiştirmedi" işareti ve sil butonu (✕) vardır. Ekranı değiştirmeyen aksiyon (ör. iki kez tıklanmış aynı buton) doğrudan silinir; ekranı değiştiren aksiyon için gerekçeli uyarı çıkar. En az bir aksiyon kalır, aksiyon eklenemez (eksik aksiyon için edge yeniden kaydedilir). Silme **Geri al** ile geri alınır. Detay: [docs/01 > Edge düzenleme](docs/01-mimari.md#edge-düzenleme)
+- **Aydınlık / karanlık tema:** sağ üstte çarkın solundaki ay/güneş simgesi. Seçim hatırlanır; seçim yapılmadıysa sistem teması kullanılır.
 - **Buradan devam et:** bir sonraki edge'in hangi node'dan çıkacağını elle seçer. Kayda geçirmeden bilinen bir duruma döndüyseniz kullanın. Kayıt sekmesi kapandıysa kayıt, butona bastığınız sekmede sürer.
 - **Sil:** seçili node'u (ve ona bağlı edge'leri) ya da seçili edge'i siler.
-- **Sıfırla:** graph'ı temizler (ayarlar kalır). Yanlışlıkla basılmasın diye iki kez tıklamak gerekir.
+- **Geri al** (araç çubuğu) ya da **Ctrl+Z:** son silmeyi geri alır: node (bağlı edge'leriyle birlikte), edge ya da edge'den silinen aksiyon eski yerine döner. Son 20 silme saklanır. Butonun üzerine gelince neyin geri alınacağı yazar. Ctrl+Z için panele odaklanmış olmak gerekir; isim alanında yazarken Ctrl+Z metni geri alır.
+- **Sıfırla:** graph'ı temizler (ayarlar kalır). Yanlışlıkla basılmasın diye iki kez tıklamak gerekir. Sıfırlama geri alınamaz.
 - **Ayarlar** (sağ üstteki çark simgesi, panelin üstünde açılan pencere): iki checklist. Değişiklikler **Kaydet**'e basınca uygulanır; Kaydet yalnızca bir değişiklik varken aktiftir. Kaydetmeden kapatmaya çalışırsanız (✕, Esc ya da pencere dışına tıklama) "Kaydet ve çık / Kaydetmeden çık / Geri dön" uyarısı çıkar.
   - *Kaydedilecek aksiyonlar:* işaretsiz tipteki aksiyonlar (ör. Kaydır) "Bekleyen aksiyonlar"a eklenmez.
   - *State'e dahil edilecek etkileşimli elementler:* işaretsiz türdeki elementler (ör. Link) state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut node'lar o anki seçime göre karşılaştırılır. Detay: [docs/03 > Ayarlar](docs/03-state-eslestirme.md#ayarlar-hangi-türler-statee-girer)
@@ -111,11 +114,12 @@ bitirme_demo/
     ├── manifest.json            ← eklentinin kimlik kartı: izinler, hangi dosya nerede çalışır
     ├── background.js            ← BEYİN: graph state'i, node/edge mantığı, state eşleştirme
     ├── content.js               ← SENSÖR: her sayfaya enjekte edilir, aksiyonları yakalar
-    ├── settings.js              ← AYARLAR: aksiyon ve element türü listelerinin tek tanımı (üç parça da yükler)
+    ├── settings.js              ← AYARLAR: aksiyon/element türü listeleri ve edge set karşılaştırması (üç parça da yükler)
     ├── sidepanel/               ← ARAYÜZ: Chrome'un yan panelinde açılan sayfa
     │   ├── panel.html           ←   iskelet (butonlar, kartlar, graph alanı)
-    │   ├── panel.css            ←   görünüm
-    │   └── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
+    │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
+    │   ├── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
+    │   └── theme.js             ←   tema seçimi (sayfa çizilmeden önce uygulanır)
     └── lib/
         └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)
 ```

@@ -11,7 +11,7 @@
 // Mimari ve mesajların tamamı: docs/01-mimari.md
 // =============================================================================
 
-// ACTION_TYPES, INTERACTABLE_TYPES, DEFAULT_SETTINGS
+// ACTION_TYPES, INTERACTABLE_TYPES, DEFAULT_SETTINGS, stateCounts(), sameCounts()
 importScripts('settings.js');
 
 // Eklenti ikonuna tıklanınca yan panel açılsın.
@@ -33,6 +33,7 @@ function emptyState() {
     edges: [],
     buffer: [],           // Son node'dan beri yapılan, henüz edge'e dönüşmemiş aksiyonlar
     pending: null,        // Aynı element kümeli node bulunduğunda kullanıcının onayını bekleyen karar
+    undo: [],             // Edge'lerden silinen aksiyonlar ("Geri al" için; en yenisi sonda)
   };
 }
 
@@ -92,6 +93,8 @@ async function handle(message, sender) {
     case 'SET_CURRENT': return setCurrent(state, message.id, message.tabId);
     case 'RESET':       return reset(state);
     case 'SET_SETTINGS': return setSettings(message.settings);
+    case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
+    case 'UNDO':        return undo(state);
   }
 }
 
@@ -291,23 +294,7 @@ function findSameStateNodes(state, capture, settings) {
     .filter((node) => node.urlKey === capture.urlKey && sameCounts(stateCounts(node.elements, settings), counts))
     .sort((a, b) => (b.id === state.currentNodeId) - (a.id === state.currentNodeId));
 }
-
-// State'in edge set'i, SAYILI küme olarak: anahtar -> ekranda kaç tane. Yalnızca Ayarlar'da
-// işaretli türlerden en az birine uyan elementler sayılır (content.js > fingerprint).
-// Önceki sürümlerin biçimiyle (sayısız küme) kaydedilmiş node karşılaştırılamaz: null döner.
-function stateCounts(elements, settings) {
-  if (!Array.isArray(elements) || elements.some((e) => typeof e !== 'object')) return null;
-  const counts = new Map();
-  for (const { key, types, count } of elements) {
-    if (types.some((t) => !settings.disabledInteractables.includes(t))) counts.set(key, (counts.get(key) ?? 0) + count);
-  }
-  return counts;
-}
-
-// İki sayılı küme birebir aynı mı? (aynı anahtarlar, aynı sayılar)
-function sameCounts(a, b) {
-  return a !== null && b !== null && a.size === b.size && [...a].every(([key, n]) => b.get(key) === n);
-}
+// stateCounts() ve sameCounts(): settings.js (panel de kullanır)
 
 // URL'yi "sayfa şablonu"na indirger. Sorgu (?..) ve hash (#..) atılır,
 // sayısal ve uzun hex/UUID path parçaları ":id" olur.
@@ -334,15 +321,90 @@ function rename(state, id, name) {
   return save(state);
 }
 
-// Node silinirse ona bağlı edge'ler de silinir.
-function remove(state, id) {
+// Node silinirse ona bağlı edge'ler de silinir. Silinenler eski yerleriyle geri al
+// yığınına yazılır (bkz. undo). Son node silinse de graph sıfırlanmaz: geri alınabilsin.
+async function remove(state, id) {
+  const nodeIndex = state.nodes.findIndex((n) => n.id === id);
+  const edgeIndex = state.edges.findIndex((e) => e.id === id);
+  if (nodeIndex < 0 && edgeIndex < 0) return;
+  const name = (state.nodes[nodeIndex] ?? state.edges[edgeIndex]).name;
+  if (nodeIndex >= 0) {
+    const edges = state.edges.map((edge, index) => ({ edge, index })).filter(({ edge }) => edge.source === id || edge.target === id);
+    pushUndo(state, { kind: 'node', node: state.nodes[nodeIndex], index: nodeIndex, edges, startNodeId: state.startNodeId, currentNodeId: state.currentNodeId });
+  } else {
+    pushUndo(state, { kind: 'edge', edge: state.edges[edgeIndex], index: edgeIndex });
+  }
+
   state.nodes = state.nodes.filter((n) => n.id !== id);
   state.edges = state.edges.filter((e) => e.id !== id && e.source !== id && e.target !== id);
   if (state.pending) state.pending.candidateIds = state.pending.candidateIds.filter((c) => c !== id); // silinen aday seçilemez
-  if (state.nodes.length === 0) return reset(state);
   if (state.currentNodeId === id) state.currentNodeId = null; // kullanıcı "Buradan devam et" ile seçer
-  if (state.startNodeId === id) state.startNodeId = state.nodes[0].id;
+  if (state.startNodeId === id) state.startNodeId = state.nodes[0]?.id ?? null;
+  await save(state);
+  return { notice: `"${name}" silindi. Geri almak için "Geri al" ya da Ctrl+Z.` };
+}
+
+// EDGE DÜZENLEME: Kullanıcı bir edge'den gereksiz aksiyonları silebilir; en az bir aksiyon
+// kalır (aksiyonsuz edge tekrar oynatılamaz). Aksiyon EKLENEMEZ: eklenen aksiyon hiç
+// gözlemlenmemiş olurdu; eksik aksiyon için edge yeniden kaydedilir. Hangi silmenin riskli
+// olduğunu panel, aksiyonların kayıttaki ekran parmak izlerinden hesaplayıp gösterir.
+// İlk silmede kayıttaki orijinal liste recordedActions'ta saklanır (izlenebilirlik).
+function removeAction(state, edgeId, index) {
+  const edge = state.edges.find((e) => e.id === edgeId);
+  if (!edge || !(index >= 0 && index < edge.actions.length)) return;
+  if (edge.actions.length === 1) throw new Error("Edge'de en az bir aksiyon kalmalı.");
+  edge.recordedActions ??= edge.actions.map(withoutScreens);
+  const [action] = edge.actions.splice(index, 1);
+  pushUndo(state, { kind: 'action', edgeId, index, action });
   return save(state);
+}
+
+
+// -----------------------------------------------------------------------------
+// GERİ AL: node, edge ve edge'den aksiyon silmeleri ("Geri al" butonu / Ctrl+Z)
+// -----------------------------------------------------------------------------
+// Yanlışlıkla silinen bir node ya da edge graph'ı bozabilir. Her silme, silineni ve eski
+// yerini bir yığına yazar; geri al son silmeyi tersine çevirir (en yenisi önce). Tüm
+// graph'ın kopyası tutulmaz: kopyalar ekran görüntüleriyle depolamayı şişirirdi.
+const UNDO_LIMIT = 20;
+
+function pushUndo(state, entry) {
+  state.undo = [...(state.undo ?? []), entry].slice(-UNDO_LIMIT);
+}
+
+async function undo(state) {
+  const entry = state.undo?.pop();
+  if (!entry) return { notice: 'Geri alınacak bir silme yok.' };
+  const insert = (list, index, item) => list.splice(Math.min(index, list.length), 0, item);
+  let notice;
+
+  if (entry.kind === 'node') {
+    // Node ve onunla birlikte silinen edge'ler eski sıralarına döner
+    insert(state.nodes, entry.index, entry.node);
+    for (const { edge, index } of entry.edges) insert(state.edges, index, edge);
+    if (entry.startNodeId === entry.node.id || !state.startNodeId) state.startNodeId = entry.startNodeId ?? entry.node.id;
+    if (entry.currentNodeId === entry.node.id && !state.currentNodeId) state.currentNodeId = entry.node.id;
+    notice = `"${entry.node.name}" node'u` + (entry.edges.length ? ` ve ${entry.edges.length} edge'i` : '') + ' geri getirildi.';
+  } else if (entry.kind === 'edge') {
+    const ends = [entry.edge.source, entry.edge.target].every((id) => state.nodes.some((n) => n.id === id));
+    if (!ends) return save(state).then(() => ({ notice: `"${entry.edge.name}" geri getirilemedi: uçlarındaki node artık yok.` }));
+    insert(state.edges, entry.index, entry.edge);
+    notice = `"${entry.edge.name}" edge'i geri getirildi.`;
+  } else {
+    // Edge'den silinen aksiyon. Tüm silmeler geri alınınca edge kayıttaki haline döner.
+    const edge = state.edges.find((e) => e.id === entry.edgeId);
+    if (!edge) return save(state).then(() => ({ notice: 'Aksiyon geri getirilemedi: edge artık yok.' }));
+    insert(edge.actions, entry.index, entry.action);
+    if (edge.recordedActions?.length === edge.actions.length) delete edge.recordedActions;
+    notice = `"${entry.action.label}" aksiyonu "${edge.name}" edge'ine geri getirildi.`;
+  }
+  await save(state);
+  return { notice };
+}
+
+// Ekran parmak izleri yalnızca düzenleme analizi içindir; orijinal kaydın özetinde gerekmez.
+function withoutScreens({ screenBefore, screenAfter, ...action }) {
+  return action;
 }
 
 // "Buradan devam et": kullanıcı tarayıcıda zaten bilinen bir state'e döndüğünde,

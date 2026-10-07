@@ -1,8 +1,9 @@
 // =============================================================================
 // settings.js — AYARLAR (ortak tanımlar)
 // -----------------------------------------------------------------------------
-// Panelin "Ayarlar" bölümündeki iki listenin TEK tanımı. Build adımı olmadığı için
-// üç parça da bu dosyayı ayrıca yükler ve buradaki global sabitleri kullanır:
+// Panelin "Ayarlar" bölümündeki iki listenin TEK tanımı ve ayarlara bağlı edge set
+// karşılaştırması. Build adımı olmadığı için üç parça da bu dosyayı ayrıca yükler ve
+// buradaki global sabit ve fonksiyonları kullanır:
 //   content.js    : manifest.json > content_scripts > js (content.js'ten önce)
 //   background.js : importScripts('settings.js')
 //   panel.js      : panel.html'de <script> (panel.js'ten önce)
@@ -44,3 +45,27 @@ const INTERACTABLE_TYPES = [
 // Varsayılan: her şey işaretli. İşareti KALDIRILANLAR listelenir; böylece listelere
 // ileride eklenen yeni bir tip kendiliğinden işaretli gelir.
 const DEFAULT_SETTINGS = { disabledActions: [], disabledInteractables: [] };
+
+
+// -----------------------------------------------------------------------------
+// EDGE SET KARŞILAŞTIRMASI (background ve panel ortak kullanır)
+// -----------------------------------------------------------------------------
+// Ayarlar'daki element türü seçimine bağlı olduğu için burada durur. Background node
+// eşleştirmede, panel edge düzenlemede "bu aksiyon ekranı değiştirdi mi?" sorusunda kullanır.
+
+// Ekranın edge set'i, SAYILI küme olarak: anahtar -> ekranda kaç tane. Yalnızca Ayarlar'da
+// işaretli türlerden en az birine uyan elementler sayılır (content.js > fingerprint).
+// Önceki sürümlerin biçimiyle (sayısız küme) kaydedilmiş veri karşılaştırılamaz: null döner.
+function stateCounts(elements, settings) {
+  if (!Array.isArray(elements) || elements.some((e) => typeof e !== 'object')) return null;
+  const counts = new Map();
+  for (const { key, types, count } of elements) {
+    if (types.some((t) => !settings.disabledInteractables.includes(t))) counts.set(key, (counts.get(key) ?? 0) + count);
+  }
+  return counts;
+}
+
+// İki sayılı küme birebir aynı mı? (aynı anahtarlar, aynı sayılar)
+function sameCounts(a, b) {
+  return a !== null && b !== null && a.size === b.size && [...a].every(([key, n]) => b.get(key) === n);
+}

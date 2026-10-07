@@ -11,6 +11,8 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - ["Node oluştur" akışı](#node-oluştur-akışı)
 - [Edge oluşturma kuralları](#edge-oluşturma-kuralları)
 - [Aksiyonlar nasıl yakalanıyor?](#aksiyonlar-nasıl-yakalanıyor)
+- [Edge düzenleme](#edge-düzenleme)
+- [Geri al](#geri-al)
 - [Kayıt hangi sekmede?](#kayıt-hangi-sekmede)
 - [Service worker'ın ölümlülüğü](#service-workerın-ölümlülüğü)
 
@@ -62,7 +64,7 @@ Eklentinin tek "durum sahibi" (single source of truth).
 
 ### `settings.js`: Ortak tanımlar
 
-Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşimli element türleri `INTERACTABLE_TYPES`) ve varsayılan ayarın (`DEFAULT_SETTINGS`) **tek tanımı**. Build adımı olmadığı için üç parça da bu dosyayı ayrıca yükler: content script olarak `content.js`'ten önce (`manifest.json`), service worker'da `importScripts('settings.js')`, panelde `<script>` ile. Listeye yeni bir tip eklemek; yakalamayı, panel checklist'ini ve filtreyi birlikte günceller.
+Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşimli element türleri `INTERACTABLE_TYPES`) ve varsayılan ayarın (`DEFAULT_SETTINGS`) **tek tanımı**. Ayarlara bağlı edge set karşılaştırması (`stateCounts()`, `sameCounts()`) da buradadır; background node eşleştirmede, panel edge düzenlemede kullanır. Build adımı olmadığı için üç parça da bu dosyayı ayrıca yükler: content script olarak `content.js`'ten önce (`manifest.json`), service worker'da `importScripts('settings.js')`, panelde `<script>` ile. Listeye yeni bir tip eklemek; yakalamayı, panel checklist'ini ve filtreyi birlikte günceller.
 
 ### `manifest.json`: Kimlik kartı
 
@@ -102,6 +104,8 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
 | `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
+| `REMOVE_ACTION` | panel → background | `{ edgeId, index }` | Edge'den bir aksiyonu siler. Tek aksiyon kaldıysa reddeder. İlk silmede orijinal liste `recordedActions`'a kopyalanır; silinen aksiyon geri al yığınına (`state.undo`) girer. |
+| `UNDO` | panel → background | (boş) | Son silmeyi (node, edge ya da aksiyon) geri alır; ne geri getirildiğini `{ notice }` ile bildirir. Bkz. [Geri al](#geri-al) |
 | `CANCEL_PENDING` | panel → background | (boş) | Şu anki node seçilip "Node oluşturma, aksiyonlara devam et" denince: bekleyen karar atılır, kesilen aksiyonlar buffer'a geri döner (karar beklerken yapılanların önüne). |
 | `RENAME` | panel → background | `{ id, name }` | Node veya edge ismini değiştirir. |
 | `DELETE` | panel → background | `{ id }` | Node'u (ve bağlı edge'leri) ya da edge'i siler. |
@@ -226,6 +230,39 @@ Adres çubuğuna URL yazmak ya da geri tuşuna basmak sayfanın *içinde* olmaz,
 | `transitionType: reload` | `reload` |
 | `transitionType: typed / auto_bookmark / generated` | `navigate` (adres çubuğu, yer imi) |
 | `link`, `form_submit` ve diğerleri | *Kaydedilmez*: content.js zaten `click` / `enter` olarak kaydetti. |
+
+---
+
+## Edge düzenleme
+
+Graph'ta bir edge seçilince detay kartı aksiyonlarını listeler. Kullanıcı gereksiz bir aksiyonu (ör. iki kez tıklanmış aynı buton) silebilir.
+
+**Kurallar:**
+
+- **En az bir aksiyon kalır.** Aksiyonsuz edge tekrar oynatılamaz. Son kalan aksiyonun sil butonu pasiftir; background da reddeder.
+- **Aksiyon eklenemez.** Silmede kalan her aksiyon sayfada gerçekten yapılmış ve gözlemlenmiştir. Elle eklenen aksiyon ise hiç gözlemlenmemiş olurdu (hedefi o ekranda mı, edge'i hedef ekrana götürür mü bilinmez). Eksik aksiyon varsa edge yeniden kaydedilir: kaynak node seçilip "Buradan devam et", aksiyonlar yapılır, eski edge silinir.
+- **Karar kullanıcının, kanıt makinenin.** Her aksiyon, yapıldığı andaki ekranın edge set'ini saklar (`screenBefore`; kaydırmada ayrıca `screenAfter`). Panel bununla her aksiyonun ekranı değiştirip değiştirmediğini gösterir:
+  - *ekranı değiştirmedi*: Aksiyondan önceki ve sonraki ekran aynı. Silmek edge set açısından güvenli; uyarısız silinir.
+  - *ekranı değiştirdi*: Silinmek istenince gerekçeli uyarı çıkar. Örnekler: "ortaya çıkan: `a:new-link +1`", "edge'in son aksiyonu, silinirse edge hedef node'un ekranına varmaz", "sonraki aksiyonun hedefi bu aksiyondan önceki ekranda yoktu". Kullanıcı yine de silebilir.
+  - *etkisi bilinmiyor*: Ekran kaydı tutulmadan önce kaydedilmiş edge. Silmeden önce uyarı çıkar.
+- **Geri alınabilir.** Aksiyon silmesi de genel geri al yığınına yazılır (bkz. aşağıda [Geri al](#geri-al)).
+- **İzlenebilir.** İlk silmede kayıttaki orijinal liste `edge.recordedActions`'a kopyalanır; panel "düzenlendi (kayıtta 3)" gösterir. GraphWalker çıktısında edge `edited: true` ve `recordedActions` taşır. Tüm silmeler geri alınınca işaret kalkar.
+
+Aksiyonun öncesi ve sonrası komşu kayıtlardan bulunur: öncesi aksiyonun `screenBefore`'u (yoksa önceki aksiyonun `screenAfter`'ı, ilk aksiyonda kaynak node); sonrası aksiyonun `screenAfter`'ı (yoksa sonraki aksiyonun `screenBefore`'u, son aksiyonda hedef node). Karşılaştırma Ayarlar'daki element türü seçimiyle yapılır. Bu bir **ipucudur, kesin doğrulama değil**: bir aksiyon edge set'i değiştirmeden de önemli olabilir (sunucuda bir şeyi değiştirmek gibi). Kesin doğrulama ileride tekrar oynatmayla yapılabilir.
+
+---
+
+## Geri al
+
+Yanlışlıkla silinen bir node ya da edge graph'ı bozabilir. Bu yüzden her **silme** geri alınabilir: araç çubuğundaki **Geri al** butonu ya da panele odaklıyken **Ctrl+Z** (Mac'te Cmd+Z).
+
+- **Ne kaydedilir:** node silme (bağlı edge'leriyle birlikte), edge silme ve edge'den aksiyon silme. Her silme, silineni ve eski yerini (listedeki sırasını) `state.undo` yığınına yazar (`background.js > remove()`, `removeAction()`).
+- **Nasıl geri alınır:** Son silme tersine çevrilir (`background.js > undo()`). Node, edge'leri ve eski sıralarıyla döner. Başlangıç ya da şu anki node idiyse, bu rolleri de geri gelir (kullanıcı arada başka bir node seçmediyse). Yığında en fazla 20 silme tutulur.
+- **Neden tüm graph'ın kopyası değil:** Her silmede graph'ın kopyasını almak ekran görüntüleri yüzünden depolamayı hızla şişirirdi. Silinen parçayı ve yerini saklamak yeterli, çünkü geri al hep en son silmeden başlar (LIFO).
+- **Sınırlar:** Sadece silmeler geri alınır (node oluşturma, isim değiştirme geri alınmaz). **Sıfırla** geri alınamaz; bu yüzden iki tıklamayla onaylanır. Son node silinince graph sıfırlanmaz, boş kalır; böylece silme geri alınabilir.
+- **Ctrl+Z ne zaman çalışmaz:** İsim alanında yazarken (tarayıcı metni geri alır) ve bir pencere (dialog) açıkken.
+
+Silme sonrası panel *"v_X silindi. Geri almak için Geri al ya da Ctrl+Z."* der; butonun üzerine gelince neyin geri alınacağı yazar.
 
 ---
 

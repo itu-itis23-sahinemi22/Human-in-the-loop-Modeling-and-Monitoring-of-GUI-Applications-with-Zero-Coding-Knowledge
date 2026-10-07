@@ -132,6 +132,9 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Kaydetmeden ✕, Esc ya da pencere dışına tıklayınca uyarı çıkıyor. "Geri dön" değişiklikleri koruyor, "Kaydetmeden çık" atıyor (tekrar açınca kayıtlı hali), "Kaydet ve çık" kaydediyor.
 - [ ] Aynı küme için bir kez "Hayır, yeni node" dedikten sonra o sayfaya tekrar gelince onay kartı **iki** adayı listeliyor. İkinci aday seçilince yeni node oluşmuyor, edge o node'a çiziliyor.
 - [ ] Kartta "(şu anki node)" adayının "Evet, bu node"u iki seçenekli pencere açıyor. "Node oluşturma, aksiyonlara devam et": edge oluşmuyor, aksiyonlar "Bekleyen aksiyonlar"a geri dönüyor. "Kendine dönen edge olarak kaydet": self-loop çiziliyor. "Geri dön" karta döndürüyor.
+- [ ] Bir edge seçince aksiyonların yanında "ekranı değiştirdi / değiştirmedi" işareti var. Değiştirmeyen aksiyon ✕ ile uyarısız siliniyor; değiştiren aksiyon için gerekçeli uyarı çıkıyor. Tek aksiyon kalınca ✕ pasif.
+- [ ] Bir node'u (ya da edge'i) silince "Geri al" aktifleşiyor; Ctrl+Z ya da butonla node bağlı edge'leriyle geri geliyor.
+- [ ] Çarkın solundaki ay/güneş temayı değiştiriyor; panel kapatılıp açılınca seçim duruyor.
 - [ ] Ürün detayından tarayıcının geri tuşuyla dönünce edge adı `e_Back` oluyor.
 - [ ] Node/edge'e tıklayınca detay kartı açılıyor, isim değiştirilebiliyor.
 - [ ] Mevcut node silinince durum satırı "seçili değil" diyor. "Buradan devam et" çalışıyor.
@@ -164,6 +167,10 @@ Not: `--virtual-time-budget` ile çalışan headless modda ikinci ve sonraki `sc
 - Ayar değişince iki node aynı kümeye indiğinde kart iki adayı listeliyor (şu anki node önce, "(şu anki node)" etiketiyle), alt buton "Hiçbiri, yeni node" oluyor; ikinci aday seçilince yeni node oluşmadan edge ona çiziliyor.
 - **Sıfırla** ayarları koruyor.
 - Panelin ürettiği GraphWalker modeli (`graphWalkerModel()`), GraphWalker CLI 4.3.3'te `check` ile hatasız geçti ve `offline` ile edge kapsaması yolu üretti.
+- **Edge düzenleme:** "noop, noop, toggle" edge'inde işaretler "değiştirmedi, değiştirmedi, değiştirdi". Değiştirmeyen aksiyon uyarısız silindi ve "düzenlendi (kayıtta 3)" göründü. Değiştiren son aksiyon için gerekçeli uyarı ("ortaya çıkan: `a:new-link +1`", "edge'in son aksiyonu") çıktı, Vazgeç silmedi. Tek aksiyon kalınca sil butonu pasif oldu ve background da reddetti. GraphWalker çıktısında `edited`/`recordedActions` var, ekran parmak izleri yok.
+- **Geri al:** Panelden silinen node (bağlı edge'iyle) Ctrl+Z ile, silinen edge "Geri al" butonuyla geri geldi; düzenlenmiş edge düzenlenmiş haliyle döndü.
+- **Tema:** Ay/güneş butonu temayı değiştiriyor, tercih `localStorage`'a yazılıyor, sayfa arka planı ve graph renkleri temaya uyuyor.
+- **Bulunan yarış durumu:** Ayarlar penceresi kapatılıp çok hızlı yeniden açılınca geç gelen `close` olayı yanlışlıkla "kaydedilmemiş değişiklik" uyarısı açıyordu (dört koşunun birinde). Pencere yeniden açıldıysa eski `close` olayı artık yok sayılıyor; düzeltmeden sonra dört koşunun dördü de geçti.
 
 **Sayılı küme (multiset) ölçümleri.** Mock testlerde: aynı butondan 5 ile 4 olan ekran soru sorulmadan ayrı node; aynı sayılar (sıra farklı) aday; aynı anahtarın farklı tür grupları toplanıyor; Ayarlar filtresi tür bazında uygulanıyor; önceki sürümün biçimiyle kaydedilmiş node çökme yapmadan aday dışı kalıyor. Gerçek Chrome'da 20 satırlık kaydırılabilir listeyle ve canlı saucedemo.com'da ölçüm sonuçları: [03 > Edge hedefi](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi).
 
