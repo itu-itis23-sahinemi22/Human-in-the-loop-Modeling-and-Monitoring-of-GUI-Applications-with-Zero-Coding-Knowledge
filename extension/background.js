@@ -43,7 +43,7 @@ function emptyState() {
 let statePromise = null;
 
 function getState() {
-  statePromise ??= chrome.storage.local.get('state').then((r) => r.state ?? emptyState());
+  statePromise ??= chrome.storage.local.get('state').then((r) => (r.state ? normalizeState(r.state) : emptyState()));
   return statePromise;
 }
 

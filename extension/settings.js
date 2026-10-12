@@ -69,3 +69,26 @@ function stateCounts(elements, settings) {
 function sameCounts(a, b) {
   return a !== null && b !== null && a.size === b.size && [...a].every(([key, n]) => b.get(key) === n);
 }
+
+
+// -----------------------------------------------------------------------------
+// ESKİ SÜRÜMLERDEN KALAN STATE (background ve panel ortak kullanır)
+// -----------------------------------------------------------------------------
+// Eklenti güncellenince storage'daki state silinmez; önceki sürümün şekliyle okunur.
+// Eksik alanlar tamamlanır, ilk sürümün tek adaylı onay sorusu ({ candidateId })
+// aday listesine ({ candidateIds }) çevrilir. Aynı nesne döner.
+function normalizeState(state) {
+  state.nodes ??= [];
+  state.edges ??= [];
+  state.buffer ??= [];
+  state.undo ??= [];
+  state.pending ??= null;
+  const pending = state.pending;
+  if (pending && !Array.isArray(pending.candidateIds)) {
+    pending.candidateIds = pending.candidateId ? [pending.candidateId] : [];
+    delete pending.candidateId;
+    delete pending.similarity;
+  }
+  if (pending) pending.actions ??= [];
+  return state;
+}

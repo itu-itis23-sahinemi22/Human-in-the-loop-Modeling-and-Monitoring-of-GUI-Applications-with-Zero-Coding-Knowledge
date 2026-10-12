@@ -706,7 +706,7 @@ $('btn-unsaved-back').onclick = () => $('unsaved-dialog').close();
 // -----------------------------------------------------------------------------
 
 chrome.storage.local.get(['state', 'settings']).then((r) => {
-  state = r.state ?? EMPTY_STATE;
+  state = r.state ? normalizeState(r.state) : EMPTY_STATE;
   settings = { ...DEFAULT_SETTINGS, ...r.settings };
   render();
 });
@@ -714,7 +714,7 @@ chrome.storage.local.get(['state', 'settings']).then((r) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.state) {
-    state = changes.state.newValue ?? EMPTY_STATE;
+    state = changes.state.newValue ? normalizeState(changes.state.newValue) : EMPTY_STATE;
     render();
   }
   if (changes.settings) {
