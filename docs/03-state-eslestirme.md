@@ -204,7 +204,7 @@ Sayfa kaydırıldıktan sonra "Node oluştur"a basıldığında iki durum var:
 **Sonuçları:**
 
 - **Kaydırma konumu state'in parçasıdır.** Aynı sayfanın üst ve alt kısmı iki ayrı node olabilir.
-- **Model pencere boyutuna bağlıdır.** Ekrana sığan elementler pencere boyutuna göre değişir. Testi çalıştıran otomasyon aracı, kayıttaki pencere (viewport) boyutunu kullanmalıdır; aksi halde state'ler tutmaz.
+- **Model pencere boyutuna bağlıdır.** Ekrana sığan elementler pencere boyutuna ve tarayıcı yakınlaştırmasına göre değişir. Kayıt sırasındaki yakınlaştırmalar `zoom` aksiyonu olarak kaydedilir ([04 > Aksiyon](04-veri-modeli.md#aksiyon)). Testi çalıştıran otomasyon aracı, kayıttaki pencere (viewport) boyutunu kullanmalıdır; aksi halde state'ler tutmaz.
 - **Sayfanın kendi kaydırmaları da kaydedilir.** Tarayıcı kullanıcının ve sayfanın yaptığı kaydırmaları ayırt etmez (ör. bir linke tıklanınca sayfa başa kaydırılır). Konum mutlak olduğu için bu kaydırmaları tekrar oynatmak zararsızdır. Edge'e ismini ise kaydırma olmayan son aksiyon verir (`e_Product`, `e_ScrollUp` değil).
 
 ---

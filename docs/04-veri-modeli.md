@@ -29,6 +29,7 @@ Tüm veri `chrome.storage.local` içinde **`state`** anahtarı altında, tek bir
 | `edges` | `Edge[]` | Tüm edge'ler |
 | `buffer` | `Action[]` | Son node'dan beri yapılan, henüz bir edge'e dönüşmemiş aksiyonlar. Panelde "Bekleyen aksiyonlar" listesi. |
 | `pending` | `Pending \| null` | Element kümesi birebir aynı bir node bulunduğunda kullanıcının cevabını bekleyen karar |
+| `screen` | `{ key, types, count }[] \| null` | Hemen önceki state: en son görülen ekranın edge set'i (node `elements` ile aynı biçim). Sıradaki aksiyonun öncesidir; aksiyonun `changed` işareti bununla bulunur. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
 | `undo` | `Silme[]` | Geri al yığını, en yenisi sonda, en fazla 20. Her kayıt silineni ve eski yerini tutar: `{ kind: 'node', node, index, edges: [{ edge, index }], startNodeId, currentNodeId }`, `{ kind: 'edge', edge, index }`, `{ kind: 'action', edgeId, index, action }` ya da `{ kind: 'merge', keepId, node, index, edges: [{ id, source, target }], startNodeId, currentNodeId }` (birleştirmede taşınan edge'lerin eski uçları). Bkz. [01 > Geri al](01-mimari.md#geri-al) |
 
 ---
@@ -60,7 +61,7 @@ Bir node'dan diğerine (ya da kendisine) geçişi temsil eder.
 | `source` | `string` | `"n1"` | Çıkış node'unun id'si |
 | `target` | `string` | `"n2"` | Varış node'unun id'si. `source` ile aynıysa self-loop'tur. |
 | `actions` | `Action[]` | (aşağıda) | Bu geçişi oluşturan aksiyonlar, **gerçekleşme sırasıyla** |
-| `recordedActions` | `Action[]` (opsiyonel) | | Edge panelde düzenlendiyse (aksiyon silindiyse) kayıttaki orijinal liste, ekran parmak izleri olmadan. Tüm silmeler geri alınınca kaldırılır. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
+| `recordedActions` | `Action[]` (opsiyonel) | | Edge panelde düzenlendiyse (aksiyon silindiyse) kayıttaki orijinal liste. Tüm silmeler geri alınınca kaldırılır. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
 
 ---
 
@@ -72,9 +73,8 @@ Kullanıcının tek bir hareketi. Ortak alanlar:
 |---|---|---|
 | `type` | `string` | Aksiyon tipi (aşağıdaki tablo) |
 | `target` | `{ key, index }` | Sadece `click`, `input`, `enter`: hedef element, state ile aynı düzeyde. `key` elementin türü, `index` ekranda görünen aynı türdekiler arasındaki DOM sırası (1'den). Örnek: `{ "key": "button:Sil", "index": 2 }` = "ekrandaki 2. Sil". Element o an ekranda tıklanabilir değilse `index` `null`. Tekrar oynatırken önce bu kullanılır ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)). |
-| `screenBefore` | `{ key, types, count }[]` | Aksiyon anındaki ekranın edge set'i (node `elements` ile aynı biçim). Tıklama, yazma ve Enter'da aksiyonun **öncesi**; kaydırmada kaydırma başladığı an (yaklaşık). Edge düzenlemede "bu aksiyon ekranı değiştirdi mi?" sorusu için kullanılır; GraphWalker çıktısına girmez. |
-| `screenAfter` | `{ key, types, count }[]` | Sadece `scroll`: kaydırma bittiğindeki ekranın edge set'i. |
-| `selector` | `string \| null` | Elementi bulan CSS selector (yedek; `target` bulunamazsa). Tarayıcı seviyesindeki gezinmelerde ve sayfanın kendisi kaydırıldığında `null`. |
+| `changed` | `boolean \| null` | Aksiyon state'i (edge set'i) değiştirdi mi: hemen önceki state ile aksiyondan sonra sayfa durulunca görülen state karşılaştırılır. `null` ya da yok: bilinmiyor. Yalnızca edge düzenlemedeki silme uyarısı için; GraphWalker çıktısına girmez. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
+| `selector` | `string \| null` | Elementi bulan CSS selector (yedek; `target` bulunamazsa). Tarayıcı seviyesindeki gezinmelerde, yakınlaştırmada ve sayfanın kendisi kaydırıldığında `null`. |
 | `label` | `string` | İnsan tarafından okunabilir açıklama. Edge isimleri buradan türetilir. |
 | `url` | `string` | Aksiyonun yapıldığı sayfanın adresi |
 | `time` | `number` | Unix zaman damgası (ms) |
@@ -87,6 +87,7 @@ Tipler:
 | `input` | content.js | `value` (`string` ya da checkbox için `boolean`) | `"Fill Username"`, `"Select Sort"`, `"Check Remember me"` | `fill(selector, value)` / `selectOption` / `check` |
 | `enter` | content.js | | `"Submit Username"` | `press(selector, "Enter")` |
 | `scroll` | content.js | `x`, `y` (`number`): kaydırmanın vardığı konum (px) | `"Scroll down"`, `"Scroll up"` | `selector` varsa o kutuda, `null` ise sayfada `scrollTo(x, y)` |
+| `zoom` | background.js | `zoom` (`number`): tarayıcı yakınlaştırmasının vardığı oran (`1` = %100); `fromZoom` (`number`): başladığı oran | `"Zoom in"`, `"Zoom out"` | Sekmeyi `zoom` oranına ayarla (ör. `chrome.tabs.setZoom`) |
 | `navigate` | background.js | | `"GoTo cart"` | `goto(url)` |
 | `history` | background.js | | `"Back"` | `goBack()` ya da `goto(url)` |
 | `reload` | background.js | | `"Reload"` | `reload()` |
@@ -194,7 +195,7 @@ Kayda özel bilgiler (URL, parmak izi, ekran görüntüsü, kaydedilen tarayıc�
 - `selectedModelIndex` / `selectedElementId`: GraphWalker Studio'nun kendi dosyalarında bulunan alanlar. CLI bunları yok sayar.
 - `properties.graphRecorder.format`: şema değişince eski dosyaları tanımak için. `v4` = GraphWalker formatı, `elements` sayılı küme, aksiyonlarda `target`. (`v3`: GraphWalker formatı, sayısız küme; `v2` ve öncesi eklentiye özel formattı.)
 - `properties.graphRecorder.settings`: `elements`'ın hangi türlerinin state'i oluşturduğunu gösterir.
-- Edge panelde düzenlendiyse `properties` ayrıca `edited: true` ve kayıttaki orijinal aksiyonları (`recordedActions`) taşır. `uiActions` içinde ekran parmak izleri (`screenBefore`, `screenAfter`) bulunmaz; onlar yalnızca paneldeki düzenleme analizi içindir.
+- Edge panelde düzenlendiyse `properties` ayrıca `edited: true` ve kayıttaki orijinal aksiyonları (`recordedActions`) taşır. `uiActions` ve `recordedActions` içinde `changed` işareti bulunmaz; o yalnızca paneldeki silme uyarısı içindir.
 - Chrome storage nesne anahtarlarını alfabetik sıraladığı için `elements` içindeki türlerin sırası `settings.js`'teki sıradan farklı olabilir.
 
 ### GraphWalker ile doğrulama

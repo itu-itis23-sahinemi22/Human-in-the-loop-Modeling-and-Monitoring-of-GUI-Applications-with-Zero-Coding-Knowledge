@@ -44,6 +44,7 @@ Bu tablo tasarımı doğrudan belirliyor:
 Ziyaret edilen **her** sayfaya Chrome tarafından otomatik olarak eklenir (`manifest.json > content_scripts`).
 
 - **Aksiyon yakalama:** `click`, `change`, `keydown(Enter)` ve `scrollend` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, target, selector, label, value, url, time}`; kaydırmada `target`/`value` yerine `x, y`) background'a gönderir. `target` hedefi state ile aynı düzeyde tutar: "ekrandaki n'inci `button:Sil`" ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)).
+- **Aksiyonun sonrası:** Her aksiyondan, sayfa yüklenmesinden, geri/ileriden ve pencere boyutu değişiminden (yakınlaştırma dahil) sonra sayfanın durulmasını bekler (300 ms DOM değişmez; en fazla 3 sn) ve ekranın edge set'ini background'a bildirir (`SCREEN`). Background aksiyonun state'i değiştirip değiştirmediğini bununla bulur. Detay: [Edge düzenleme](#edge-düzenleme)
 - **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini döndürür. Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
 - **Selector üretimi:** Her aksiyon için elementi tekil olarak bulan bir CSS selector üretir. Kayıtların ileride tekrar oynatılabilmesi buna bağlıdır.
 
@@ -101,7 +102,8 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 
 | Mesaj | Gönderen → Alan | İçerik | Ne yapar |
 |---|---|---|---|
-| `ACTION` | content → background | `{ action }` | Aksiyonu buffer'a ekler. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. |
+| `ACTION` | content → background | `{ action, screen }` | Aksiyonu buffer'a ekler. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. |
+| `SCREEN` | content → background | `{ screen }` | Sayfa durulunca ekranın edge set'i. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. |
 | `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
 | `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
@@ -233,6 +235,8 @@ Adres çubuğuna URL yazmak ya da geri tuşuna basmak sayfanın *içinde* olmaz,
 | `transitionType: typed / auto_bookmark / generated` | `navigate` (adres çubuğu, yer imi) |
 | `link`, `form_submit` ve diğerleri | *Kaydedilmez*: content.js zaten `click` / `enter` olarak kaydetti. |
 
+Tarayıcı yakınlaştırması (Ctrl + / Ctrl -, Ctrl + tekerlek, menü) da sayfanın içinde olmaz. Background bunu `chrome.tabs.onZoomChange` ile yakalar ve `zoom` aksiyonu üretir: oran büyüdüyse `Zoom in`, küçüldüyse `Zoom out`; varılan oran (`zoom`) saklanır. State yalnızca ekrana sığan elementlerden oluştuğu için yakınlaştırma da kaydırma gibi state'i değiştirebilir. Chrome oranı site başına sakladığı için başka bir siteye geçince oran kendiliğinden de değişebilir; bu da kaydedilir, oran mutlak olduğu için tekrar oynatmada zararsızdır. Sayfa durulmadan art arda gelen yakınlaştırmalar (tekerleğin her çentiği) tek aksiyon olur: oran güncellenir, başlangıç oranına (`fromZoom`) dönülürse aksiyon düşer.
+
 ---
 
 ## Edge düzenleme
@@ -243,14 +247,27 @@ Graph'ta bir edge seçilince detay kartı aksiyonlarını listeler. Kullanıcı 
 
 - **En az bir aksiyon kalır.** Aksiyonsuz edge tekrar oynatılamaz. Son kalan aksiyonun sil butonu pasiftir; background da reddeder.
 - **Aksiyon eklenemez.** Silmede kalan her aksiyon sayfada gerçekten yapılmış ve gözlemlenmiştir. Elle eklenen aksiyon ise hiç gözlemlenmemiş olurdu (hedefi o ekranda mı, edge'i hedef ekrana götürür mü bilinmez). Eksik aksiyon varsa edge yeniden kaydedilir: kaynak node seçilip "Buradan devam et", aksiyonlar yapılır, eski edge silinir.
-- **Karar kullanıcının, kanıt makinenin.** Her aksiyon, yapıldığı andaki ekranın edge set'ini saklar (`screenBefore`; kaydırmada ayrıca `screenAfter`). Panel bununla her aksiyonun ekranı değiştirip değiştirmediğini gösterir:
-  - *ekranı değiştirmedi*: Aksiyondan önceki ve sonraki ekran aynı. Silmek edge set açısından güvenli; uyarısız silinir.
-  - *ekranı değiştirdi*: Silinmek istenince gerekçeli uyarı çıkar. Örnekler: "ortaya çıkan: `a:new-link +1`", "edge'in son aksiyonu, silinirse edge hedef node'un ekranına varmaz", "sonraki aksiyonun hedefi bu aksiyondan önceki ekranda yoktu". Kullanıcı yine de silebilir.
-  - *etkisi bilinmiyor*: Ekran kaydı tutulmadan önce kaydedilmiş edge. Silmeden önce uyarı çıkar.
+- **Karar kullanıcının, kanıt makinenin.** Her aksiyon kayıt sırasında "state'i değiştirdi mi?" diye işaretlenir (`changed`, aşağıda). Panel bunu her aksiyonun yanında gösterir:
+  - *ekranı değiştirmedi*: Aksiyondan önceki ve sonraki state aynı. Silmek edge set açısından güvenli; uyarısız silinir.
+  - *ekranı değiştirdi*: Silinmek istenince gerekçeli uyarı çıkar; edge'in son aksiyonuysa "silinirse edge hedef node'un ekranına varmaz" da eklenir. Kullanıcı yine de silebilir.
+  - *etkisi bilinmiyor*: Bu özellikten önce kaydedilmiş edge ya da aksiyonun sonrası görülemedi (aşağıda). Silmeden önce uyarı çıkar.
 - **Geri alınabilir.** Aksiyon silmesi de genel geri al yığınına yazılır (bkz. aşağıda [Geri al](#geri-al)).
 - **İzlenebilir.** İlk silmede kayıttaki orijinal liste `edge.recordedActions`'a kopyalanır; panel "düzenlendi (kayıtta 3)" gösterir. GraphWalker çıktısında edge `edited: true` ve `recordedActions` taşır. Tüm silmeler geri alınınca işaret kalkar.
 
-Aksiyonun öncesi ve sonrası komşu kayıtlardan bulunur: öncesi aksiyonun `screenBefore`'u (yoksa önceki aksiyonun `screenAfter`'ı, ilk aksiyonda kaynak node); sonrası aksiyonun `screenAfter`'ı (yoksa sonraki aksiyonun `screenBefore`'u, son aksiyonda hedef node). Karşılaştırma Ayarlar'daki element türü seçimiyle yapılır. Bu bir **ipucudur, kesin doğrulama değil**: bir aksiyon edge set'i değiştirmeden de önemli olabilir (sunucuda bir şeyi değiştirmek gibi). Kesin doğrulama ileride tekrar oynatmayla yapılabilir.
+**İşaret nasıl bulunur?** Background hafızada tek bir state tutar: **hemen önceki** (`state.screen`). Node oluşturulunca (ya da "Buradan devam et" denince) bu, node'un state'idir. Aksiyondan sonra sayfa durulunca content.js yeni ekranı bildirir (`SCREEN`). Aksiyon, hemen önceki state ile bu yeni state karşılaştırılarak işaretlenir ve yeni state "hemen önceki" olur:
+
+```
+node (S0) ── tıkla ── duruldu: S1 ── zoom ── duruldu: S2 ── Node oluştur: S3
+             S0 vs S1                S1 vs S2                 (açık aksiyon varsa S2 vs S3)
+```
+
+- Ekranın kendisi aksiyonda saklanmaz, sadece işaret (`true` / `false` / `null`). Karşılaştırma işaretlendiği andaki Ayarlar'la yapılır.
+- Aksiyonu background yakalasa da (yakınlaştırma, adres çubuğu, geri, yenile) öncesi bilinir: bir önceki aksiyonun sonrasıdır. Sonrası, yeni sayfa ya da yakınlaştırılmış sayfa durulunca gelir.
+- Sonrası bildirilmeden yeni aksiyon gelirse (ör. yazıp hemen Enter) açık aksiyon, yeni aksiyonun yapıldığı andaki ekranla kapatılır. Yazmanın öncesi yazmaya başlamadan önceki state'tir; yazarken ortaya çıkan buton da yazmanın etkisi sayılır.
+- Sonrası bildirilmeden background'ın yakaladığı bir aksiyon gelirse (ör. tıklayıp 300 ms içinde Ctrl +) iki aksiyonun etkisi ayrılamaz; ikisi de *etkisi bilinmiyor* olur.
+- Sayfanın aksiyonsuz değişimleri (durulduktan sonra gelen yükleme, hover) ayrıca izlenmez; bir sonraki aksiyonun etkisine karışır.
+
+Bu bir **ipucudur, kesin doğrulama değil**: bir aksiyon edge set'i değiştirmeden de önemli olabilir (sunucuda bir şeyi değiştirmek gibi). Kesin doğrulama ileride tekrar oynatmayla yapılabilir.
 
 ---
 

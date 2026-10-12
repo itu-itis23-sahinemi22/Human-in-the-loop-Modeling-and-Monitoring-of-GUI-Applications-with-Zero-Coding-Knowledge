@@ -32,6 +32,7 @@ function emptyState() {
     nodes: [],
     edges: [],
     buffer: [],           // Son node'dan beri yapılan, henüz edge'e dönüşmemiş aksiyonlar
+    screen: null,         // Hemen önceki state: en son görülen ekranın edge set'i (bkz. observeScreen)
     pending: null,        // Aynı element kümeli node bulunduğunda kullanıcının onayını bekleyen karar
     undo: [],             // Edge'lerden silinen aksiyonlar ("Geri al" için; en yenisi sonda)
   };
@@ -83,7 +84,8 @@ async function handle(message, sender) {
   const state = await getState();
   switch (message.type) {
     // content.js -> background
-    case 'ACTION':      return addAction(state, sender.tab?.id, message.action);
+    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message.screen);
+    case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen);
     // panel -> background
     case 'CREATE_NODE': return createNode(state, message.tabId, message.windowId);
     case 'RESOLVE':     return resolvePending(state, message.targetId);
@@ -104,14 +106,55 @@ async function handle(message, sender) {
 // AKSİYONLAR
 // -----------------------------------------------------------------------------
 
-async function addAction(state, tabId, action) {
+// screen: aksiyonun yapıldığı andaki ekran (content.js gönderir; background'ın yakaladığı
+// aksiyonlarda yok). Yalnızca önceki aksiyon hâlâ açıksa, onun sonrası olarak kullanılır.
+// Önceki aksiyon kapandıysa kullanılmaz: yazmada bu ekran yazılanın sonrasıdır; aksiyonun
+// öncesi, son görülen state'tir.
+async function addAction(state, tabId, action, screen = null) {
   const settings = await getSettings();
   // Kayıt başlamadıysa ya da aksiyon başka bir sekmeden geldiyse yok say.
   if (state.tabId === null || tabId !== state.tabId) return;
+  if (openAction(state)) observeScreen(state, screen, settings);
   // Ayarlarda işaretli olmayan tipteki aksiyon "Bekleyen aksiyonlar"a eklenmez.
-  if (settings.disabledActions.includes(action.type)) return;
-  state.buffer.push(action);
+  if (!settings.disabledActions.includes(action.type)) state.buffer.push(action);
   return save(state);
+}
+
+async function onScreen(state, tabId, screen) {
+  if (state.tabId === null || tabId !== state.tabId) return;
+  observeScreen(state, screen, await getSettings());
+  return save(state);
+}
+
+
+// -----------------------------------------------------------------------------
+// AKSİYONUN ETKİSİ: "state'i değiştirdi mi?"
+// -----------------------------------------------------------------------------
+// Hafızada tek bir state tutulur: hemen önceki (state.screen). Node oluşturulunca ya da
+// "Buradan devam et" denince o node'un state'i olur. Aksiyondan sonra sayfa durulunca content.js
+// yeni ekranı bildirir (SCREEN); aksiyon, önceki state ile bu ekran karşılaştırılarak
+// işaretlenir (changed) ve ekran yeni "hemen önceki state" olur. Ekranın kendisi aksiyonda
+// saklanmaz. İşaret yalnızca edge düzenlemedeki silme uyarısı içindir (docs/01 > Edge
+// düzenleme) ve işaretlendiği andaki Ayarlar'la hesaplanır.
+//
+// Sonrası bildirilmeden yeni aksiyon gelirse (ör. yazıp hemen Enter) açık aksiyon, yeni
+// aksiyonun yapıldığı andaki ekranla kapatılır. Ekransız gelen aksiyonda (background'ın
+// yakaladıkları) iki aksiyonun etkisi ayrılamaz; ikisi de "bilinmiyor" (null) olur.
+
+// Sonrası henüz görülmemiş aksiyon: buffer'ın sonundaki işaretsiz aksiyon.
+function openAction(state) {
+  const last = state.buffer.at(-1);
+  return last && last.changed === undefined ? last : null;
+}
+
+function observeScreen(state, screen, settings) {
+  const open = openAction(state);
+  if (open) {
+    const before = stateCounts(state.screen, settings);
+    const after = stateCounts(screen, settings);
+    open.changed = before && after ? !sameCounts(before, after) : null;
+  }
+  state.screen = screen;
 }
 
 // Adres çubuğuna yazma, geri/ileri ve yenileme sayfanın İÇİNDE olmadığı için
@@ -135,6 +178,41 @@ function navigationAction({ url, transitionType, transitionQualifiers, timeStamp
     return { ...base, type: 'navigate', label: 'GoTo ' + lastPathSegment(url) };
   }
   return null; // Link tıklaması / form gönderimi: content.js zaten 'click' / 'enter' olarak kaydetti.
+}
+
+// Tarayıcı yakınlaştırması (Ctrl + / Ctrl -, Ctrl + tekerlek, menü) da sayfanın içinde
+// olmadığı için buradan yakalanır. State yalnızca ekrana sığan elementlerden oluştuğu için
+// yakınlaştırma da kaydırma gibi state'i değiştirebilir. Varılan oran kaydedilir: tekrar
+// oynatırken sekme aynı orana ayarlanır. Chrome oranı site başına sakladığı için başka bir
+// siteye geçince oran kendiliğinden de değişebilir; oran mutlak olduğu için bu zararsızdır.
+// Art arda gelen yakınlaştırmalar (tekerleğin her çentiği) sayfa durulmadan geldiği için tek
+// aksiyondur: açık bir yakınlaştırma aksiyonu varsa oranı güncellenir, başlangıç oranına
+// (fromZoom) dönüldüyse aksiyon düşer. Olaylar sırayla işlenir; yoksa iki çentik aynı anda
+// "açık aksiyon yok" görüp iki ayrı aksiyon eklerdi.
+let zoomQueue = Promise.resolve();
+chrome.tabs.onZoomChange.addListener((change) => {
+  zoomQueue = zoomQueue.then(() => onZoom(change)).catch(console.error);
+});
+
+async function onZoom({ tabId, oldZoomFactor, newZoomFactor }) {
+  if (newZoomFactor === oldZoomFactor) return;
+  const state = await getState();
+  if (state.tabId !== tabId) return;
+  const open = openAction(state);
+  if (open?.type === 'zoom') {
+    if (newZoomFactor === open.fromZoom) state.buffer.pop();
+    else Object.assign(open, { zoom: newZoomFactor, label: zoomLabel(open.fromZoom, newZoomFactor) });
+    return save(state);
+  }
+  const { url } = await chrome.tabs.get(tabId);
+  return addAction(state, tabId, {
+    type: 'zoom', zoom: newZoomFactor, fromZoom: oldZoomFactor, label: zoomLabel(oldZoomFactor, newZoomFactor),
+    selector: null, url, time: Date.now(),
+  });
+}
+
+function zoomLabel(from, to) {
+  return to > from ? 'Zoom in' : 'Zoom out';
 }
 
 // Kayıt sekmesi kapatılırsa aksiyon kaydı durur. Kayıt, bir node seçilip "Buradan devam
@@ -179,7 +257,10 @@ async function createNode(state, tabId, windowId) {
   }
 
   const capture = { ...page, urlKey: urlKey(page.url) };
-  const matches = findSameStateNodes(state, capture, await getSettings());
+  const settings = await getSettings();
+  const matches = findSameStateNodes(state, capture, settings);
+  // Bu ekran açık aksiyonun sonrasıdır; sıradaki aksiyonun öncesi de node'un state'i.
+  observeScreen(state, page.elements, settings);
 
   capture.screenshot = await takeScreenshot(windowId);
   const actions = state.buffer;
@@ -348,13 +429,13 @@ async function remove(state, id) {
 // EDGE DÜZENLEME: Kullanıcı bir edge'den gereksiz aksiyonları silebilir; en az bir aksiyon
 // kalır (aksiyonsuz edge tekrar oynatılamaz). Aksiyon EKLENEMEZ: eklenen aksiyon hiç
 // gözlemlenmemiş olurdu; eksik aksiyon için edge yeniden kaydedilir. Hangi silmenin riskli
-// olduğunu panel, aksiyonların kayıttaki ekran parmak izlerinden hesaplayıp gösterir.
+// olduğunu panel, aksiyonların kayıtta aldığı "state'i değiştirdi mi?" işaretinden gösterir.
 // İlk silmede kayıttaki orijinal liste recordedActions'ta saklanır (izlenebilirlik).
 function removeAction(state, edgeId, index) {
   const edge = state.edges.find((e) => e.id === edgeId);
   if (!edge || !(index >= 0 && index < edge.actions.length)) return;
   if (edge.actions.length === 1) throw new Error("Edge'de en az bir aksiyon kalmalı.");
-  edge.recordedActions ??= edge.actions.map(withoutScreens);
+  edge.recordedActions ??= [...edge.actions];
   const [action] = edge.actions.splice(index, 1);
   pushUndo(state, { kind: 'action', edgeId, index, action });
   return save(state);
@@ -456,7 +537,7 @@ async function mergeNodes(state, keepId, removeId) {
 
 // Aynı kaynak, hedef ve aksiyon dizisine sahip edge'lerden fazla olanların sayısı.
 function countDuplicateEdges(edges) {
-  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y])]);
+  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom])]);
   const seen = new Set();
   let duplicates = 0;
   for (const e of edges) {
@@ -467,19 +548,16 @@ function countDuplicateEdges(edges) {
   return duplicates;
 }
 
-// Ekran parmak izleri yalnızca düzenleme analizi içindir; orijinal kaydın özetinde gerekmez.
-function withoutScreens({ screenBefore, screenAfter, ...action }) {
-  return action;
-}
-
 // "Buradan devam et": kullanıcı tarayıcıda zaten bilinen bir state'e döndüğünde,
 // bir sonraki edge'in hangi node'dan çıkacağını elle seçer. Buffer temizlenir.
 // Kayıt sekmesi kapatılmışsa kayıt, butona basılan sekmede sürer: aksi halde hiçbir
 // aksiyon kaydedilemez ve bekleyen aksiyon olmadan node da oluşturulamaz.
 function setCurrent(state, id, tabId) {
-  if (!state.nodes.some((n) => n.id === id)) return;
+  const node = state.nodes.find((n) => n.id === id);
+  if (!node) return;
   state.currentNodeId = id;
   state.buffer = [];
+  state.screen = node.elements; // kullanıcı bu node'un ekranında: sıradaki aksiyonun öncesi
   state.tabId ??= tabId ?? null;
   return save(state);
 }

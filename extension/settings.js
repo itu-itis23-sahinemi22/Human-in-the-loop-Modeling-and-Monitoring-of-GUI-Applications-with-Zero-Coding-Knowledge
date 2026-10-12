@@ -19,6 +19,7 @@ const ACTION_TYPES = [
   { type: 'input', text: 'Yaz' },
   { type: 'enter', text: 'Enter' },
   { type: 'scroll', text: 'Kaydır' },
+  { type: 'zoom', text: 'Yakınlaştır/Uzaklaştır' },
   { type: 'navigate', text: 'Git' },
   { type: 'history', text: 'Geri/İleri' },
   { type: 'reload', text: 'Yenile' },
@@ -51,7 +52,7 @@ const DEFAULT_SETTINGS = { disabledActions: [], disabledInteractables: [] };
 // EDGE SET KARŞILAŞTIRMASI (background ve panel ortak kullanır)
 // -----------------------------------------------------------------------------
 // Ayarlar'daki element türü seçimine bağlı olduğu için burada durur. Background node
-// eşleştirmede, panel edge düzenlemede "bu aksiyon ekranı değiştirdi mi?" sorusunda kullanır.
+// eşleştirmede ve "bu aksiyon state'i değiştirdi mi?" işaretinde, panel node birleştirmede kullanır.
 
 // Ekranın edge set'i, SAYILI küme olarak: anahtar -> ekranda kaç tane. Yalnızca Ayarlar'da
 // işaretli türlerden en az birine uyan elementler sayılır (content.js > fingerprint).
@@ -83,6 +84,7 @@ function normalizeState(state) {
   state.buffer ??= [];
   state.undo ??= [];
   state.pending ??= null;
+  state.screen ??= null;
   const pending = state.pending;
   if (pending && !Array.isArray(pending.candidateIds)) {
     pending.candidateIds = pending.candidateId ? [pending.candidateId] : [];

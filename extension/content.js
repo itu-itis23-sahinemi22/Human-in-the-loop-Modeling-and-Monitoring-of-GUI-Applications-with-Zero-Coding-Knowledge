@@ -4,10 +4,12 @@
 // Chrome bu dosyayı ziyaret edilen her web sayfasının içine otomatik enjekte eder
 // (bkz. manifest.json > content_scripts).
 //
-// İki görevi var:
+// Üç görevi var:
 //   1) Kullanıcının sayfada yaptığı aksiyonları (tıklama, yazma, Enter, kaydırma)
 //      yakalayıp background.js'e göndermek.
 //   2) background.js istediğinde sayfanın "parmak izini" (fingerprint) çıkarmak.
+//   3) Aksiyondan sonra sayfa durulunca ekranı background.js'e bildirmek; aksiyonun
+//      state'i değiştirip değiştirmediği bununla bulunur.
 //
 // Bu dosya hiçbir şey SAKLAMAZ. Sayfa değiştiğinde script de yok olur; bu yüzden
 // her aksiyon yakalandığı anda background'a gönderilir.
@@ -52,10 +54,10 @@ document.addEventListener('keydown', onKeyDown, true);
 document.addEventListener('scroll', onScroll, true);
 document.addEventListener('scrollend', onScrollEnd, true);
 
-// Her aksiyon, yapıldığı andaki ekranın edge set'ini de saklar (screenBefore; kaydırmada
-// ayrıca screenAfter). Panel bununla bir aksiyonun ekranı değiştirip değiştirmediğini
-// gösterir; edge düzenlenirken silinmesi güvenli mi diye uyarır (docs/01 > Edge düzenleme).
-// Tıklama capture phase'de yakalandığı için o anki ekran, aksiyonun ÖNCESİDİR.
+// Her aksiyon, yapıldığı andaki ekranın edge set'iyle gönderilir (send'in ikinci parametresi).
+// Background bunu yalnızca bir önceki aksiyonun sonrası henüz bildirilmemişse kullanır
+// (bkz. background.js > addAction). Tıklama capture phase'de yakalandığı için o anki ekran,
+// aksiyonun ÖNCESİDİR.
 
 function onClick(event) {
   // isTrusted=false olan olayları sayfanın kendi kodu üretmiştir (ör. el.click()); kullanıcı değil.
@@ -68,7 +70,7 @@ function onClick(event) {
   if (isFormField(el)) return;
 
   const visible = interactableElements();
-  send({ type: 'click', target: targetOf(el, visible), screenBefore: countElements(visible), selector: cssSelector(el), label: visibleText(el) || el.tagName.toLowerCase() });
+  send({ type: 'click', target: targetOf(el, visible), selector: cssSelector(el), label: visibleText(el) || el.tagName.toLowerCase() }, countElements(visible));
 }
 
 function onChange(event) {
@@ -85,7 +87,7 @@ function onKeyDown(event) {
   // Kayıttaki sıra "önce yaz, sonra Enter" olsun diye değeri burada kaydediyoruz.
   recordValue(el);
   const visible = interactableElements();
-  send({ type: 'enter', target: targetOf(el, visible), screenBefore: countElements(visible), selector: cssSelector(el), label: 'Submit ' + fieldName(el) });
+  send({ type: 'enter', target: targetOf(el, visible), selector: cssSelector(el), label: 'Submit ' + fieldName(el) }, countElements(visible));
 }
 
 // Aksiyonun hedefi, state ile AYNI düzeyde: anahtar (tür) + ekranda görünen aynı anahtarlı
@@ -127,8 +129,7 @@ function onScrollEnd(event) {
 
   const direction = y !== previous.y ? (y > previous.y ? 'down' : 'up') : (x > previous.x ? 'right' : 'left');
   // selector null = sayfanın kendisi kaydırıldı (window.scrollTo); değilse kaydırılan kutu.
-  send({ type: 'scroll', selector: page ? null : cssSelector(box), x, y, label: 'Scroll ' + direction,
-    screenBefore, screenAfter: countElements(interactableElements()) });
+  send({ type: 'scroll', selector: page ? null : cssSelector(box), x, y, label: 'Scroll ' + direction }, screenBefore);
 }
 
 function recordValue(el) {
@@ -139,7 +140,7 @@ function recordValue(el) {
   const value = el.type === 'password' && MASK_PASSWORDS ? '******' : realValue;
   const verb = el.tagName === 'SELECT' ? 'Select' : el.type === 'checkbox' || el.type === 'radio' ? 'Check' : 'Fill';
   const visible = interactableElements();
-  send({ type: 'input', target: targetOf(el, visible), screenBefore: countElements(visible), selector: cssSelector(el), value, label: verb + ' ' + fieldName(el) });
+  send({ type: 'input', target: targetOf(el, visible), selector: cssSelector(el), value, label: verb + ' ' + fieldName(el) }, countElements(visible));
 }
 
 // Metin girilen / seçim yapılan alanlar. Butonlar (submit, button...) bu gruba girmez.
@@ -149,12 +150,17 @@ function isFormField(el) {
   return false;
 }
 
-function send(action) {
+function send(action, screen) {
   action.url = location.href;
   action.time = Date.now();
   if (LOG_STATE) logState(action);
+  message({ type: 'ACTION', action, screen });
+  reportScreenWhenSettled();
+}
+
+function message(msg) {
   try {
-    chrome.runtime.sendMessage({ type: 'ACTION', action }).catch(() => { });
+    chrome.runtime.sendMessage(msg).catch(() => { });
   } catch {
     // Eklenti yeniden yüklendiyse bu eski script'in bağlantısı kopar. Sayfa yenilenince düzelir.
   }
@@ -260,7 +266,56 @@ function functionText(el) {
 
 
 // -----------------------------------------------------------------------------
-// 3) KONSOL LOGU (LOG_STATE)
+// 3) AKSİYONUN SONRASI
+// -----------------------------------------------------------------------------
+// Background her aksiyonu "state'i değiştirdi mi?" diye işaretler: hemen önceki state ile
+// aksiyondan sonraki state karşılaştırılır (bkz. background.js > observeScreen). Sonraki
+// state'i buradan, sayfa durulunca bildiririz (SCREEN). Durulmak: SETTLE_QUIET_MS boyunca DOM
+// değişmemesi ve animasyon bitmemesi; sürekli değişen sayfada en fazla SETTLE_MAX_MS beklenir.
+// Bildirim her aksiyondan sonra ve aksiyonu background'ın yakaladığı değişikliklerden sonra
+// yapılır: sayfa yüklenmesi (adres çubuğu, yenile, link), geri/ileri ve yakınlaştırma
+// (pencere boyutu değişir). Kayıt sekmesi olmayan sekmelerin bildirimini background yok sayar.
+const SETTLE_QUIET_MS = 300;
+const SETTLE_MAX_MS = 3000;
+
+let settleTimers = null; // { quiet, max }: null değilse sayfanın durulması bekleniyor
+const settleObserver = new MutationObserver(restartQuietTimer);
+
+addEventListener('popstate', reportScreenWhenSettled);
+addEventListener('resize', reportScreenWhenSettled);
+addEventListener('pageshow', (event) => event.persisted && reportScreenWhenSettled()); // geri/ileri önbellekten dönüş
+document.addEventListener('transitionend', restartQuietTimer, true);
+document.addEventListener('animationend', restartQuietTimer, true);
+reportScreenWhenSettled(); // sayfa yüklendi
+
+function reportScreenWhenSettled() {
+  stopSettle();
+  settleTimers = { quiet: setTimeout(reportScreen, SETTLE_QUIET_MS), max: setTimeout(reportScreen, SETTLE_MAX_MS) };
+  settleObserver.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+}
+
+function restartQuietTimer() {
+  if (!settleTimers) return;
+  clearTimeout(settleTimers.quiet);
+  settleTimers.quiet = setTimeout(reportScreen, SETTLE_QUIET_MS);
+}
+
+function stopSettle() {
+  if (!settleTimers) return;
+  clearTimeout(settleTimers.quiet);
+  clearTimeout(settleTimers.max);
+  settleTimers = null;
+  settleObserver.disconnect();
+}
+
+function reportScreen() {
+  stopSettle();
+  message({ type: 'SCREEN', screen: countElements(interactableElements()) });
+}
+
+
+// -----------------------------------------------------------------------------
+// 4) KONSOL LOGU (LOG_STATE)
 // -----------------------------------------------------------------------------
 // Aksiyonun yapıldığı ANDAKİ sayfa state'ini yazar. Tıklama capture phase'de
 // yakalandığı için bu, aksiyonun etkisinden ÖNCEKİ state'tir. Kaydırmada ise

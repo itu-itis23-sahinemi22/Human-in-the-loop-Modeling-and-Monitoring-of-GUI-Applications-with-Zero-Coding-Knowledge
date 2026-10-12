@@ -342,39 +342,24 @@ $('btn-merge-confirm').onclick = () => {
 // -----------------------------------------------------------------------------
 // EDGE DÜZENLEME: aksiyon silme (en az bir aksiyon kalır) ve geri alma
 // -----------------------------------------------------------------------------
-// Her aksiyon için "ekranı değiştirdi mi?" kayıttaki ekran parmak izlerinden bulunur:
-//   öncesi : aksiyonun screenBefore'u; yoksa önceki aksiyonun screenAfter'ı; ilk aksiyonda kaynak node
-//   sonrası: aksiyonun screenAfter'ı; yoksa sonraki aksiyonun screenBefore'u; son aksiyonda hedef node
-// Karşılaştırma Ayarlar'daki element türü seçimiyle yapılır (settings.js > stateCounts).
-// Parmak izi yoksa (bu özellikten önce kaydedilmiş edge) etki "bilinmiyor"dur.
+// Her aksiyon kayıt sırasında "state'i değiştirdi mi?" diye işaretlenir (changed; bkz.
+// background.js > observeScreen). İşaret yoksa (bu özellikten önce kaydedilmiş edge) ya da
+// aksiyonun sonrası görülemediyse (null) etki "bilinmiyor"dur.
 
 const EFFECT_TEXT = { changed: 'ekranı değiştirdi', unchanged: 'ekranı değiştirmedi', unknown: 'etkisi bilinmiyor' };
 
-function actionEffects(edge) {
-  const actions = edge.actions;
-  return actions.map((action, i) => {
-    const before = stateCounts(action.screenBefore ?? (i > 0 ? actions[i - 1].screenAfter : nodeById(edge.source)?.elements), settings);
-    const after = stateCounts(action.screenAfter ?? (i < actions.length - 1 ? actions[i + 1].screenBefore : nodeById(edge.target)?.elements), settings);
-    if (!before || !after) return { effect: 'unknown' };
-    if (sameCounts(before, after)) return { effect: 'unchanged', before };
-    return { effect: 'changed', before, appeared: countDiff(after, before), disappeared: countDiff(before, after) };
-  });
-}
-
-// a'da b'dekinden fazla olanlar: ["button:Sil +1", "a:menu +1"]
-function countDiff(a, b) {
-  return [...a].filter(([key, n]) => n > (b.get(key) ?? 0)).map(([key, n]) => `${key} +${n - (b.get(key) ?? 0)}`);
+function effectOf(action) {
+  return action.changed === true ? 'changed' : action.changed === false ? 'unchanged' : 'unknown';
 }
 
 function editableActionItems(edge) {
-  const effects = actionEffects(edge);
   return edge.actions.map((action, i) => {
     const li = actionItem(action);
     li.classList.add('editable');
     const badge = document.createElement('span');
-    badge.className = 'effect ' + effects[i].effect;
-    badge.textContent = EFFECT_TEXT[effects[i].effect];
-    if (effects[i].effect === 'changed') badge.title = changeText(effects[i]);
+    const effect = effectOf(action);
+    badge.className = 'effect ' + effect;
+    badge.textContent = EFFECT_TEXT[effect];
     li.querySelector('span').after(badge);
 
     const remove = document.createElement('button');
@@ -383,22 +368,17 @@ function editableActionItems(edge) {
     remove.disabled = edge.actions.length === 1;
     remove.title = remove.disabled ? "Edge'de en az bir aksiyon kalmalı" : 'Aksiyonu sil';
     remove.setAttribute('aria-label', remove.title);
-    remove.onclick = () => requestRemoveAction(edge, i, effects);
+    remove.onclick = () => requestRemoveAction(edge, i);
     li.append(remove);
     return li;
   });
 }
 
-function changeText({ appeared, disappeared }) {
-  return [appeared.length && 'ortaya çıkan: ' + appeared.join(', '), disappeared.length && 'kaybolan: ' + disappeared.join(', ')]
-    .filter(Boolean).join('; ');
-}
-
 // Silme isteği: ekranı değiştirmemiş aksiyon doğrudan silinir (geri alınabilir). Ekranı
 // değiştirmiş ya da etkisi bilinmeyen aksiyon için önce gerekçeli uyarı gösterilir.
-function requestRemoveAction(edge, i, effects) {
+function requestRemoveAction(edge, i) {
   const remove = () => send({ type: 'REMOVE_ACTION', edgeId: edge.id, index: i });
-  const reasons = removalRisks(edge, i, effects);
+  const reasons = removalRisks(edge, i);
   if (!reasons.length) return remove();
 
   $('delete-action-text').textContent = `"${edge.actions[i].label}" aksiyonu silinirse edge tekrar oynatılamayabilir:`;
@@ -410,21 +390,16 @@ function requestRemoveAction(edge, i, effects) {
   $('delete-action-dialog').showModal();
 }
 
-function removalRisks(edge, i, effects) {
-  const { effect } = effects[i];
+function removalRisks(edge, i) {
+  const effect = effectOf(edge.actions[i]);
   if (effect === 'unchanged') return [];
-  if (effect === 'unknown') return ['Bu aksiyonun ekrana etkisi bilinmiyor (bu edge, ekran kaydı tutulmadan önce kaydedilmiş).'];
+  if (effect === 'unknown') {
+    return ['Bu aksiyonun ekrana etkisi bilinmiyor (eski bir kayıt ya da aksiyonun sonrası görülmeden başka bir aksiyon yapıldı).'];
+  }
 
-  const reasons = [`Bu aksiyon ekranı değiştirmişti (${changeText(effects[i])}).`];
-  const next = edge.actions[i + 1];
-  if (!next) {
+  const reasons = ['Bu aksiyon ekranı (etkileşimli element kümesini) değiştirmişti.'];
+  if (i === edge.actions.length - 1) {
     reasons.push(`Edge'in son aksiyonu: edge'i hedef node'un (${nodeById(edge.target)?.name}) ekranına götüren aksiyon bu. Silinirse edge o ekrana varmaz.`);
-  } else if (next.target?.index) {
-    // Silinince sonraki aksiyon bu aksiyondan ÖNCEKİ ekranda çalışır; hedefi orada var mıydı?
-    const available = effects[i].before.get(next.target.key) ?? 0;
-    if (available < next.target.index) {
-      reasons.push(`Sonraki aksiyonun hedefi ("${next.target.key}" türünün ${next.target.index}.'si) bu aksiyondan önceki ekranda yoktu; bu aksiyonla ortaya çıkmıştı.`);
-    }
   }
   return reasons;
 }
@@ -468,7 +443,9 @@ function renderBuffer() {
 // Tek bir aksiyonu liste satırı olarak gösterir: "Tıkla  Login   #login-button"
 function actionItem(action) {
   const li = document.createElement('li');
-  const value = action.type === 'input' ? ` = "${action.value}"` : action.type === 'scroll' ? ` → ${action.x}, ${action.y}` : '';
+  const value = action.type === 'input' ? ` = "${action.value}"`
+    : action.type === 'scroll' ? ` → ${action.x}, ${action.y}`
+    : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}` : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
   li.querySelector('b').textContent = ACTION_TEXT[action.type] ?? action.type;
   li.querySelector('span').textContent = action.label + value;
@@ -587,17 +564,23 @@ function graphWalkerModel() {
         targetVertexId: e.target,
         properties: {
           description: e.actions.map((a) => a.label).join(' → '),
-          // tekrar oynatılacak tarayıcı aksiyonları (click, input, scroll...); ekran parmak izleri
-          // yalnızca paneldeki düzenleme analizi için tutulduğu için dışarı çıkmaz
-          uiActions: e.actions.map(({ screenBefore, screenAfter, ...action }) => action),
+          // tekrar oynatılacak tarayıcı aksiyonları (click, input, scroll...)
+          uiActions: e.actions.map(replayAction),
           // edge panelde düzenlendiyse (aksiyon silindiyse) kayıttaki orijinal liste
-          ...(e.recordedActions && { edited: true, recordedActions: e.recordedActions }),
+          ...(e.recordedActions && { edited: true, recordedActions: e.recordedActions.map(replayAction) }),
         },
       })),
     }],
     selectedModelIndex: 0,
     selectedElementId: null,
   };
+}
+
+// Dışa aktarılan aksiyon: "state'i değiştirdi mi?" işareti (changed) yalnızca paneldeki silme
+// uyarısı içindir, dışarı çıkmaz. screenBefore/screenAfter önceki sürümlerle kaydedilmiş
+// aksiyonlarda kalmış olabilir.
+function replayAction({ changed, screenBefore, screenAfter, ...action }) {
+  return action;
 }
 
 
