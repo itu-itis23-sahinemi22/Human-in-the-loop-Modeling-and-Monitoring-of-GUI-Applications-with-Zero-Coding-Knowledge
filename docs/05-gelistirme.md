@@ -125,6 +125,10 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Sayfayı kaydırınca "Bekleyen aksiyonlar"da `Kaydır  Scroll down → 0, 600` gibi bir satır çıkıyor.
 - [ ] Ürün listesinde aşağı kaydırıp "Node oluştur"a basınca (ekrana başka ürünler geldi) soru gelmiyor; yeni node ve `e_ScrollDown` edge'i oluşuyor. Tekrar en üste kaydırıp basınca, en üstteki ürün listesi node'u için "aynı state mi?" sorusu geliyor.
 - [ ] Ctrl + ile yakınlaştırınca "Bekleyen aksiyonlar"da `Yakınlaştır/Uzaklaştır  Zoom in → %110` gibi bir satır çıkıyor; Ctrl - ile `Zoom out`. Ctrl + tekerlekle birkaç çentik tek satır oluyor. Chrome menüsünden yakınlaştırıp node oluşturunca edge'deki zoom aksiyonunun etkisi "bilinmiyor" değil, "ekranı değiştirdi / değiştirmedi". Başka bir sitenin sekmesinde yakınlaştırma kaydedilmiyor (aynı sitenin başka sekmesinde yakınlaştırılınca Chrome kayıt sekmesini de yakınlaştırır; bu kaydedilir).
+- [ ] Sayfada (alan dışında) Escape'e basınca `Tuş  Press Escape` satırı çıkıyor; ok tuşunu basılı tutunca tek satır `Press ArrowDown ×N` oluyor. Alana yazılan harfler satır üretmiyor; alan değeri `Fill` olarak geliyor. Ctrl +, F5, Tab ve butonda Enter tuş olarak kaydedilmiyor.
+- [ ] Arama kutusuna yazıp ArrowDown ile öneri seçip Enter'a basınca sıra: `Fill`, `Press ArrowDown`, `Submit`.
+- [ ] Türkçe klavyede bir alana `@` yazmak (AltGr+Q) tuş olarak kaydedilmiyor.
+- [ ] `contenteditable` bir alana yazıp dışına tıklayınca `Fill` satırı çıkıyor; değiştirmeden çıkınca çıkmıyor.
 - [ ] Son node'dan beri hiçbir aksiyon yoksa "Node oluştur" butonu kilitli; üzerine gelince sebebi yazıyor. Bir aksiyon yapınca açılıyor.
 - [ ] Ayarlar'da **Kaydır**'ın işaretini kaldırınca kaydırmalar "Bekleyen aksiyonlar"a eklenmiyor; tek başına kaydırma butonu açmıyor.
 - [ ] Ayarlar'da **Link**'in işaretini kaldırınca, yalnızca linkleri farklı olan bir sayfa için yeni node yerine "aynı state mi?" sorusu geliyor. İşaret geri konunca aynı sayfa yeni node oluyor.

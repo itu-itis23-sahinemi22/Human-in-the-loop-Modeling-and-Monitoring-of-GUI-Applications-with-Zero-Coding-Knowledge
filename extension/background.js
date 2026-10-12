@@ -114,7 +114,14 @@ async function addAction(state, tabId, action, screen = null) {
   const settings = await getSettings();
   // Kayıt başlamadıysa ya da aksiyon başka bir sekmeden geldiyse yok say.
   if (state.tabId === null || tabId !== state.tabId) return;
-  if (openAction(state)) observeScreen(state, screen, settings);
+  // Aynı tuşa sayfa durulmadan yeniden basıldıysa (basılı tutma dahil) tek aksiyondur.
+  const open = openAction(state);
+  if (action.type === 'key' && open?.type === 'key' && open.key === action.key && open.selector === action.selector) {
+    open.count++;
+    open.label = `Press ${open.key} ×${open.count}`;
+    return save(state);
+  }
+  if (open) observeScreen(state, screen, settings);
   // Ayarlarda işaretli olmayan tipteki aksiyon "Bekleyen aksiyonlar"a eklenmez.
   if (!settings.disabledActions.includes(action.type)) state.buffer.push(action);
   return save(state);
@@ -537,7 +544,7 @@ async function mergeNodes(state, keepId, removeId) {
 
 // Aynı kaynak, hedef ve aksiyon dizisine sahip edge'lerden fazla olanların sayısı.
 function countDuplicateEdges(edges) {
-  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom])]);
+  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.key, a.count])]);
   const seen = new Set();
   let duplicates = 0;
   for (const e of edges) {

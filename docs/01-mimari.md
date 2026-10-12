@@ -43,7 +43,7 @@ Bu tablo tasarımı doğrudan belirliyor:
 
 Ziyaret edilen **her** sayfaya Chrome tarafından otomatik olarak eklenir (`manifest.json > content_scripts`).
 
-- **Aksiyon yakalama:** `click`, `change`, `keydown(Enter)` ve `scrollend` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, target, selector, label, value, url, time}`; kaydırmada `target`/`value` yerine `x, y`) background'a gönderir. `target` hedefi state ile aynı düzeyde tutar: "ekrandaki n'inci `button:Sil`" ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)).
+- **Aksiyon yakalama:** `click`, `change`, `focusout` (düzenlenebilir alanlar), `keydown` ve `scrollend` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, target, selector, label, value, url, time}`; kaydırmada `target`/`value` yerine `x, y`) background'a gönderir. `target` hedefi state ile aynı düzeyde tutar: "ekrandaki n'inci `button:Sil`" ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)).
 - **Aksiyonun sonrası:** Her aksiyondan, sayfa yüklenmesinden, geri/ileriden ve pencere boyutu değişiminden (yakınlaştırma dahil) sonra sayfanın durulmasını bekler (300 ms DOM değişmez; en fazla 3 sn) ve ekranın edge set'ini background'a bildirir (`SCREEN`). Background aksiyonun state'i değiştirip değiştirmediğini bununla bulur. Detay: [Edge düzenleme](#edge-düzenleme)
 - **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini döndürür. Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
 - **Selector üretimi:** Her aksiyon için elementi tekil olarak bulan bir CSS selector üretir. Kayıtların ileride tekrar oynatılabilmesi buna bağlıdır.
@@ -208,7 +208,9 @@ Durumların tamamı (`from` = şu anki node):
 |---|---|---|
 | `click` | `click` | Form alanlarına tıklamalar yok sayılır (bkz. aşağıda). Hedef, `closest()` ile en yakın etkileşimli elemente yükseltilir: butonun içindeki `<span>`'e tıklanınca butonun kendisi kaydedilir. |
 | `change` | `input` | text, select, checkbox, radio... Değer kaydedilir. Şifreler maskelenir. |
+| `focusout` (`contenteditable`) | `input` | Zengin metin editörlerinde `change` yoktur; odak alandan çıkınca metin (`innerText`) değiştiyse kaydedilir. |
 | `keydown` + Enter (input içinde) | önce `input`, sonra `enter` | Enter, `change`'den *önce* tetiklenir. Sıra doğru olsun diye değer burada kaydedilir. |
+| `keydown` (komut tuşları) | `key` | Metin harf harf kaydedilmez; alanın değeri `input` ile kaydedilir. Kaydedilenler: alan dışında her tuş (Escape, oklar, Delete, `/`, `c`...; butonda/linkte Enter ve Space hariç, onları tarayıcı `click` olarak üretir), alanda Escape, tek satırlı alanda ArrowUp/Down (öneri seçmek) ve Ctrl/Alt/Cmd kısayolları (imleç ve Ctrl+C/V/Z gibi düzenleme tuşları hariç). Hiç kaydedilmeyenler: Tab, tek başına Ctrl/Shift, tarayıcının kısayolları (Ctrl +/-, F5, Alt+←, Ctrl+F, F12...; `content.js > BROWSER_SHORTCUTS`). AltGr ile yazılan karakterler (`@`) kısayol sayılmaz. Tuştan önce alandaki değer kaydedilir: "Fill Search → Press ArrowDown". Aynı tuşa sayfa durulmadan tekrar basılırsa tek aksiyon olur (`Press ArrowDown ×3`). |
 
 content.js tüm aksiyonları yakalar ve gönderir. Ayarlar'da işaretli olmayan tipleri `background.js > addAction()` buffer'a eklemez; tarayıcı seviyesindeki gezinmeler de (aşağıda) aynı süzgeçten geçer.
 | `scrollend` (sayfa ya da kaydırılabilir kutu) | `scroll` | `scroll` olayı kaydırma boyunca onlarca kez gelir; `scrollend` hareket bitince bir kez gelir. Vardığı konum (`x`, `y`) kaydedilir. Sayfanın kendi yaptığı kaydırmalar da kaydedilir (tarayıcı bunları kullanıcınınkinden ayırmaz); konum mutlak olduğu için tekrar oynatmada zararsızdır. |

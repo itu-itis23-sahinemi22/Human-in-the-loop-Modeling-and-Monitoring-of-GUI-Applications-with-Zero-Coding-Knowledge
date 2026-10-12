@@ -18,6 +18,7 @@ const ACTION_TYPES = [
   { type: 'click', text: 'Tıkla' },
   { type: 'input', text: 'Yaz' },
   { type: 'enter', text: 'Enter' },
+  { type: 'key', text: 'Tuş' },
   { type: 'scroll', text: 'Kaydır' },
   { type: 'zoom', text: 'Yakınlaştır/Uzaklaştır' },
   { type: 'navigate', text: 'Git' },

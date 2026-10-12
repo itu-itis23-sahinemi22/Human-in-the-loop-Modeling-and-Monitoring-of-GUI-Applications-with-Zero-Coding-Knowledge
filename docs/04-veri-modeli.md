@@ -72,7 +72,7 @@ Kullanıcının tek bir hareketi. Ortak alanlar:
 | Alan | Tip | Açıklama |
 |---|---|---|
 | `type` | `string` | Aksiyon tipi (aşağıdaki tablo) |
-| `target` | `{ key, index }` | Sadece `click`, `input`, `enter`: hedef element, state ile aynı düzeyde. `key` elementin türü, `index` ekranda görünen aynı türdekiler arasındaki DOM sırası (1'den). Örnek: `{ "key": "button:Sil", "index": 2 }` = "ekrandaki 2. Sil". Element o an ekranda tıklanabilir değilse `index` `null`. Tekrar oynatırken önce bu kullanılır ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)). |
+| `target` | `{ key, index }` | Sadece `click`, `input`, `enter` ve odakta bir element varken `key`: hedef element, state ile aynı düzeyde. `key` elementin türü, `index` ekranda görünen aynı türdekiler arasındaki DOM sırası (1'den). Örnek: `{ "key": "button:Sil", "index": 2 }` = "ekrandaki 2. Sil". Element o an ekranda tıklanabilir değilse `index` `null`. Tekrar oynatırken önce bu kullanılır ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)). |
 | `changed` | `boolean \| null` | Aksiyon state'i (edge set'i) değiştirdi mi: hemen önceki state ile aksiyondan sonra sayfa durulunca görülen state karşılaştırılır. `null` ya da yok: bilinmiyor. Yalnızca edge düzenlemedeki silme uyarısı için; GraphWalker çıktısına girmez. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
 | `selector` | `string \| null` | Elementi bulan CSS selector (yedek; `target` bulunamazsa). Tarayıcı seviyesindeki gezinmelerde, yakınlaştırmada ve sayfanın kendisi kaydırıldığında `null`. |
 | `label` | `string` | İnsan tarafından okunabilir açıklama. Edge isimleri buradan türetilir. |
@@ -84,8 +84,9 @@ Tipler:
 | `type` | Kaynağı | Ek alan | `label` örneği | Tekrar oynatırken (replay) karşılığı |
 |---|---|---|---|---|
 | `click` | content.js | | `"Login"`, `"Add to cart"` | `click(selector)` |
-| `input` | content.js | `value` (`string` ya da checkbox için `boolean`) | `"Fill Username"`, `"Select Sort"`, `"Check Remember me"` | `fill(selector, value)` / `selectOption` / `check` |
+| `input` | content.js | `value` (`string` ya da checkbox için `boolean`; düzenlenebilir alanda metni) | `"Fill Username"`, `"Select Sort"`, `"Check Remember me"` | `fill(selector, value)` / `selectOption` / `check` |
 | `enter` | content.js | | `"Submit Username"` | `press(selector, "Enter")` |
+| `key` | content.js | `key` (`string`): Playwright biçiminde tuş (`"Escape"`, `"Control+Enter"`, `"/"`); `count` (`number`): art arda kaç kez basıldığı | `"Press Escape"`, `"Press ArrowDown ×3"` | `selector` varsa `press(selector, key)`, `null` ise `keyboard.press(key)`; `count` kez |
 | `scroll` | content.js | `x`, `y` (`number`): kaydırmanın vardığı konum (px) | `"Scroll down"`, `"Scroll up"` | `selector` varsa o kutuda, `null` ise sayfada `scrollTo(x, y)` |
 | `zoom` | background.js | `zoom` (`number`): tarayıcı yakınlaştırmasının vardığı oran (`1` = %100); `fromZoom` (`number`): başladığı oran | `"Zoom in"`, `"Zoom out"` | Sekmeyi `zoom` oranına ayarla (ör. `chrome.tabs.setZoom`) |
 | `navigate` | background.js | | `"GoTo cart"` | `goto(url)` |

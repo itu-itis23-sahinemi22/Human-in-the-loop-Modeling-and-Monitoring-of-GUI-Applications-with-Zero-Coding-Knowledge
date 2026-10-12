@@ -175,7 +175,7 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 
 **Yapar:**
 
-- Tıklama, form doldurma (text/select/checkbox), Enter, kaydırma (sayfa ve kaydırılabilir kutular), tarayıcı yakınlaştırma/uzaklaştırma, adres çubuğundan gezinme, geri/ileri ve yenileme aksiyonlarını kaydeder.
+- Tıklama, form doldurma (text/select/checkbox ve zengin metin editörleri), Enter, komut tuşları (Escape, oklar, kısayollar; metin harf harf kaydedilmez), kaydırma (sayfa ve kaydırılabilir kutular), tarayıcı yakınlaştırma/uzaklaştırma, adres çubuğundan gezinme, geri/ileri ve yenileme aksiyonlarını kaydeder.
 - Her aksiyon için tekrar oynatılabilir bir CSS selector üretir (`#login-button`, `[data-test=...]` gibi).
 - Node'lar için ekran görüntüsü alır ve graph'ın içinde küçük resim olarak gösterir.
 - Ekranda tıklanabilen etkileşimli element kümesi değişen her durumu (kaydırma dahil) ayrı sayar; birebir aynı kümeyi daha önce görülmüş durum olarak kullanıcıya önerir.

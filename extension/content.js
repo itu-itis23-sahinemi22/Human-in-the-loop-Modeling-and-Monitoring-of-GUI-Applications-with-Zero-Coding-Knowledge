@@ -5,7 +5,7 @@
 // (bkz. manifest.json > content_scripts).
 //
 // Üç görevi var:
-//   1) Kullanıcının sayfada yaptığı aksiyonları (tıklama, yazma, Enter, kaydırma)
+//   1) Kullanıcının sayfada yaptığı aksiyonları (tıklama, yazma, Enter, tuş, kaydırma)
 //      yakalayıp background.js'e göndermek.
 //   2) background.js istediğinde sayfanın "parmak izini" (fingerprint) çıkarmak.
 //   3) Aksiyondan sonra sayfa durulunca ekranı background.js'e bildirmek; aksiyonun
@@ -50,6 +50,8 @@ const scrollStartScreen = new WeakMap();
 // background.js > addAction() listeye eklemez.
 document.addEventListener('click', onClick, true);
 document.addEventListener('change', onChange, true);
+document.addEventListener('focusin', onFocusIn, true);
+document.addEventListener('focusout', onFocusOut, true);
 document.addEventListener('keydown', onKeyDown, true);
 document.addEventListener('scroll', onScroll, true);
 document.addEventListener('scrollend', onScrollEnd, true);
@@ -66,8 +68,9 @@ function onClick(event) {
   // Kullanıcı bir butonun içindeki <span>'e tıklamış olabilir; asıl butonu bul.
   const el = event.target.closest(INTERACTIVE) || event.target;
 
-  // Bir form alanına tıklamak sadece "odaklanmak"tır. Değeri 'change' olayıyla kaydedilecek.
-  if (isFormField(el)) return;
+  // Bir form alanına ya da düzenlenebilir alana (contenteditable) tıklamak sadece
+  // "odaklanmak"tır. Değeri 'change' / 'focusout' olayıyla kaydedilecek.
+  if (isFormField(el) || el.isContentEditable) return;
 
   const visible = interactableElements();
   send({ type: 'click', target: targetOf(el, visible), selector: cssSelector(el), label: visibleText(el) || el.tagName.toLowerCase() }, countElements(visible));
@@ -78,16 +81,100 @@ function onChange(event) {
   recordValue(event.target);
 }
 
-function onKeyDown(event) {
-  if (!event.isTrusted || event.key !== 'Enter') return;
+// Alana odaklanıldığı andaki değer "son kaydedilen" sayılır: alan değişmeden bir tuşa basılır
+// ya da odak çıkarsa (aşağıda) boş bir "Fill" kaydedilmez.
+function onFocusIn(event) {
   const el = event.target;
-  if (el.tagName !== 'INPUT' || !isFormField(el)) return;
+  if (event.isTrusted && (isFormField(el) || el.isContentEditable)) lastRecordedValue.set(el, fieldValue(el));
+}
 
+// Düzenlenebilir alanlarda (contenteditable: zengin metin editörleri) 'change' olayı yoktur;
+// değer, odak alandan çıkınca değiştiyse kaydedilir. Odak yalnızca alanın kendisine gelir,
+// içindeki paragraflara değil; event.target her zaman alanın kendisidir.
+function onFocusOut(event) {
+  if (event.isTrusted && event.target.isContentEditable) recordValue(event.target);
+}
+
+function onKeyDown(event) {
+  if (!event.isTrusted || event.isComposing) return;
+  const el = event.target;
+  if (event.key === 'Enter' && el.tagName === 'INPUT' && isFormField(el)) return recordEnter(el);
+
+  const key = commandKey(event, el);
+  if (!key) return;
+  // Alana yazılmış ama 'change'i henüz gelmemiş değer önce kaydedilir. Ör. arama kutusuna
+  // yazıp ok tuşuyla öneri seçmek: "Fill Search → Press ArrowDown".
+  if (isFormField(el) || el.isContentEditable) recordValue(el);
+  const visible = interactableElements();
+  const page = el === document.body || el === document.documentElement; // odakta bir element yok
+  send({
+    type: 'key', key, count: 1, label: 'Press ' + key,
+    ...(page ? { selector: null } : { target: targetOf(el, visible), selector: cssSelector(el) }),
+  }, countElements(visible));
+}
+
+function recordEnter(el) {
   // Enter'a basıldığında tarayıcı önce 'keydown', sonra 'change' üretir.
   // Kayıttaki sıra "önce yaz, sonra Enter" olsun diye değeri burada kaydediyoruz.
   recordValue(el);
   const visible = interactableElements();
   send({ type: 'enter', target: targetOf(el, visible), selector: cssSelector(el), label: 'Submit ' + fieldName(el) }, countElements(visible));
+}
+
+// TUŞ AKSİYONU: metin değil, komut olan tuşlar kaydedilir. Bir alana yazılan metin harf harf
+// kaydedilmez; alanın değeri 'input' aksiyonuyla kaydedilir (tekrar oynatırken gerekirse harf
+// harf yazılır). Kaydedilenin adı Playwright'ın press() biçimindedir: "Escape", "Control+S".
+//   - Form alanı ya da düzenlenebilir alan dışında: her tuş (Escape, oklar, Delete, "/", "c"...).
+//     Yalnızca butonda/linkte Enter ve Space hariç: tarayıcı onları 'click' olarak üretir.
+//   - Alanın içinde: Escape, tek satırlı metin alanında ArrowUp/ArrowDown (öneri seçmek) ve
+//     Ctrl/Alt/Cmd kısayolları (Ctrl+Enter...). İmleç ve düzenleme tuşları (oklar, Home,
+//     Backspace, Ctrl+C/V/Z...) hariç: alanın değerini değiştirirler, o da 'input' ile kaydedilir.
+//   - Hiçbir yerde: Tab (yalnızca odağı taşır), tek başına Ctrl/Shift... ve tarayıcının kendi
+//     kısayolları (aşağıda).
+const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'OS', 'Dead', 'Unidentified', 'Process']);
+const CARET_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Backspace', 'Delete']);
+const FIELD_EDITING = new Set(['ctrl+a', 'ctrl+c', 'ctrl+v', 'ctrl+x', 'ctrl+z', 'ctrl+y', 'ctrl+shift+z']);
+const ACTIVATABLE = 'button, a[href], summary, input[type="button"], input[type="submit"], input[type="reset"], input[type="image"]';
+
+// Tarayıcının kendi kısayolları: sayfada bir şey yapmazlar ya da etkilerini başka bir aksiyon
+// kaydeder (yakınlaştırma -> zoom, yenileme -> reload, geri/ileri -> history). Ctrl ile Cmd
+// (Mac) aynı sayılır. Yazım: küçük harf, "ctrl+shift+i" gibi (bkz. commandKey).
+const BROWSER_SHORTCUTS = new Set([
+  'ctrl++', 'ctrl+=', 'ctrl+-', 'ctrl+0', 'ctrl+shift++', 'ctrl+shift+_',                  // yakınlaştırma
+  'f5', 'ctrl+r', 'ctrl+f5', 'shift+f5', 'ctrl+shift+r', 'browserrefresh',                // yenileme
+  'alt+arrowleft', 'alt+arrowright', 'ctrl+[', 'ctrl+]', 'browserback', 'browserforward', // geri / ileri
+  'ctrl+f', 'ctrl+g', 'ctrl+shift+g', 'f3',                                               // sayfada bul
+  'ctrl+l', 'alt+d', 'f6', 'alt+f', 'alt+e', 'alt+home', 'ctrl+t', 'ctrl+n', 'ctrl+w',    // adres çubuğu, menü, sekme
+  'ctrl+tab', 'ctrl+shift+tab', 'ctrl+p', 'ctrl+d', 'ctrl+h', 'ctrl+j', 'ctrl+u',
+  'f11', 'f12', 'ctrl+shift+i', 'ctrl+shift+j', 'ctrl+shift+c',                           // tam ekran, DevTools
+]);
+
+// Kaydedilecek tuşun adı ya da kaydedilmeyecekse null.
+function commandKey(event, el) {
+  if (MODIFIER_KEYS.has(event.key) || event.key === 'Tab') return null;
+  // AltGr (Türkçe klavyede @, €, {) Windows'ta Ctrl+Alt gibi görünür ama yazıdır, kısayol değil.
+  const altGraph = event.getModifierState('AltGraph');
+  const ctrl = event.ctrlKey && !altGraph;
+  const alt = event.altKey && !altGraph;
+  const meta = event.metaKey;
+  const name = event.key === ' ' ? 'Space' : event.key;
+  const shortcut = [(ctrl || meta) && 'ctrl', alt && 'alt', event.shiftKey && 'shift', name.toLowerCase()].filter(Boolean).join('+');
+  if (BROWSER_SHORTCUTS.has(shortcut)) return null;
+
+  const modified = ctrl || alt || meta;
+  if (isFormField(el) || el.isContentEditable) {
+    const suggestion = (name === 'ArrowUp' || name === 'ArrowDown') && !modified && isSingleLineText(el);
+    if (name !== 'Escape' && !suggestion && (!modified || CARET_KEYS.has(name) || FIELD_EDITING.has(shortcut))) return null;
+  } else if ((name === 'Enter' || name === 'Space') && !modified && el.matches(ACTIVATABLE)) {
+    return null;
+  }
+  // Shift tek karakterde zaten karakterin içindedir ("?", "A"); diğerlerinde yazılır ("Shift+ArrowDown").
+  const shift = event.shiftKey && (modified || name.length > 1);
+  return [ctrl && 'Control', meta && 'Meta', alt && 'Alt', shift && 'Shift', name].filter(Boolean).join('+');
+}
+
+function isSingleLineText(el) {
+  return el.tagName === 'INPUT' && ['text', 'search', 'email', 'url', 'tel'].includes(el.type);
 }
 
 // Aksiyonun hedefi, state ile AYNI düzeyde: anahtar (tür) + ekranda görünen aynı anahtarlı
@@ -133,7 +220,7 @@ function onScrollEnd(event) {
 }
 
 function recordValue(el) {
-  const realValue = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
+  const realValue = fieldValue(el);
   if (lastRecordedValue.get(el) === realValue) return;
   lastRecordedValue.set(el, realValue);
 
@@ -141,6 +228,11 @@ function recordValue(el) {
   const verb = el.tagName === 'SELECT' ? 'Select' : el.type === 'checkbox' || el.type === 'radio' ? 'Check' : 'Fill';
   const visible = interactableElements();
   send({ type: 'input', target: targetOf(el, visible), selector: cssSelector(el), value, label: verb + ' ' + fieldName(el) }, countElements(visible));
+}
+
+function fieldValue(el) {
+  if (el.type === 'checkbox' || el.type === 'radio') return el.checked;
+  return el.isContentEditable ? el.innerText : el.value;
 }
 
 // Metin girilen / seçim yapılan alanlar. Butonlar (submit, button...) bu gruba girmez.
