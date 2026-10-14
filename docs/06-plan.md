@@ -1,0 +1,261 @@
+# 06: Plan: Test Senaryosu Üretimi ve Çalıştırma
+
+Şu ana kadar eklenti, kullanıcı sitede gezerken graph'ı çıkarıyordu. Sonraki adım bu graph üzerinde **test senaryosu üretmek ve çalıştırmak**. Bu doküman 14 Ekim 2026 haftasının işlerini, sırasını ve tasarım kararlarını toplar. İş ilerledikçe güncellenir: her fazın yapılacakları işaretlenir.
+
+## İçindekiler
+
+- [Bu haftanın işleri](#bu-haftanın-işleri)
+- [Sıra ve gerekçe](#sıra-ve-gerekçe)
+- [Faz 1: Viewport kaydı ve `resize` aksiyonu](#faz-1-viewport-kaydı-ve-resize-aksiyonu)
+- [Faz 2: Runner (ilk sürüm)](#faz-2-runner-ilk-sürüm)
+- [Faz 3: Beklemeleri kaydet](#faz-3-beklemeleri-kaydet)
+- [Faz 4: Yeni sekmede ya da başka sitede devam](#faz-4-yeni-sekmede-ya-da-başka-sitede-devam)
+- [Faz 5: Karşılaştırma ekranı](#faz-5-karşılaştırma-ekranı)
+- [Faz 6: Senaryo planlama ve rapor](#faz-6-senaryo-planlama-ve-rapor)
+- [Kapsam dışı](#kapsam-dışı)
+- [Riskler](#riskler)
+
+---
+
+## Bu haftanın işleri
+
+| # | İş | Kısaca |
+|---|---|---|
+| 1 | Test planlama ve çalıştırma | Graph'tan yol (senaryo) üretmek, yolu gerçek tarayıcıda oynatmak, her adımda varılan ekranı doğrulamak |
+| 2 | Benzer node'lar için detaylı karşılaştırma | "Aynı state mi?" onay kartında şu anki ekranı eşleşen her adayla görsel olarak karşılaştırmak |
+| 3 | Farklı çözünürlük | Testi çalıştıranın ekranı graph'ı kaydedenden büyük ya da küçükse ne olur? |
+| 4 | Bekleme aksiyonu | Yalnızca beklenerek ulaşılan durumları (oturum zaman aşımı) kaydetmek |
+| 5 | Yeni sekmede / başka sitede devam | Graph'ı başka bir sekmede, gerekirse tamamen farklı bir sitede genişletmeye devam etmek |
+
+---
+
+## Sıra ve gerekçe
+
+| Faz | İş | Tahmini süre | Durum |
+|---|---|---|---|
+| 1 | Viewport kaydı ve `resize` aksiyonu (iş 3) | 0,5 gün | Yapıldı |
+| 2 | Runner, ilk sürüm (iş 1) | 2 gün | |
+| 3 | Beklemeleri kaydet (iş 4) | 0,5–1 gün | |
+| 4 | Yeni sekmede devam (iş 5) | 1,5–2 gün | |
+| 5 | Karşılaştırma ekranı (iş 2) | 1 gün | |
+| 6 | Senaryo planlama ve rapor (iş 1) | kalan süre | |
+
+- **Kayıt formatını değiştiren iş önce gelir.** Viewport'u kaydedilmemiş bir graph, testte doğru boyutta çalıştırılamaz. Bu yüzden Faz 1 en başta: bundan sonra kaydedilen her graph bu bilgiyi taşır.
+- **Runner erken gelir.** Haftanın ana çıktısı ve en riskli işi odur. Tekrar oynatmanın gerçek sorunları erken görülür; bekleme ve sekme tasarımı varsayıma değil gözleme dayanır. Sonraki fazların her biri runner'da hemen uçtan uca denenir; yeni aksiyon tipleri runner'a yalnızca yeni bir durum olarak eklenir.
+- **Karşılaştırma ekranı bağımsızdır.** Yalnızca paneli ilgilendirir. Fark hesabı runner'ın hata raporunda da ("beklenen node / gerçek ekran") kullanılır.
+- **Hafta yetmezse sondan kesilir:** önce Faz 6, sonra Faz 5.
+
+---
+
+## Faz 1: Viewport kaydı ve `resize` aksiyonu
+
+*İş 3. Durum: yapıldı.*
+
+### Problem
+
+State, ekranda kaydırmadan tıklanabilen elementlerden oluşur ([03 > Kaydırma ve state](03-state-eslestirme.md#kaydırma-ve-state)). Ekrana neyin sığdığını belirleyen şey monitör çözünürlüğü değil, sayfanın **CSS piksel** cinsinden görünen alanıdır: viewport (`innerWidth × innerHeight`). Bu alanı monitör, işletim sistemi ölçeklemesi (%125 gibi), pencere boyutu, yan panel ve DevTools'un kapladığı yer ve tarayıcı yakınlaştırması birlikte belirler.
+
+Bu fazdan önce viewport kaydedilmiyordu. Pencere boyutunun değişmesi de aksiyon sayılmıyordu: etkisi ya o an açık olan aksiyonun "ekranı değiştirdi mi?" işaretine yazılıyor ya da hiç görünmüyordu. Tekrar oynatmada bu değişim yeniden üretilemiyordu.
+
+### Testi çalıştıranın ekranı farklıysa
+
+| Durum | Ne olur? |
+|---|---|
+| **Daha büyük** | Ekrana daha çok element sığar. Ekrandaki küme beklenen kümenin üst kümesi olur, birebir doğrulama başarısız olur. Kayıtta kaydırmayla ayrılmış iki node tek ekrana düşer. |
+| **Daha küçük** | Daha az element sığar. Küme beklenenin alt kümesi olur, doğrulama yine başarısız olur. Aksiyonun hedefi ekran dışında kalabilir; otomasyon aracının hedefi görmek için kendiliğinden kaydırması da state'i değiştirir. |
+| **Breakpoint aşılır** (mobil düzen) | Element türleri değişir (menü linkleri hamburger menüye girer), aksiyon hedefleri ortadan kalkar. Model o boyut için geçersizdir; ayrı bir graph gerekir. |
+
+### Karar
+
+Test, **kayıttaki viewport emüle edilerek** çalışır. Playwright'ın viewport emülasyonu fiziksel ekrandan bağımsızdır: testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür. Böylece yukarıdaki üç durum oluşmaz.
+
+Bilerek farklı boyutta test (responsive test) bu haftanın kapsamı dışındadır. Olası yol: kayıtta ekran filtresi uygulanmamış ikinci bir parmak izi (tüm sayfadaki etkileşimli elementler) saklamak ve "toleranslı modda" doğrulamayı onunla yapmak. Breakpoint değişimini bu da çözmez.
+
+### Yapılanlar
+
+- [x] Node'a `viewport` alanı: `{ width, height, devicePixelRatio }`, node oluşturulduğu andaki CSS piksel boyutu ve piksel oranı.
+- [x] `resize` aksiyonu: pencereyi sürüklemek, yan paneli ya da DevTools'u açmak, tam ekrana geçmek. Varılan viewport saklanır. Sürükleme boyunca gelen olaylar tek aksiyon olur.
+- [x] Yakınlaştırma da sayfanın CSS piksel boyutunu değiştirir ve aynı olayı tetikler; ikisini `devicePixelRatio` ayırır (yakınlaştırma onu da değiştirir). Yakınlaştırma aksiyonu varılan viewport'u da saklar: Playwright'ta tarayıcı yakınlaştırması yoktur, aynı ekran bu boyut ve piksel oranıyla kurulur.
+- [x] Panel: node detayında viewport, aksiyon satırında varılan boyut. Ayarlar'da **Pencere boyutu** aksiyon tipi.
+- [x] Dışa aktarım `graph-recorder/v5`: vertex'lerde `viewport`.
+- [x] Dokümanlar: [01](01-mimari.md), [03 > Pencere boyutu ve state](03-state-eslestirme.md#pencere-boyutu-ve-state), [04](04-veri-modeli.md), [05](05-gelistirme.md), README.
+
+### Kabul kriteri
+
+- Pencere boyutu değişince "Bekleyen aksiyonlar"da tek bir `Pencere boyutu  Resize → 1280×720` satırı çıkar. Ctrl + ile yakınlaştırınca bu satır çıkmaz, yalnızca `Zoom in` çıkar.
+- Node detayında viewport görünür. Dışa aktarılan JSON'da her vertex'te `viewport`, yakınlaştırma aksiyonunda varılan `viewport` vardır.
+
+### Bilinen sınırlar
+
+- **Farklı boyutta "Buradan devam et":** Kayıt farklı boyuttaki bir pencerede sürdürülürse aradaki boyut farkı kaydedilmez, çünkü o sayfada boyut değişmemiştir. Faz 4'te sekme değişimiyle birlikte ele alınacak: kayıt farklı boyutlu bir pencerede sürerse edge bir `resize` ile başlar.
+- **Farklı ölçekli monitör:** Pencereyi farklı ölçekli bir monitöre taşımak `devicePixelRatio`'yu yakınlaştırma olmadan değiştirir. Bu değişim kaydedilmez; yakınlaştırmayla karıştırılmaması için böyle bırakıldı.
+
+---
+
+## Faz 2: Runner (ilk sürüm)
+
+*İş 1.*
+
+### Amaç
+
+Dışa aktarılan GraphWalker JSON'undaki bir yolu gerçek bir tarayıcıda oynatmak ve her edge'den sonra varılan ekranın beklenen node olduğunu doğrulamak.
+
+### Tasarım kararları
+
+- **Araç: Node.js + Playwright.** Eklentiyle aynı dil olduğu için parmak izi kodu sayfaya olduğu gibi enjekte edilir; Java/Selenium'da bu kodun çevrilmesi gerekirdi. Viewport emülasyonu, popup ve sekme olayları, otomatik bekleme hazır gelir. [04](04-veri-modeli.md#aksiyon)'teki tekrar oynatma karşılıkları da zaten Playwright biçiminde yazılmıştır.
+- **Konum: `runner/`.** Eklentiden ayrı durur; eklentinin "build yok, bağımlılık yok" ilkesi bozulmaz. npm bağımlılığı yalnızca runner'da olur.
+- **Ortak parmak izi.** `content.js`'teki parmak izi fonksiyonları (`interactableElements`, `isInteractable`, `elementKey`, `countElements`, `targetOf`) `extension/fingerprint.js`'e taşınır. Eklenti onu content script olarak, runner `page.addInitScript` ile yükler. Kayıt ve test aynı state tanımını kullanır.
+- **Aksiyonun hedefi.** Önce `target` (`{ key, index }`: ekrandaki n'inci türdeş element, parmak iziyle aynı sıralama), bulunamazsa `selector` kullanılır.
+- **Doğrulama (oracle).** Edge'in aksiyonlarından sonra sayfa durulunca parmak izi alınır ve hedef node'un edge set'iyle (dışa aktarımdaki Ayarlar ile) birebir karşılaştırılır. Eşleşmezse süre dolana kadar tekrar denenir, çünkü sayfa geç yüklenebilir. Başarısızlıkta fark raporlanır: `button:Sil 5 ≠ 4`.
+- **Viewport.** Tarayıcı bağlamı başlangıç node'unun viewport'uyla açılır. `resize` ve `zoom` aksiyonları viewport'u ve piksel oranını değiştirir.
+- **Gizli değerler.** Şifreler kayıtta `******` olarak saklanır. Runner gerçek değeri bir secrets dosyasından ya da ortam değişkeninden alır (ör. `{ "input:password": "..." }`).
+- **Yol.** Bu fazda yol elle verilen bir edge listesidir ya da GraphWalker `offline` çıktısıdır. Generator seçimi Faz 6'dadır.
+
+### Yapılacaklar
+
+- [ ] `extension/fingerprint.js`: parmak izi fonksiyonlarının ortak dosyaya taşınması (eklentinin davranışı değişmez)
+- [ ] `runner/`: model okuma, format kontrolü, viewport'la tarayıcı açma
+- [ ] Aksiyon oynatıcı: `click`, `input`, `enter`, `key`, `scroll`, `navigate`, `history`, `reload`, `resize`, `zoom`; kalan tipler sonra
+- [ ] Doğrulama: durulma bekleme, parmak izi, birebir karşılaştırma, tekrar deneme, fark raporu
+- [ ] Konsol çıktısı: adım adım edge, geçti / kaldı
+
+### Kabul kriteri
+
+saucedemo'da giriş → ürün listesi → sepet yolu geçer. Bir edge'in hedefi bilerek bozulduğunda (yanlış node) runner farkı göstererek durur.
+
+### Not
+
+GraphWalker CLI 4.3.3, Java 17 ya da 21 ister ([04 > GraphWalker ile doğrulama](04-veri-modeli.md#graphwalker-ile-doğrulama)). Geliştirme makinesinde Java 25 kurulu; yol üretimi için ayrıca Java 17/21 gerekir.
+
+---
+
+## Faz 3: Beklemeleri kaydet
+
+*İş 4.*
+
+### Problem
+
+Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılır. Örnek: internet bankacılığında oturum zaman aşımı kullanıcıyı çıkış ekranına atar. Graph'ı kuran kişi bu durumu modele eklemek isteyebilir. Bugün kayıt yalnızca aksiyonları görür; aksiyonsuz geçen süre ve o sürede ekranın kendiliğinden değişmesi kaydedilmez ([01 > Edge düzenleme](01-mimari.md#edge-düzenleme): "Sayfanın aksiyonsuz değişimleri ayrıca izlenmez").
+
+### Karar
+
+- Panelde **Beklemeleri kaydet** anahtarı olur. Kapalıyken kayıt bugünkü gibidir.
+- Açıkken aksiyonlar arasında geçen süre `wait` aksiyonu olarak kaydedilir (`ms`).
+- Açıkken state sürekli izlenir. Ekran aksiyonsuz değişirse bunu bekleme yapmıştır; bekleme "ekranı değiştirdi" işaretini alır.
+- Bekleme elle eklenmez, kaydedilir; yani gözlenmiş bir aksiyondur. Edge düzenlemedeki "aksiyon eklenemez" kuralı geçerli kalır.
+
+### Ayrıntılar
+
+- **Bekleme, ekran kendiliğinden değiştiği anda kapanır.** Süresi değişime kadar geçen süredir (ör. tam zaman aşımı süresi). Sonraki boşluk yeni bir beklemedir. Böylece runner yalnızca gerektiği kadar bekler.
+- **Ekranı değiştirmeyen bekleme** "ekranı değiştirmedi" işaretiyle gelir ve edge düzenlemede uyarısız silinir.
+- **Sürekli izleme** yalnızca anahtar açıkken ve kayıt sekmesinde çalışır: DOM her durulduğunda parmak izi alınır. Sürekli hareket eden sayfalarda (carousel) sıklık sınırlanır.
+- **Bekleyen tek aksiyon bir bekleme olabilir** (zaman aşımı senaryosu). "Node oluştur" buna izin verir; edge'in adı `e_Wait` olur.
+- **Runner'da** `wait`, süre kadar beklemek demektir. Runner ayrıca kendi bekleme mekanizmalarını kullanır (durulma, Playwright'ın otomatik beklemesi, doğrulamada tekrar deneme); bu yüzden kayıttaki her kısa boşluk testte gerekli değildir.
+
+### Açık soru
+
+Çok kısa boşluklar (Fill ile Click arasındaki 0,5 saniye gibi) da bekleme olarak kaydedilsin mi, yoksa bir alt sınır mı konsun (ör. 1 saniye)?
+
+### Kabul kriteri
+
+Bir test sayfasında N saniye sonra kendiliğinden çıkış yapan bir oturum: anahtar açık, beklenir, "Node oluştur"a basılır. `e_Wait` edge'i oluşur; süresi N'ye yakındır ve "ekranı değiştirdi" işaretlidir. Runner aynı yolu oynatır ve geçer.
+
+---
+
+## Faz 4: Yeni sekmede ya da başka sitede devam
+
+*İş 5.*
+
+### Problem
+
+Kayıt tek sekmeye bağlıdır (`state.tabId`); başka bir sekmede "Node oluştur" *"Kayıt başka bir sekmede sürüyor"* hatası verir. İki gerçek senaryo var:
+
+- **Site yeni sekme ya da pencere açar:** `target=_blank` linkler, ödeme ve OAuth popup'ları.
+- **Kullanıcı yeni sekmede başka bir siteye gider:** tipik örnek, kayıt olduktan sonra e-postadaki doğrulama linkine tıklamak.
+
+### Karar
+
+Kayıt sekmesi olmayan bir sekme aktif olunca panel sorar: *"Farklı bir sekmedesiniz. Grafa bu sekmede devam edilsin mi?"*
+
+- **Evet:** kayıt bu sekmede sürer.
+- **Hayır:** önceki sekme ve link hatırlanır; kullanıcı oraya dönene kadar aksiyon kaydedilmez.
+
+### Ayrıntılar
+
+- **"Hayır" o sekme için hatırlanır.** Araştırma için açılan sekmeye her geçişte soru tekrar çıkmaz.
+- **Dönüş:** kayıt sekmesine geri geçmek. O sekme kapandıysa kayıt, aynı link ve aynı state (URL şablonu ve edge set) yakalanınca sürer. Yalnızca link yetmez: SPA'larda link aynı kalırken ekran değişebilir.
+- **Soru background'da tutulur.** [Kural 1](01-mimari.md#kural-1-statei-yalnızca-backgroundjs-değiştirir-tek-yazar)'e uygun olarak soru, onay kartındaki `pending` gibi bekleyen bir karardır; panel onu çizer, cevap mesajla döner.
+- **Yeni aksiyon tipi `tab`:** `open`, `switch` ya da `close`. Sekme, açılış sırasıyla tanımlanır, çünkü Chrome'un sekme id'si tekrar oynatmada aynı kalmaz. Sekmeyi site açtıysa (link, popup) açılış o tıklamanın sonucudur; kullanıcı açtıysa "yeni sekme aç ve adrese git" olarak kaydedilir.
+- **Graph bağlı kalır.** Yeni sekmedeki ilk ekran, şu anki node'dan çıkan bir edge'in hedefidir. Ayrık ikinci bir başlangıç noktası yoktur; GraphWalker oraya hiç ulaşamazdı.
+- **Farklı boyutlu pencere:** yeni sekme farklı boyutta bir penceredeyse edge bir `resize` ile başlar (Faz 1'in bilinen sınırı).
+- **Runner** aktif sayfayı takip eder: site açtığında `context.waitForEvent('page')`, kullanıcı açtığında `context.newPage()`.
+
+### Kabul kriteri
+
+- `target=_blank` bir linke tıklayıp yeni sekmeye geçince soru çıkar. **Evet** denince yeni sekmede node oluşur; edge'de tıklama ve sekme aksiyonu vardır.
+- **Hayır** denince o sekmede aksiyon kaydedilmez. Eski sekmeye dönünce kayıt sürer; o sekmeye tekrar geçince soru çıkmaz.
+- Runner bu yolu iki sekmede oynatır.
+
+---
+
+## Faz 5: Karşılaştırma ekranı
+
+*İş 2.*
+
+### Kapsam
+
+"Aynı state mi?" onay kartı ("Evet, bu node" / "Hayır, yeni node"). Kart açıldığında adayların edge set'i şu anki ekranla zaten birebir aynıdır. Kullanıcı, etkileşimli olmayan içerikteki farka bakarak karar verir: sepet sayacı, uyarı metni, farklı ürün ([03 > Küme aynıysa neden hâlâ soruluyor?](03-state-eslestirme.md#küme-aynıysa-neden-hâlâ-soruluyor)). Bugün kart ekran görüntülerini yan yana gösteriyor. Hedef: şu anki ekranı eşleşen **tüm** adaylarla rahat ve net bir şekilde karşılaştırmak.
+
+### Görsel karşılaştırma
+
+- Şu anki ekran ile seçili aday büyük boyutta gösterilir. Görünümler: yan yana, üst üste (fark katmanı), kaydırıcı (perde).
+- Farklı pikseller vurgulanır, farklı bölgeler kutu içine alınır.
+- Her aday için fark oranı (değişen piksellerin yüzdesi) yardımcı sinyal olarak gösterilir. Karar kullanıcınındır; otomatik seçim yapılmaz.
+
+### Teknik çerçeve
+
+- **Piksel karşılaştırması:** iki görüntü aynı boyuta getirilir. Her piksel için algısal renk farkı (YIQ renk uzayında mesafe, pixelmatch yaklaşımı) bir eşikle karşılaştırılır. Kenar yumuşatma (anti-aliasing) pikselleri fark sayılmaz.
+- **Bölge çıkarma:** farklı pikseller ızgara hücrelerinde toplanır; komşu hücreler birleşerek kutu olur (bağlantılı bileşenler).
+- **Ön koşul:** iki görüntü aynı viewport ve piksel oranında alınmış olmalı (Faz 1 bunları kaydeder). Farklıysa karşılaştırma uyarıyla yapılır.
+- **Sınırlar:** farklı ürün resimleri, animasyon ve kaydırma konumu farkı gürültü üretir. Bu yüzden görsel fark yalnızca **birebir eşleşen adaylar arasında** kullanılır ve eşleştirme kuralının yerine geçmez ([03 > Geliştirme fikirleri](03-state-eslestirme.md#geliştirme-fikirleri-tez-için), 3. madde).
+- Yöntem ve eşik, tez için 03'e "Görsel karşılaştırma" bölümü olarak yazılır.
+
+### Kabul kriteri
+
+Sepette 1 ve 2 ürün olan, edge set'i aynı iki ekran (yalnızca sayaç farklı): fark kutusu sayaç bölgesini gösterir, fark oranı düşüktür. Tamamen farklı bir ürün resmi gösteren aday daha yüksek oran gösterir.
+
+---
+
+## Faz 6: Senaryo planlama ve rapor
+
+*İş 1.*
+
+- **Yol üretimi:** GraphWalker generator'ları ile: `random(edge_coverage(100))`, `random(vertex_coverage(100))`, `a_star(reached_vertex(v_X))` (iki node arası en kısa yol), `quick_random(...)`. Yol `offline` ile önceden üretilir ve runner'a verilir.
+- **Senaryo dosyası:** `scenarios/*.json`: model, generator, üretilen yol, secrets referansı. Tekrar çalıştırılabilir.
+- **Çıkmaz node'lar:** yol orada biter. Her senaryo temiz bir oturumla (yeni tarayıcı bağlamı) başlar.
+- **Rapor:** JSON ve HTML: senaryo, adım adım edge, süre, geçti / kaldı, hata anındaki ekran görüntüsü ve fark (Faz 5'in görünümüyle). Sonra JUnit XML (CI için).
+- **İsteğe bağlı:** panelden generator seçip senaryo dosyası indirmek. Testi panelden doğrudan çalıştırmak kapsam dışıdır (native messaging ya da yerel bir sunucu gerekir).
+
+---
+
+## Kapsam dışı
+
+Bu hafta yapılmayacaklar:
+
+- Bilerek farklı ekran boyutunda test (toleranslı mod) ve mobil breakpoint'ler
+- Testi panelden doğrudan çalıştırmak
+- Java/Selenium test kodu üretimi ([04 > Sonraki adım: test kodu iskeleti](04-veri-modeli.md#sonraki-adım-test-kodu-iskeleti))
+- iframe ve Shadow DOM içeriği
+
+---
+
+## Riskler
+
+| Risk | Etki | Önlem |
+|---|---|---|
+| **Sıra kayması** | Dinamik listelerde `target.index` kayar, yanlış elemente tıklanır. | `selector` yedeği; doğrulamada fark raporu hatayı gösterir. |
+| **Gizli durum** | Aynı edge set, aynı durum için yeterli değildir. Doğrulama yalnızca görünen etkileşimli kümeyi kontrol eder; sepet içeriği gibi farkları görmez. | Raporda bu sınır açıkça yazılır. |
+| **Piksel oranını çalışırken değiştirmek** | Playwright'ta `deviceScaleFactor` bağlam açılırken verilir. Kayıttaki yakınlaştırmayı oynatmak için çalışma anında değiştirmek gerekir. | CDP `Emulation.setDeviceMetricsOverride` denenecek; olmazsa yeni bağlam. |
+| **Sürekli izleme maliyeti** (Faz 3) | Hareketli sayfalarda parmak izi çok sık alınır, kayıt yavaşlar. | Sıklık sınırı; yalnızca anahtar açıkken. |
+| **Otomasyon tespiti** | Bazı siteler otomasyonla açılan tarayıcıyı engeller. | Demo hedefi saucedemo. |
+| **Java sürümü** | GraphWalker 4.3.3, Java 25 ile çalışmaz. | Java 17/21 kurulumu. |
