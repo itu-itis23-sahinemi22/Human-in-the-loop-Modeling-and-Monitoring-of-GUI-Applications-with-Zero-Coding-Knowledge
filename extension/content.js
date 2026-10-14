@@ -48,8 +48,14 @@ const scrollStartScreen = new WeakMap();
 // görürüz. Sayfa olayı durdursa (stopPropagation) bile kaydımız kaçmaz.
 // Burada tüm aksiyonlar yakalanır; panelin Ayarlar bölümünde işaretli olmayan tipleri
 // background.js > addAction() listeye eklemez.
+document.addEventListener('mousedown', onMouseDown, true);
+document.addEventListener('mouseup', onMouseUp, true);
 document.addEventListener('click', onClick, true);
 document.addEventListener('change', onChange, true);
+document.addEventListener('copy', onClipboard, true);
+document.addEventListener('cut', onClipboard, true);
+document.addEventListener('paste', onClipboard, true);
+document.addEventListener('contextmenu', onContextMenu, true);
 document.addEventListener('focusin', onFocusIn, true);
 document.addEventListener('focusout', onFocusOut, true);
 document.addEventListener('keydown', onKeyDown, true);
@@ -64,6 +70,7 @@ document.addEventListener('scrollend', onScrollEnd, true);
 function onClick(event) {
   // isTrusted=false olan olayları sayfanın kendi kodu üretmiştir (ör. el.click()); kullanıcı değil.
   if (!event.isTrusted) return;
+  if (selectionGesture) return void (selectionGesture = false); // seçim hareketinin 'click'i
 
   // Kullanıcı bir butonun içindeki <span>'e tıklamış olabilir; asıl butonu bul.
   const el = event.target.closest(INTERACTIVE) || event.target;
@@ -81,11 +88,151 @@ function onChange(event) {
   recordValue(event.target);
 }
 
-// Alana odaklanıldığı andaki değer "son kaydedilen" sayılır: alan değişmeden bir tuşa basılır
-// ya da odak çıkarsa (aşağıda) boş bir "Fill" kaydedilmez.
+// METİN SEÇME: fareyle sürükleyerek ya da çift/üçlü tıklayarak metin seçmek tıklama değildir;
+// tarayıcı fare bırakılınca yine 'click' üretir ama tekrar oynatılan tıklama seçimi geri
+// getirmez. Fare basıldığı yerden kaydıysa ya da çift/üçlü tıklandıysa ve seçili metin varsa
+// 'select' aksiyonu kaydedilir, bu hareketin 'click'i yok sayılır. Çift/üçlü tıklamada
+// hareketin önceki tıklaması (ya da kelime seçimi) zaten gönderilmiştir; background onu bu
+// seçimle değiştirir (replaces: o aksiyonun zamanı). Shift+tıklama ve klavyeyle (Shift+oklar)
+// var olan seçimi genişletmek de son seçimin yerini alır. Buton, link gibi elementlere çift
+// tıklamak ya da Shift ile tıklamak seçim sayılmaz.
+let pointerDown = null;        // { x, y }: farenin basıldığı yer
+let gestureStart = 0;          // çoklu tıklama hareketinin ilk basışının zamanı
+let lastSentTime = 0;          // en son gönderilen aksiyonun zamanı (bkz. send)
+let lastSelectTime = -1;       // en son gönderilen seçimin zamanı
+let selectionGesture = false;  // bu hareket seçim olarak kaydedildi: ardından gelen 'click'i yok say
+
+function onMouseDown(event) {
+  if (!event.isTrusted || event.button !== 0) return;
+  pointerDown = { x: event.clientX, y: event.clientY };
+  if (event.detail <= 1) gestureStart = Date.now();
+  selectionGesture = false;
+}
+
+function onMouseUp(event) {
+  if (!event.isTrusted || event.button !== 0 || !pointerDown) return;
+  const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > 4;
+  const onControl = event.target.closest(INTERACTIVE) && !isFormField(event.target);
+  const multiClick = event.detail >= 2 && !onControl;
+  const extend = event.shiftKey && !onControl;
+  if (!moved && !multiClick && !extend) return; // sıradan tıklama
+  const selection = selectionOf(event.target);
+  if (!selection) return;
+
+  selectionGesture = true;
+  const replaces = multiClick && lastSentTime >= gestureStart ? lastSentTime
+    : extend && lastSentTime === lastSelectTime ? lastSentTime : null;
+  sendSelection(selection, countElements(interactableElements()), replaces);
+}
+
+function sendSelection({ el, text, start, end }, screen, replaces) {
+  send({
+    type: 'select', text, selector: cssSelector(el), label: `Select "${shortText(text)}"`,
+    ...(isFormField(el) && { target: targetOf(el) }),
+    ...(start !== undefined && { start, end }),
+  }, screen, replaces ? { replaces } : {});
+  lastSelectTime = lastSentTime;
+}
+
+// Seçili metin ve bulunduğu yer. Metin alanında alanın kendisi ve aralık (start, end);
+// sayfada seçimi içeren en küçük element. Seçim yoksa null.
+function selectionOf(el) {
+  if (isTextField(el)) {
+    let start = null;
+    let end = null;
+    try {
+      ({ selectionStart: start, selectionEnd: end } = el);
+    } catch { /* bazı alan türleri (email, number) seçim aralığı vermez */ }
+    if (start !== null && start !== end) return { el, text: maskedText(el, el.value.slice(start, end)), start, end };
+    const text = getSelection().toString(); // aralık vermeyen alanlarda Chrome seçili metni yine verir
+    return text ? { el, text: maskedText(el, text) } : null;
+  }
+  const selection = getSelection();
+  const text = selection.toString();
+  if (selection.isCollapsed || !text.trim()) return null;
+  const node = selection.getRangeAt(0).commonAncestorContainer;
+  return { el: node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement, text };
+}
+
+// PANO: kopyala, kes, yapıştır. Klavyeden, sağ tık menüsünden ya da Chrome menüsünden
+// yapılsa da aynı olay gelir; bu yüzden Ctrl+C/X/V tuş olarak kaydedilmez (bkz. commandKey).
+// Kopyalanan / yapıştırılan metin ve sayfanın işlemi engelleyip engellemediği (blocked)
+// kaydedilir: sitenin kopyalama ya da yapıştırma iznini test etmek için. Sayfa olayı bizden
+// SONRA işler (capture phase); engelleyip engellemediği olay bitince (setTimeout) okunur.
+// Engellemek, preventDefault() demektir: sayfa kopyalamayı tamamen durdurmuş ya da panoya
+// kendi içeriğini koymuş olabilir. Yapıştırmada alanın yeni değeri ayrıca 'input' ile gelir.
+function onClipboard(event) {
+  if (!event.isTrusted) return;
+  const operation = event.type; // copy | cut | paste
+  const focused = document.activeElement;
+  const field = isTextField(focused) || focused?.isContentEditable ? focused : null;
+  const selection = selectionOf(field && isTextField(field) ? field : document.body);
+  const text = operation === 'paste' ? maskedText(field, event.clipboardData?.getData('text/plain') ?? '') : selection?.text ?? '';
+  const el = field ?? selection?.el ?? null;
+  const visible = interactableElements();
+  const screen = countElements(visible);
+  const verb = { copy: 'Copy', cut: 'Cut', paste: 'Paste' }[operation];
+  setTimeout(() => send({
+    type: 'clipboard', operation, text, blocked: event.defaultPrevented,
+    selector: el && el !== document.body ? cssSelector(el) : null,
+    ...(field && isFormField(field) && { target: targetOf(field, visible) }),
+    label: text ? `${verb} "${shortText(text)}"` : `${verb} (boş)`,
+  }, screen));
+}
+
+// SAĞ TIK MENÜSÜ: farenin sağ tuşu 'click' üretmez; klavyedeki menü tuşu ve Shift+F10 da
+// aynı 'contextmenu' olayını tetikler (bu yüzden tuş olarak kaydedilmezler, bkz. commandKey).
+// Sayfa olayı engellediyse (blocked) tarayıcının menüsü yerine kendi menüsünü açmıştır;
+// engelleyip engellemediği olay bitince okunur (bkz. onClipboard).
+function onContextMenu(event) {
+  if (!event.isTrusted) return;
+  const el = event.target.closest(INTERACTIVE) || event.target;
+  const visible = interactableElements();
+  const screen = countElements(visible);
+  const action = {
+    type: 'contextmenu', selector: cssSelector(el),
+    label: 'Right click ' + ((isFormField(el) ? fieldName(el) : visibleText(el)) || el.tagName.toLowerCase()),
+    ...(el.matches(INTERACTIVE) && { target: targetOf(el, visible) }),
+  };
+  setTimeout(() => send({ ...action, blocked: event.defaultPrevented }, screen));
+}
+
+function isTextField(el) {
+  return el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT' && ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(el.type));
+}
+
+function maskedText(el, text) {
+  return text && el?.type === 'password' && MASK_PASSWORDS ? '******' : text;
+}
+
+function shortText(text) {
+  const oneLine = String(text).replace(/\s+/g, ' ').trim();
+  return oneLine.length > 30 ? oneLine.slice(0, 30) + '…' : oneLine;
+}
+
+// ODAK (Tab): Tab tuşu kaydedilmez (tekrar oynatırken sayfadaki sıraya bağlı kalırdı); odağın
+// Tab ile gittiği element 'focus' aksiyonu olarak kaydedilir. Odak çoğu zaman ekranı
+// değiştirmez (formda alandan alana geçmek); background yalnızca state'i değiştiren odak
+// aksiyonlarını tutar (bkz. background.js > observeScreen). Bazı sayfalarda ise odak element
+// gösterir: "içeriğe atla" linki, odaklanınca açılan menü. Aksiyon anının ekranı Tab'a
+// basıldığı andır: odak taşındıktan sonra ekran zaten değişmiş olabilir.
+let tabPress = null; // { time, screen }: Tab'a basıldığı an ve o anki ekran
+
 function onFocusIn(event) {
+  if (!event.isTrusted) return;
   const el = event.target;
-  if (event.isTrusted && (isFormField(el) || el.isContentEditable)) lastRecordedValue.set(el, fieldValue(el));
+  // Alana odaklanıldığı andaki değer "son kaydedilen" sayılır: alan değişmeden bir tuşa
+  // basılır ya da odak çıkarsa (aşağıda) boş bir "Fill" kaydedilmez.
+  if (isFormField(el) || el.isContentEditable) lastRecordedValue.set(el, fieldValue(el));
+  if (!tabPress || Date.now() - tabPress.time > 500) return;
+  const { screen } = tabPress;
+  tabPress = null;
+  const visible = interactableElements();
+  send({
+    type: 'focus', selector: cssSelector(el),
+    label: 'Focus ' + ((isFormField(el) ? fieldName(el) : visibleText(el)) || el.tagName.toLowerCase()),
+    ...(el.matches(INTERACTIVE) && { target: targetOf(el, visible) }),
+  }, screen);
 }
 
 // Düzenlenebilir alanlarda (contenteditable: zengin metin editörleri) 'change' olayı yoktur;
@@ -98,19 +245,76 @@ function onFocusOut(event) {
 function onKeyDown(event) {
   if (!event.isTrusted || event.isComposing) return;
   const el = event.target;
+  if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    tabPress = { time: Date.now(), screen: countElements(interactableElements()) };
+    return;
+  }
   if (event.key === 'Enter' && el.tagName === 'INPUT' && isFormField(el)) return recordEnter(el);
 
   const key = commandKey(event, el);
-  if (!key) return;
+  const inField = isFormField(el) || el.isContentEditable;
+  const selecting = isSelectionKey(event);
+  const scrolling = !inField && isScrollKey(event);
+  if (!key && !selecting) return;
   // Alana yazılmış ama 'change'i henüz gelmemiş değer önce kaydedilir. Ör. arama kutusuna
   // yazıp ok tuşuyla öneri seçmek: "Fill Search → Press ArrowDown".
-  if (isFormField(el) || el.isContentEditable) recordValue(el);
+  if (inField) recordValue(el);
   const visible = interactableElements();
   const page = el === document.body || el === document.documentElement; // odakta bir element yok
-  send({
+  const action = key && {
     type: 'key', key, count: 1, label: 'Press ' + key,
     ...(page ? { selector: null } : { target: targetOf(el, visible), selector: cssSelector(el) }),
-  }, countElements(visible));
+  };
+  if (selecting || scrolling) return deferKey(event, action, countElements(visible), el);
+  send(action, countElements(visible));
+}
+
+// TUŞUN ETKİSİNE GÖRE KARAR: bazı tuşların tarayıcıda varsayılan bir işi vardır: Shift+oklar
+// ve Ctrl+A metin seçer; Space, PageDown, oklar sayfayı kaydırır. Tuşun ne yaptığı ancak olay
+// bittikten sonra bilinir; karar KEY_DECISION_MS sonra verilir:
+//   - sayfa olayı engellediyse (preventDefault) tuşu sayfa kullanmıştır -> 'key'
+//   - seçili metin değiştiyse -> 'select' (alan dışında Ctrl+A: tüm sayfa metni saklanmasın
+//     diye 'key'); art arda genişletilen seçim tek aksiyondur
+//   - sayfa kaydıysa -> hiçbiri: kaydırma zaten 'scroll' olarak kaydedilir
+//   - hiçbiri olmadıysa -> 'key' (sayfa tuşu engellemeden kullanmış olabilir)
+// O arada başka bir aksiyon gönderilirse ya da parmak izi istenirse önce bu tuşun kararı
+// verilir ki sıra bozulmasın (bkz. send).
+const KEY_DECISION_MS = 100;
+const NAV_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
+let pendingKey = null; // { event, action, screen, el, selection, scrolled, timer }
+
+function deferKey(event, action, screen, el) {
+  finishPendingKey();
+  pendingKey = { event, action, screen, el, selection: selectionOf(el)?.text ?? '', scrolled: false,
+    timer: setTimeout(finishPendingKey, KEY_DECISION_MS) };
+}
+
+function finishPendingKey() {
+  const pending = pendingKey;
+  if (!pending) return;
+  pendingKey = null;
+  clearTimeout(pending.timer);
+  const { event, action, screen, el } = pending;
+  if (event.defaultPrevented) return action && send(action, screen);
+  const selection = selectionOf(el);
+  if (selection && selection.text !== pending.selection) {
+    const selectAll = event.key.toLowerCase() === 'a' && !(isFormField(el) || el.isContentEditable);
+    if (selectAll) return action && send(action, screen);
+    return sendSelection(selection, screen, lastSentTime === lastSelectTime ? lastSentTime : null);
+  }
+  if (!pending.scrolled && action) send(action, screen);
+}
+
+// Shift + yön tuşu (seçimi genişletir) ya da Ctrl/Cmd+A (tümünü seçer).
+function isSelectionKey(event) {
+  if (event.altKey) return false;
+  return (event.shiftKey && NAV_KEYS.has(event.key)) || ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'a');
+}
+
+// Sayfayı kaydırabilen tuşlar (Ctrl/Alt/Cmd olmadan).
+function isScrollKey(event) {
+  if (event.ctrlKey || event.altKey || event.metaKey) return false;
+  return event.key === ' ' || (!event.shiftKey && NAV_KEYS.has(event.key));
 }
 
 function recordEnter(el) {
@@ -128,12 +332,15 @@ function recordEnter(el) {
 //     Yalnızca butonda/linkte Enter ve Space hariç: tarayıcı onları 'click' olarak üretir.
 //   - Alanın içinde: Escape, tek satırlı metin alanında ArrowUp/ArrowDown (öneri seçmek) ve
 //     Ctrl/Alt/Cmd kısayolları (Ctrl+Enter...). İmleç ve düzenleme tuşları (oklar, Home,
-//     Backspace, Ctrl+C/V/Z...) hariç: alanın değerini değiştirirler, o da 'input' ile kaydedilir.
-//   - Hiçbir yerde: Tab (yalnızca odağı taşır), tek başına Ctrl/Shift... ve tarayıcının kendi
-//     kısayolları (aşağıda).
+//     Backspace, Ctrl+Z...) hariç: alanın değerini değiştirirler, o da 'input' ile kaydedilir.
+//   - Hiçbir yerde: Tab (yalnızca odağı taşır), tek başına Ctrl/Shift..., kopyala/kes/yapıştır
+//     ve menü tuşu (kendi olayları kaydeder) ve tarayıcının kendi kısayolları (aşağıda).
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'OS', 'Dead', 'Unidentified', 'Process']);
 const CARET_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Backspace', 'Delete']);
-const FIELD_EDITING = new Set(['ctrl+a', 'ctrl+c', 'ctrl+v', 'ctrl+x', 'ctrl+z', 'ctrl+y', 'ctrl+shift+z']);
+const FIELD_EDITING = new Set(['ctrl+a', 'ctrl+z', 'ctrl+y', 'ctrl+shift+z']);
+// Kendi olayı olan kısayollar: kopyala / kes / yapıştır 'clipboard' (bkz. onClipboard), menü
+// tuşu ve Shift+F10 'contextmenu' (bkz. onContextMenu) aksiyonu kaydeder.
+const EVENT_SHORTCUTS = new Set(['ctrl+c', 'ctrl+x', 'ctrl+v', 'ctrl+shift+v', 'ctrl+insert', 'shift+insert', 'shift+delete', 'contextmenu', 'shift+f10']);
 const ACTIVATABLE = 'button, a[href], summary, input[type="button"], input[type="submit"], input[type="reset"], input[type="image"]';
 
 // Tarayıcının kendi kısayolları: sayfada bir şey yapmazlar ya da etkilerini başka bir aksiyon
@@ -159,7 +366,7 @@ function commandKey(event, el) {
   const meta = event.metaKey;
   const name = event.key === ' ' ? 'Space' : event.key;
   const shortcut = [(ctrl || meta) && 'ctrl', alt && 'alt', event.shiftKey && 'shift', name.toLowerCase()].filter(Boolean).join('+');
-  if (BROWSER_SHORTCUTS.has(shortcut)) return null;
+  if (BROWSER_SHORTCUTS.has(shortcut) || EVENT_SHORTCUTS.has(shortcut)) return null;
 
   const modified = ctrl || alt || meta;
   if (isFormField(el) || el.isContentEditable) {
@@ -197,7 +404,9 @@ function targetOf(el, visible = interactableElements()) {
 // Kaydırma hareketinin ilk 'scroll' olayında ekranın edge set'i alınır (kaydırmanın öncesi).
 // İlk olay konum biraz değiştikten sonra gelir; bu yüzden "öncesi" yaklaşıktır.
 function onScroll(event) {
-  if (!event.isTrusted || scrollStartScreen.has(event.target)) return;
+  if (!event.isTrusted) return;
+  if (pendingKey) pendingKey.scrolled = true; // tuş sayfayı kaydırdı (bkz. finishPendingKey)
+  if (scrollStartScreen.has(event.target)) return;
   scrollStartScreen.set(event.target, countElements(interactableElements()));
 }
 
@@ -242,11 +451,13 @@ function isFormField(el) {
   return false;
 }
 
-function send(action, screen) {
+// extra: mesaja eklenen, aksiyonda saklanmayan bilgi (ör. select > replaces).
+function send(action, screen, extra = {}) {
+  finishPendingKey(); // kararı bekleyen tuş önce gitsin (sıra)
   action.url = location.href;
-  action.time = Date.now();
+  action.time = lastSentTime = Date.now();
   if (LOG_STATE) logState(action);
-  message({ type: 'ACTION', action, screen });
+  message({ type: 'ACTION', action, screen, ...extra });
   reportScreenWhenSettled();
 }
 
@@ -266,7 +477,10 @@ function message(msg) {
 // background.js bu bilgiyi ister. Algoritmanın detayı: docs/03-state-eslestirme.md
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === 'GET_FINGERPRINT') sendResponse(fingerprint());
+  if (message.type === 'GET_FINGERPRINT') {
+    finishPendingKey(); // kararı bekleyen tuş bu edge'e girsin
+    sendResponse(fingerprint());
+  }
 });
 
 // Ekranda tıklanabilen elementlerin SAYILI kümesi (multiset): her anahtar, uyduğu
@@ -378,6 +592,9 @@ addEventListener('resize', reportScreenWhenSettled);
 addEventListener('pageshow', (event) => event.persisted && reportScreenWhenSettled()); // geri/ileri önbellekten dönüş
 document.addEventListener('transitionend', restartQuietTimer, true);
 document.addEventListener('animationend', restartQuietTimer, true);
+// Yazmaya başlanınca sayfa durulmuş sayılır: yazının etkisi önceki aksiyona (ör. Tab ile odak)
+// karışmasın, yazmanın öncesi bu an olsun. Capture phase: sayfa henüz tepki vermemiştir.
+document.addEventListener('beforeinput', (event) => event.isTrusted && settleTimers && reportScreen(), true);
 reportScreenWhenSettled(); // sayfa yüklendi
 
 function reportScreenWhenSettled() {

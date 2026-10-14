@@ -445,7 +445,9 @@ function actionItem(action) {
   const li = document.createElement('li');
   const value = action.type === 'input' ? ` = "${action.value}"`
     : action.type === 'scroll' ? ` → ${action.x}, ${action.y}`
-    : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}` : '';
+    : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
+    : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
+    : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
   li.querySelector('b').textContent = ACTION_TEXT[action.type] ?? action.type;
   li.querySelector('span').textContent = action.label + value;

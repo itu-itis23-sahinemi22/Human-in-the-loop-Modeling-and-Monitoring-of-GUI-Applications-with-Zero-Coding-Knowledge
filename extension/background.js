@@ -84,7 +84,7 @@ async function handle(message, sender) {
   const state = await getState();
   switch (message.type) {
     // content.js -> background
-    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message.screen);
+    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message.screen, message.replaces);
     case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen);
     // panel -> background
     case 'CREATE_NODE': return createNode(state, message.tabId, message.windowId);
@@ -110,10 +110,13 @@ async function handle(message, sender) {
 // aksiyonlarda yok). Yalnızca önceki aksiyon hâlâ açıksa, onun sonrası olarak kullanılır.
 // Önceki aksiyon kapandıysa kullanılmaz: yazmada bu ekran yazılanın sonrasıdır; aksiyonun
 // öncesi, son görülen state'tir.
-async function addAction(state, tabId, action, screen = null) {
+// replaces: bu aksiyonun yerini aldığı, aynı hareketten önceki aksiyonun zamanı. Çift/üçlü
+// tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp).
+async function addAction(state, tabId, action, screen = null, replaces = null) {
   const settings = await getSettings();
   // Kayıt başlamadıysa ya da aksiyon başka bir sekmeden geldiyse yok say.
   if (state.tabId === null || tabId !== state.tabId) return;
+  if (replaces && state.buffer.at(-1)?.time === replaces) state.buffer.pop();
   // Aynı tuşa sayfa durulmadan yeniden basıldıysa (basılı tutma dahil) tek aksiyondur.
   const open = openAction(state);
   if (action.type === 'key' && open?.type === 'key' && open.key === action.key && open.selector === action.selector) {
@@ -160,6 +163,8 @@ function observeScreen(state, screen, settings) {
     const before = stateCounts(state.screen, settings);
     const after = stateCounts(screen, settings);
     open.changed = before && after ? !sameCounts(before, after) : null;
+    // Tab ile odak yalnızca state'i değiştirdiyse aksiyondur; formda alandan alana geçmek gürültüdür.
+    if (open.type === 'focus' && open.changed === false) state.buffer.pop();
   }
   state.screen = screen;
 }
@@ -268,6 +273,11 @@ async function createNode(state, tabId, windowId) {
   const matches = findSameStateNodes(state, capture, settings);
   // Bu ekran açık aksiyonun sonrasıdır; sıradaki aksiyonun öncesi de node'un state'i.
   observeScreen(state, page.elements, settings);
+  // Bekleyen tek aksiyon state'i değiştirmeyen bir odaktıysa düşmüştür (bkz. observeScreen).
+  if (state.nodes.length > 0 && state.buffer.length === 0) {
+    await save(state);
+    return { notice: 'Bekleyen aksiyon yok. Node oluşturmak için önce sayfada bir aksiyon yapın.' };
+  }
 
   capture.screenshot = await takeScreenshot(windowId);
   const actions = state.buffer;
@@ -544,7 +554,7 @@ async function mergeNodes(state, keepId, removeId) {
 
 // Aynı kaynak, hedef ve aksiyon dizisine sahip edge'lerden fazla olanların sayısı.
 function countDuplicateEdges(edges) {
-  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.key, a.count])]);
+  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.key, a.count, a.text, a.operation])]);
   const seen = new Set();
   let duplicates = 0;
   for (const e of edges) {

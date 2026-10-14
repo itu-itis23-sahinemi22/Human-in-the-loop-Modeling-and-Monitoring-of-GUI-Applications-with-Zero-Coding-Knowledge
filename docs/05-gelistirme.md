@@ -128,6 +128,13 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Sayfada (alan dışında) Escape'e basınca `Tuş  Press Escape` satırı çıkıyor; ok tuşunu basılı tutunca tek satır `Press ArrowDown ×N` oluyor. Alana yazılan harfler satır üretmiyor; alan değeri `Fill` olarak geliyor. Ctrl +, F5, Tab ve butonda Enter tuş olarak kaydedilmiyor.
 - [ ] Arama kutusuna yazıp ArrowDown ile öneri seçip Enter'a basınca sıra: `Fill`, `Press ArrowDown`, `Submit`.
 - [ ] Türkçe klavyede bir alana `@` yazmak (AltGr+Q) tuş olarak kaydedilmiyor.
+- [ ] Bir paragrafta fareyle sürükleyerek metin seçince `Metin seç  Select "..."` satırı çıkıyor, `Tıkla` satırı çıkmıyor. Kelimeye çift tıklayınca tek bir `Select` satırı kalıyor.
+- [ ] Alanda Shift+← ile seçim genişletince tek `Select` satırı kalıyor; alanda Ctrl+A `Select`, sayfada Ctrl+A `Press Control+a`.
+- [ ] Sayfada Space ya da PageDown ile kaydırınca yalnızca `Scroll down` geliyor, `Press Space` gelmiyor.
+- [ ] Sağ tıklayınca `Sağ tık menüsü  Right click ...` satırı çıkıyor, `Tıkla` çıkmıyor. Kendi menüsünü açan bir sitede (ör. Google Drive) satırda "sayfanın kendi menüsü" yazıyor.
+- [ ] Formda Tab ile alandan alana geçmek satır bırakmıyor (sayfa durulunca düşüyor). "İçeriğe atla" linki olan bir sitede ilk Tab `Focus ...` satırı bırakıyor.
+- [ ] Arama kutusuna yazıp alandan çıkmadan yan paneldeki "Node oluştur"a basınca edge'de `Fill` var (sayfa odağı kaybedince `change` gelir).
+- [ ] Seçili metni Ctrl+C ile ve sağ tık > Kopyala ile kopyalayınca `Kopyala/Kes/Yapıştır  Copy "..."` satırı çıkıyor; `Tuş` satırı çıkmıyor. Kopyalamayı engelleyen bir sitede satırda "sayfa engelledi" yazıyor.
 - [ ] `contenteditable` bir alana yazıp dışına tıklayınca `Fill` satırı çıkıyor; değiştirmeden çıkınca çıkmıyor.
 - [ ] Son node'dan beri hiçbir aksiyon yoksa "Node oluştur" butonu kilitli; üzerine gelince sebebi yazıyor. Bir aksiyon yapınca açılıyor.
 - [ ] Ayarlar'da **Kaydır**'ın işaretini kaldırınca kaydırmalar "Bekleyen aksiyonlar"a eklenmiyor; tek başına kaydırma butonu açmıyor.
