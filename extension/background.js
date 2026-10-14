@@ -84,8 +84,8 @@ async function handle(message, sender) {
   const state = await getState();
   switch (message.type) {
     // content.js -> background
-    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message.screen, message.replaces);
-    case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen);
+    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message);
+    case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen, message.viewport);
     // panel -> background
     case 'CREATE_NODE': return createNode(state, message.tabId, message.windowId);
     case 'RESOLVE':     return resolvePending(state, message.targetId);
@@ -112,7 +112,8 @@ async function handle(message, sender) {
 // öncesi, son görülen state'tir.
 // replaces: bu aksiyonun yerini aldığı, aynı hareketten önceki aksiyonun zamanı. Çift/üçlü
 // tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp).
-async function addAction(state, tabId, action, screen = null, replaces = null) {
+// viewport: aksiyonun gönderildiği andaki sayfa boyutu (content.js gönderir; bkz. observeScreen).
+async function addAction(state, tabId, action, { screen = null, replaces = null, viewport = null } = {}) {
   const settings = await getSettings();
   // Kayıt başlamadıysa ya da aksiyon başka bir sekmeden geldiyse yok say.
   if (state.tabId === null || tabId !== state.tabId) return;
@@ -124,15 +125,21 @@ async function addAction(state, tabId, action, screen = null, replaces = null) {
     open.label = `Press ${open.key} ×${open.count}`;
     return save(state);
   }
-  if (open) observeScreen(state, screen, settings);
+  // Pencere boyutu sayfa durulmadan yine değiştiyse (sürükleme sürüyor) tek aksiyondur:
+  // varılan boyut güncellenir.
+  if (action.type === 'resize' && open?.type === 'resize') {
+    open.viewport = action.viewport;
+    return save(state);
+  }
+  if (open) observeScreen(state, screen, settings, viewport);
   // Ayarlarda işaretli olmayan tipteki aksiyon "Bekleyen aksiyonlar"a eklenmez.
   if (!settings.disabledActions.includes(action.type)) state.buffer.push(action);
   return save(state);
 }
 
-async function onScreen(state, tabId, screen) {
+async function onScreen(state, tabId, screen, viewport) {
   if (state.tabId === null || tabId !== state.tabId) return;
-  observeScreen(state, screen, await getSettings());
+  observeScreen(state, screen, await getSettings(), viewport);
   return save(state);
 }
 
@@ -149,7 +156,7 @@ async function onScreen(state, tabId, screen) {
 //
 // Sonrası bildirilmeden yeni aksiyon gelirse (ör. yazıp hemen Enter) açık aksiyon, yeni
 // aksiyonun yapıldığı andaki ekranla kapatılır. Ekransız gelen aksiyonda (background'ın
-// yakaladıkları) iki aksiyonun etkisi ayrılamaz; ikisi de "bilinmiyor" (null) olur.
+// yakaladıkları ve pencere boyutu) iki aksiyonun etkisi ayrılamaz; ikisi de "bilinmiyor" (null) olur.
 
 // Sonrası henüz görülmemiş aksiyon: buffer'ın sonundaki işaretsiz aksiyon.
 function openAction(state) {
@@ -157,12 +164,17 @@ function openAction(state) {
   return last && last.changed === undefined ? last : null;
 }
 
-function observeScreen(state, screen, settings) {
+// viewport: ekranın görüldüğü andaki sayfa boyutu. Yakınlaştırma sayfanın CSS piksel boyutunu
+// ve piksel oranını da değiştirir; kapanan yakınlaştırma aksiyonu varılan boyutu saklar.
+// Tekrar oynatırken tarayıcı yakınlaştırması olmayan araçlar (Playwright) aynı ekranı bu
+// boyutla kurar.
+function observeScreen(state, screen, settings, viewport = null) {
   const open = openAction(state);
   if (open) {
     const before = stateCounts(state.screen, settings);
     const after = stateCounts(screen, settings);
     open.changed = before && after ? !sameCounts(before, after) : null;
+    if (open.type === 'zoom' && viewport) open.viewport = viewport;
     // Tab ile odak yalnızca state'i değiştirdiyse aksiyondur; formda alandan alana geçmek gürültüdür.
     if (open.type === 'focus' && open.changed === false) state.buffer.pop();
   }
@@ -194,8 +206,9 @@ function navigationAction({ url, transitionType, transitionQualifiers, timeStamp
 
 // Tarayıcı yakınlaştırması (Ctrl + / Ctrl -, Ctrl + tekerlek, menü) da sayfanın içinde
 // olmadığı için buradan yakalanır. State yalnızca ekrana sığan elementlerden oluştuğu için
-// yakınlaştırma da kaydırma gibi state'i değiştirebilir. Varılan oran kaydedilir: tekrar
-// oynatırken sekme aynı orana ayarlanır. Chrome oranı site başına sakladığı için başka bir
+// yakınlaştırma da kaydırma gibi state'i değiştirebilir. Varılan oran ve sayfa boyutu
+// (bkz. observeScreen) kaydedilir: tekrar oynatırken sekme aynı orana ayarlanır ya da
+// otomasyon aracında aynı boyut kurulur. Chrome oranı site başına sakladığı için başka bir
 // siteye geçince oran kendiliğinden de değişebilir; oran mutlak olduğu için bu zararsızdır.
 // Art arda gelen yakınlaştırmalar (tekerleğin her çentiği) sayfa durulmadan geldiği için tek
 // aksiyondur: açık bir yakınlaştırma aksiyonu varsa oranı güncellenir, başlangıç oranına
@@ -272,7 +285,7 @@ async function createNode(state, tabId, windowId) {
   const settings = await getSettings();
   const matches = findSameStateNodes(state, capture, settings);
   // Bu ekran açık aksiyonun sonrasıdır; sıradaki aksiyonun öncesi de node'un state'i.
-  observeScreen(state, page.elements, settings);
+  observeScreen(state, page.elements, settings, page.viewport);
   // Bekleyen tek aksiyon state'i değiştirmeyen bir odaktıysa düşmüştür (bkz. observeScreen).
   if (state.nodes.length > 0 && state.buffer.length === 0) {
     await save(state);
@@ -335,6 +348,7 @@ function commit(state, capture, actions, targetId) {
       urlKey: capture.urlKey,
       title: capture.title,
       elements: capture.elements,
+      viewport: capture.viewport, // kümenin alındığı sayfa boyutu: test aynı boyutta çalıştırılır
       screenshot: capture.screenshot,
     };
     state.nodes.push(node);
@@ -347,10 +361,10 @@ function commit(state, capture, actions, targetId) {
   // createNode() bekleyen aksiyon yoksa baştan durur.)
   const from = state.currentNodeId;
   if (from) {
-    // Edge'e adını son aksiyon verir. Kaydırma çoğu zaman asıl aksiyonun yan ürünü olduğu
-    // için (sayfa tıklamadan sonra kendisi de kaydırabilir) atlanır; edge sadece
-    // kaydırmalardan oluşuyorsa adı kaydırmadan gelir: e_ScrollDown.
-    const lastLabel = (actions.findLast((a) => a.type !== 'scroll') ?? actions.at(-1))?.label;
+    // Edge'e adını son aksiyon verir. Kaydırma ve pencere boyutu çoğu zaman asıl aksiyonun
+    // yan ürünü olduğu için (sayfa tıklamadan sonra kendisi de kaydırabilir, arada DevTools
+    // açılabilir) atlanır; edge sadece bunlardan oluşuyorsa adı onlardan gelir: e_ScrollDown, e_Resize.
+    const lastLabel = (actions.findLast((a) => a.type !== 'scroll' && a.type !== 'resize') ?? actions.at(-1))?.label;
     state.edges.push({
       id: 'e' + state.nextId++,
       name: 'e_' + (toPascalCase(lastLabel ?? '') || 'Transition'),
@@ -554,7 +568,7 @@ async function mergeNodes(state, keepId, removeId) {
 
 // Aynı kaynak, hedef ve aksiyon dizisine sahip edge'lerden fazla olanların sayısı.
 function countDuplicateEdges(edges) {
-  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.key, a.count, a.text, a.operation])]);
+  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.viewport, a.key, a.count, a.text, a.operation])]);
   const seen = new Set();
   let duplicates = 0;
   for (const e of edges) {

@@ -43,9 +43,9 @@ Bu tablo tasarımı doğrudan belirliyor:
 
 Ziyaret edilen **her** sayfaya Chrome tarafından otomatik olarak eklenir (`manifest.json > content_scripts`).
 
-- **Aksiyon yakalama:** `click`, `mouseup` (metin seçme), `contextmenu`, `change`, `focusin` (Tab ile odak), `focusout` (düzenlenebilir alanlar), `keydown`, `copy` / `cut` / `paste` ve `scrollend` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, target, selector, label, value, url, time}`; kaydırmada `target`/`value` yerine `x, y`) background'a gönderir. `target` hedefi state ile aynı düzeyde tutar: "ekrandaki n'inci `button:Sil`" ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)).
+- **Aksiyon yakalama:** `click`, `mouseup` (metin seçme), `contextmenu`, `change`, `focusin` (Tab ile odak), `focusout` (düzenlenebilir alanlar), `keydown`, `copy` / `cut` / `paste`, `scrollend` ve pencerenin `resize` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, target, selector, label, value, url, time}`; kaydırmada `target`/`value` yerine `x, y`) background'a gönderir. `target` hedefi state ile aynı düzeyde tutar: "ekrandaki n'inci `button:Sil`" ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)).
 - **Aksiyonun sonrası:** Her aksiyondan, sayfa yüklenmesinden, geri/ileriden ve pencere boyutu değişiminden (yakınlaştırma dahil) sonra sayfanın durulmasını bekler (300 ms DOM değişmez; en fazla 3 sn) ve ekranın edge set'ini background'a bildirir (`SCREEN`). Yazmaya başlanınca (`beforeinput`) beklemeden bildirir: yazının etkisi önceki aksiyona karışmasın. Background aksiyonun state'i değiştirip değiştirmediğini bununla bulur. Detay: [Edge düzenleme](#edge-düzenleme)
-- **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini döndürür. Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
+- **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini ve sayfanın görünen alanını (viewport) döndürür. Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
 - **Selector üretimi:** Her aksiyon için elementi tekil olarak bulan bir CSS selector üretir. Kayıtların ileride tekrar oynatılabilmesi buna bağlıdır.
 
 ### `background.js`: Beyin
@@ -102,9 +102,9 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 
 | Mesaj | Gönderen → Alan | İçerik | Ne yapar |
 |---|---|---|---|
-| `ACTION` | content → background | `{ action, screen, replaces? }` | Aksiyonu buffer'a ekler. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
-| `SCREEN` | content → background | `{ screen }` | Sayfa durulunca ekranın edge set'i. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. |
-| `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. |
+| `ACTION` | content → background | `{ action, screen, viewport, replaces? }` | Aksiyonu buffer'a ekler. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `viewport`, gönderildiği andaki sayfa boyutudur; açık bir yakınlaştırma aksiyonu bununla kapanırsa varılan boyut olarak saklanır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
+| `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. |
+| `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements, viewport }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. `viewport`, kümenin alındığı görünen alandır: `{ width, height, devicePixelRatio }`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
 | `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
 | `REMOVE_ACTION` | panel → background | `{ edgeId, index }` | Edge'den bir aksiyonu siler. Tek aksiyon kaldıysa reddeder. İlk silmede orijinal liste `recordedActions`'a kopyalanır; silinen aksiyon geri al yığınına (`state.undo`) girer. |
@@ -195,7 +195,7 @@ Durumların tamamı (`from` = şu anki node):
 **İsimlendirme:**
 
 - Node: `v_` + URL'nin son anlamlı parçası (`/inventory.html` → `v_Inventory`). Yoksa sayfa başlığı kullanılır (`Swag Labs` → `v_SwagLabs`). Aynı isim varsa sonuna `_2`, `_3` eklenir.
-- Edge: `e_` + son aksiyonun etiketi (`Login` butonu → `e_Login`, `Add to cart` → `e_AddToCart`). Kaydırmalar atlanır: bir linke tıklandıktan sonra sayfa kendini başa kaydırsa da edge `e_Product` olur. Edge yalnızca kaydırmalardan oluşuyorsa adı `e_ScrollDown` / `e_ScrollUp` olur.
+- Edge: `e_` + son aksiyonun etiketi (`Login` butonu → `e_Login`, `Add to cart` → `e_AddToCart`). Kaydırmalar ve pencere boyutu değişimleri atlanır: bir linke tıklandıktan sonra sayfa kendini başa kaydırsa da, arada DevTools açılsa da edge `e_Product` olur. Edge yalnızca bunlardan oluşuyorsa adı `e_ScrollDown` / `e_ScrollUp` / `e_Resize` olur.
 - Türkçe karakterler sadeleştirilir (`Giriş yap` → `GirisYap`), çünkü bu isimler ileride Java/JS metot adı olacak.
 
 ---
@@ -216,9 +216,10 @@ Durumların tamamı (`from` = şu anki node):
 | `keydown` + Enter (input içinde) | önce `input`, sonra `enter` | Enter, `change`'den *önce* tetiklenir. Sıra doğru olsun diye değer burada kaydedilir. |
 | `keydown` (komut tuşları) | `key` | Metin harf harf kaydedilmez; alanın değeri `input` ile kaydedilir. Kaydedilenler: alan dışında her tuş (Escape, oklar, Delete, `/`, `c`...; butonda/linkte Enter ve Space hariç, onları tarayıcı `click` olarak üretir), alanda Escape, tek satırlı alanda ArrowUp/Down (öneri seçmek) ve Ctrl/Alt/Cmd kısayolları (imleç ve Ctrl+C/V/Z gibi düzenleme tuşları hariç). Hiç kaydedilmeyenler: Tab, tek başına Ctrl/Shift, kopyala/kes/yapıştır (`clipboard` kaydeder), tarayıcının kısayolları (Ctrl +/-, F5, Alt+←, Ctrl+F, F12...; `content.js > BROWSER_SHORTCUTS`). AltGr ile yazılan karakterler (`@`) kısayol sayılmaz. Tuştan önce alandaki değer kaydedilir: "Fill Search → Press ArrowDown". Aynı tuşa sayfa durulmadan tekrar basılırsa tek aksiyon olur (`Press ArrowDown ×3`). |
 | `keydown` (tarayıcıda varsayılan işi olan tuşlar) | `key`, `select` ya da hiçbiri | Shift+oklar/Home/End ve Ctrl+A metin seçer; alan dışında Space, PageUp/Down, Home/End ve oklar sayfayı kaydırır. Bu tuşların ne yaptığı olay bitince bilinir; karar 100 ms sonra verilir: sayfa olayı engellediyse tuşu sayfa kullanmıştır (`key`, ör. galeride ok tuşu); seçim değiştiyse `select` (alan dışında Ctrl+A tüm sayfa metni saklanmasın diye `key`); sayfa kaydıysa hiçbiri (kaydırma `scroll` olarak gelir); hiçbiri olmadıysa `key`. Bu arada başka bir aksiyon gelirse önce tuşun kararı verilir. |
+| `scrollend` (sayfa ya da kaydırılabilir kutu) | `scroll` | `scroll` olayı kaydırma boyunca onlarca kez gelir; `scrollend` hareket bitince bir kez gelir. Vardığı konum (`x`, `y`) kaydedilir. Sayfanın kendi yaptığı kaydırmalar da kaydedilir (tarayıcı bunları kullanıcınınkinden ayırmaz); konum mutlak olduğu için tekrar oynatmada zararsızdır. |
+| `resize` (pencere) | `resize` | Pencereyi sürüklemek, yan paneli ya da DevTools'u açmak, tam ekrana geçmek sayfanın görünen alanını değiştirir; ekrana sığan elementler, yani state de değişebilir. Varılan boyut (`viewport`, CSS piksel) kaydedilir. Olay sürükleme boyunca her karede gelir: ilk olay hemen gönderilir, sonrakiler birleşir; background açık aksiyonu günceller, sürükleme tek aksiyon olur. Yakınlaştırma da bu olayı tetikler ama `devicePixelRatio`'yu da değiştirdiği için ayrılır; onu background `zoom` olarak kaydeder (aşağıda). |
 
 content.js tüm aksiyonları yakalar ve gönderir. Ayarlar'da işaretli olmayan tipleri `background.js > addAction()` buffer'a eklemez; tarayıcı seviyesindeki gezinmeler de (aşağıda) aynı süzgeçten geçer.
-| `scrollend` (sayfa ya da kaydırılabilir kutu) | `scroll` | `scroll` olayı kaydırma boyunca onlarca kez gelir; `scrollend` hareket bitince bir kez gelir. Vardığı konum (`x`, `y`) kaydedilir. Sayfanın kendi yaptığı kaydırmalar da kaydedilir (tarayıcı bunları kullanıcınınkinden ayırmaz); konum mutlak olduğu için tekrar oynatmada zararsızdır. |
 
 Üç teknik detay:
 
@@ -242,7 +243,7 @@ Adres çubuğuna URL yazmak ya da geri tuşuna basmak sayfanın *içinde* olmaz,
 | `transitionType: typed / auto_bookmark / generated` | `navigate` (adres çubuğu, yer imi) |
 | `link`, `form_submit` ve diğerleri | *Kaydedilmez*: content.js zaten `click` / `enter` olarak kaydetti. |
 
-Tarayıcı yakınlaştırması (Ctrl + / Ctrl -, Ctrl + tekerlek, menü) da sayfanın içinde olmaz. Background bunu `chrome.tabs.onZoomChange` ile yakalar ve `zoom` aksiyonu üretir: oran büyüdüyse `Zoom in`, küçüldüyse `Zoom out`; varılan oran (`zoom`) saklanır. State yalnızca ekrana sığan elementlerden oluştuğu için yakınlaştırma da kaydırma gibi state'i değiştirebilir. Chrome oranı site başına sakladığı için başka bir siteye geçince oran kendiliğinden de değişebilir; bu da kaydedilir, oran mutlak olduğu için tekrar oynatmada zararsızdır. Sayfa durulmadan art arda gelen yakınlaştırmalar (tekerleğin her çentiği) tek aksiyon olur: oran güncellenir, başlangıç oranına (`fromZoom`) dönülürse aksiyon düşer.
+Tarayıcı yakınlaştırması (Ctrl + / Ctrl -, Ctrl + tekerlek, menü) da sayfanın içinde olmaz. Background bunu `chrome.tabs.onZoomChange` ile yakalar ve `zoom` aksiyonu üretir: oran büyüdüyse `Zoom in`, küçüldüyse `Zoom out`; varılan oran (`zoom`) saklanır. Yakınlaştırma sayfanın CSS piksel boyutunu ve piksel oranını da değiştirdiği için varılan boyut (`viewport`) da saklanır: tarayıcı yakınlaştırması olmayan otomasyon araçları (Playwright) aynı ekranı bu boyutla kurar. Boyut, aksiyonu kapatan bildirimle (`SCREEN` ya da sonraki aksiyon) gelir. State yalnızca ekrana sığan elementlerden oluştuğu için yakınlaştırma da kaydırma gibi state'i değiştirebilir. Chrome oranı site başına sakladığı için başka bir siteye geçince oran kendiliğinden de değişebilir; bu da kaydedilir, oran mutlak olduğu için tekrar oynatmada zararsızdır. Sayfa durulmadan art arda gelen yakınlaştırmalar (tekerleğin her çentiği) tek aksiyon olur: oran güncellenir, başlangıç oranına (`fromZoom`) dönülürse aksiyon düşer.
 
 ---
 
@@ -269,9 +270,9 @@ node (S0) ── tıkla ── duruldu: S1 ── zoom ── duruldu: S2 ──
 ```
 
 - Ekranın kendisi aksiyonda saklanmaz, sadece işaret (`true` / `false` / `null`). Karşılaştırma işaretlendiği andaki Ayarlar'la yapılır.
-- Aksiyonu background yakalasa da (yakınlaştırma, adres çubuğu, geri, yenile) öncesi bilinir: bir önceki aksiyonun sonrasıdır. Sonrası, yeni sayfa ya da yakınlaştırılmış sayfa durulunca gelir.
+- Aksiyonu background yakalasa da (yakınlaştırma, adres çubuğu, geri, yenile) ya da olay geldiğinde ekran zaten değişmiş olsa da (pencere boyutu) öncesi bilinir: bir önceki aksiyonun sonrasıdır. Sonrası, yeni sayfa ya da yeni boyuttaki sayfa durulunca gelir.
 - Sonrası bildirilmeden yeni aksiyon gelirse (ör. yazıp hemen Enter) açık aksiyon, yeni aksiyonun yapıldığı andaki ekranla kapatılır. Yazmanın öncesi yazmaya başlamadan önceki state'tir; yazarken ortaya çıkan buton da yazmanın etkisi sayılır.
-- Sonrası bildirilmeden background'ın yakaladığı bir aksiyon gelirse (ör. tıklayıp 300 ms içinde Ctrl +) iki aksiyonun etkisi ayrılamaz; ikisi de *etkisi bilinmiyor* olur.
+- Sonrası bildirilmeden background'ın yakaladığı bir aksiyon ya da pencere boyutu değişimi gelirse (ör. tıklayıp 300 ms içinde Ctrl +) iki aksiyonun etkisi ayrılamaz; ikisi de *etkisi bilinmiyor* olur.
 - Tab ile odak (`focus`) işaretlendiği an state'i değiştirmediyse düşer: formda alandan alana geçmek edge'e gürültü olarak girmez. Bekleyen tek aksiyon böyle düşerse "Node oluştur" node oluşturmaz.
 - Sayfanın aksiyonsuz değişimleri (durulduktan sonra gelen yükleme, hover) ayrıca izlenmez; bir sonraki aksiyonun etkisine karışır.
 

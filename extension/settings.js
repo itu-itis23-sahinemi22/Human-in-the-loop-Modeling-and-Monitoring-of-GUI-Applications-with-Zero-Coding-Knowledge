@@ -25,6 +25,7 @@ const ACTION_TYPES = [
   { type: 'focus', text: 'Odak (Tab)' },
   { type: 'scroll', text: 'Kaydır' },
   { type: 'zoom', text: 'Yakınlaştır/Uzaklaştır' },
+  { type: 'resize', text: 'Pencere boyutu' },
   { type: 'navigate', text: 'Git' },
   { type: 'history', text: 'Geri/İleri' },
   { type: 'reload', text: 'Yenile' },

@@ -46,6 +46,7 @@ Bir durumu (sayfa / ekran) temsil eder.
 | `urlKey` | `string` | `"https://www.saucedemo.com/inventory.html"` | Normalleştirilmiş URL şablonu ([03](03-state-eslestirme.md#aşama-1-url-şablonu)) |
 | `title` | `string` | `"Swag Labs"` | Sayfa başlığı (`document.title`) |
 | `elements` | `{ key, types, count }[]` | `[{ "key": "button:Sil", "types": ["button"], "count": 5 }]` | Yapısal parmak izi: node oluşturulduğu anda ekranda tıklanabilen elementlerin **sayılı kümesi**. `key` elementin türü (`elementKey()`), `types` uyduğu etkileşimli türler (`settings.js > INTERACTABLE_TYPES`, Ayarlar filtresi için), `count` ekranda kaç tane olduğu. Node'un **edge set**'i, Ayarlar'da işaretli türlere uyan girdilerin sayımıdır ([03](03-state-eslestirme.md#ayarlar-hangi-türler-statee-girer)). Türleri ya da sayıları farklı olan bir sayfa bu node'la asla eşleşmez. |
+| `viewport` | `{ width, height, devicePixelRatio }` | `{ "width": 1280, "height": 720, "devicePixelRatio": 1 }` | `elements`'ın alındığı görünen alan: sayfanın CSS piksel boyutu (`innerWidth × innerHeight`) ve piksel oranı (`devicePixelRatio`; yakınlaştırmayı da içerir). Küme bu alana sığan elementlerden oluştuğu için test aynı boyutta çalıştırılır ([03 > Pencere boyutu ve state](03-state-eslestirme.md#pencere-boyutu-ve-state)). Bu alan eklenmeden önce kaydedilmiş node'larda yoktur. |
 | `screenshot` | `string` | `"data:image/jpeg;base64,..."` | Sayfanın görünen kısmının JPEG görüntüsü |
 
 ---
@@ -74,7 +75,7 @@ Kullanıcının tek bir hareketi. Ortak alanlar:
 | `type` | `string` | Aksiyon tipi (aşağıdaki tablo) |
 | `target` | `{ key, index }` | Sadece `click`, `input`, `enter`, odakta bir element varken `key`, etkileşimli elementteki `contextmenu` / `focus` ve form alanındaki `select` / `clipboard`: hedef element, state ile aynı düzeyde. `key` elementin türü, `index` ekranda görünen aynı türdekiler arasındaki DOM sırası (1'den). Örnek: `{ "key": "button:Sil", "index": 2 }` = "ekrandaki 2. Sil". Element o an ekranda tıklanabilir değilse `index` `null`. Tekrar oynatırken önce bu kullanılır ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)). |
 | `changed` | `boolean \| null` | Aksiyon state'i (edge set'i) değiştirdi mi: hemen önceki state ile aksiyondan sonra sayfa durulunca görülen state karşılaştırılır. `null` ya da yok: bilinmiyor. Yalnızca edge düzenlemedeki silme uyarısı için; GraphWalker çıktısına girmez. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
-| `selector` | `string \| null` | Elementi bulan CSS selector (yedek; `target` bulunamazsa). Tarayıcı seviyesindeki gezinmelerde, yakınlaştırmada ve sayfanın kendisi kaydırıldığında `null`. |
+| `selector` | `string \| null` | Elementi bulan CSS selector (yedek; `target` bulunamazsa). Tarayıcı seviyesindeki gezinmelerde, yakınlaştırmada, pencere boyutu değişiminde ve sayfanın kendisi kaydırıldığında `null`. |
 | `label` | `string` | İnsan tarafından okunabilir açıklama. Edge isimleri buradan türetilir. |
 | `url` | `string` | Aksiyonun yapıldığı sayfanın adresi |
 | `time` | `number` | Unix zaman damgası (ms) |
@@ -92,7 +93,8 @@ Tipler:
 | `focus` | content.js | | `"Focus İçeriğe atla"` | `focus(selector)`. Yalnızca state'i değiştiren odaklar kaydedilir. |
 | `clipboard` | content.js | `operation`: `"copy"`, `"cut"` ya da `"paste"`; `text` (`string`): kopyalanan / yapıştırılan metin (şifre alanında `"******"`); `blocked` (`boolean`): sayfa işlemi engelledi ya da panoya kendi içeriğini koydu | `"Copy \"Merhaba\""`, `"Paste (boş)"` | Kopyala/kes: `press("Control+C")` / `"Control+X"`; yapıştır: panoya `text` yazılır, `press("Control+V")`. `blocked` testin beklediği sonuçtur. |
 | `scroll` | content.js | `x`, `y` (`number`): kaydırmanın vardığı konum (px) | `"Scroll down"`, `"Scroll up"` | `selector` varsa o kutuda, `null` ise sayfada `scrollTo(x, y)` |
-| `zoom` | background.js | `zoom` (`number`): tarayıcı yakınlaştırmasının vardığı oran (`1` = %100); `fromZoom` (`number`): başladığı oran | `"Zoom in"`, `"Zoom out"` | Sekmeyi `zoom` oranına ayarla (ör. `chrome.tabs.setZoom`) |
+| `zoom` | background.js | `zoom` (`number`): tarayıcı yakınlaştırmasının vardığı oran (`1` = %100); `fromZoom` (`number`): başladığı oran; `viewport`: varılan görünen alan (node'daki biçim; yakınlaştırma CSS piksel boyutunu ve piksel oranını değiştirir). `viewport`, aksiyon sayfanın bildirimi gelmeden bir gezinmeyle kapanırsa yoktur. | `"Zoom in"`, `"Zoom out"` | Sekmeyi `zoom` oranına ayarla (ör. `chrome.tabs.setZoom`). Tarayıcı yakınlaştırması olmayan araçta (Playwright) viewport'u `viewport` boyutuna ve piksel oranına ayarla. |
+| `resize` | content.js | `viewport`: varılan görünen alan (node'daki biçim) | `"Resize"` | Viewport'u `viewport` boyutuna ayarla (`page.setViewportSize({ width, height })`) |
 | `navigate` | background.js | | `"GoTo cart"` | `goto(url)` |
 | `history` | background.js | | `"Back"` | `goBack()` ya da `goto(url)` |
 | `reload` | background.js | | `"Reload"` | `reload()` |
@@ -145,7 +147,7 @@ Kayda özel bilgiler (URL, parmak izi, ekran görüntüsü, kaydedilen tarayıc�
       "startElementId": "n1",
       "properties": {
         "graphRecorder": {
-          "format": "graph-recorder/v4",
+          "format": "graph-recorder/v5",
           "exportedAt": "2026-10-07T12:00:00.000Z",
           "settings": { "disabledActions": [], "disabledInteractables": ["label"] }
         }
@@ -165,6 +167,7 @@ Kayda özel bilgiler (URL, parmak izi, ekran görüntüsü, kaydedilen tarayıc�
               { "key": "input:password",     "types": ["input"], "count": 1 },
               { "key": "input:user-name",    "types": ["input"], "count": 1 }
             ],
+            "viewport": { "width": 1280, "height": 720, "devicePixelRatio": 1 },
             "screenshot": "data:image/jpeg;base64,/9j/4AAQ..."
           }
         },
@@ -198,7 +201,7 @@ Kayda özel bilgiler (URL, parmak izi, ekran görüntüsü, kaydedilen tarayıc�
 ```
 
 - `selectedModelIndex` / `selectedElementId`: GraphWalker Studio'nun kendi dosyalarında bulunan alanlar. CLI bunları yok sayar.
-- `properties.graphRecorder.format`: şema değişince eski dosyaları tanımak için. `v4` = GraphWalker formatı, `elements` sayılı küme, aksiyonlarda `target`. (`v3`: GraphWalker formatı, sayısız küme; `v2` ve öncesi eklentiye özel formattı.)
+- `properties.graphRecorder.format`: şema değişince eski dosyaları tanımak için. `v5` = GraphWalker formatı, `elements` sayılı küme, aksiyonlarda `target`, vertex'lerde `viewport`. (`v4`: viewport'suz; `v3`: sayısız küme; `v2` ve öncesi eklentiye özel formattı.) `v5` dosyasında `viewport`'u olmayan vertex, bu alan eklenmeden önce kaydedilmiştir.
 - `properties.graphRecorder.settings`: `elements`'ın hangi türlerinin state'i oluşturduğunu gösterir.
 - Edge panelde düzenlendiyse `properties` ayrıca `edited: true` ve kayıttaki orijinal aksiyonları (`recordedActions`) taşır. `uiActions` ve `recordedActions` içinde `changed` işareti bulunmaz; o yalnızca paneldeki silme uyarısı içindir.
 - Chrome storage nesne anahtarlarını alfabetik sıraladığı için `elements` içindeki türlerin sırası `settings.js`'teki sıradan farklı olabilir.
@@ -265,4 +268,4 @@ public void v_Inventory() {
 
 Böylece kullanıcının tarayıcıda gezerek ürettiği graph, doğrudan çalıştırılabilir bir GraphWalker test projesine dönüşür. Bu, projenin uçtan uca hedefidir.
 
-> **Pencere boyutu:** State'ler yalnızca ekranda görünen elementlerden çıkarıldığı için testler, kayıttaki pencere boyutuyla çalıştırılmalıdır (ör. `driver.manage().window().setSize(...)`). Aksi halde ekrana sığan elementler ve dolayısıyla state'ler değişir. Bkz. [03 > Kaydırma ve state](03-state-eslestirme.md#kaydırma-ve-state)
+> **Pencere boyutu:** State'ler yalnızca ekranda görünen elementlerden çıkarıldığı için testler kayıttaki görünen alanla çalıştırılmalıdır. Başlangıç boyutu, başlangıç vertex'inin `properties.viewport`'udur (Playwright: `browser.newContext({ viewport: { width, height }, deviceScaleFactor: devicePixelRatio })`; Selenium'da pencere, sayfanın iç boyutu bu değer olacak şekilde ayarlanır). Edge'lerdeki `resize` ve `zoom` aksiyonları boyutu değiştirir. Aksi halde ekrana sığan elementler ve dolayısıyla state'ler değişir. Bkz. [03 > Pencere boyutu ve state](03-state-eslestirme.md#pencere-boyutu-ve-state)

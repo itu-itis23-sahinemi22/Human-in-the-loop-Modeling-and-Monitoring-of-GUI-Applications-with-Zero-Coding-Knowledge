@@ -428,6 +428,54 @@ function onScrollEnd(event) {
   send({ type: 'scroll', selector: page ? null : cssSelector(box), x, y, label: 'Scroll ' + direction }, screenBefore);
 }
 
+// PENCERE BOYUTU: state yalnızca ekrana sığan elementlerden oluştuğu için sayfanın görünen
+// alanı (viewport, CSS piksel) da state'i değiştirir: pencereyi sürüklemek, yan paneli ya da
+// DevTools'u açmak, tam ekrana geçmek. Boyut değişimi 'resize' aksiyonu olarak kaydedilir ve
+// varılan viewport saklanır: tekrar oynatırken aynı boyut kurulur. Tarayıcı yakınlaştırması
+// da CSS piksel boyutunu değiştirir ve aynı olayı tetikler; onu background 'zoom' olarak
+// kaydeder. İkisini devicePixelRatio ayırır: yakınlaştırma onu da değiştirir, pencereyi
+// büyütmek değiştirmez.
+// Sürükleme boyunca olay her karede gelir. Hareketin ilk olayı hemen gönderilir (aksiyon,
+// sonraki aksiyonlardan önce açılsın); sonrakiler birleşir, boyut RESIZE_SEND_MS boyunca
+// değişmeyince son boyut gönderilir. Background açık 'resize' aksiyonunu günceller.
+const RESIZE_SEND_MS = 200;
+let lastViewport = currentViewport(); // en son bildirilen boyut (sayfa yüklenince alınan ya da son 'resize')
+let resizeTimer = null;               // null değilse: boyut değişiyor, son boyut henüz gönderilmedi
+
+function currentViewport() {
+  return { width: innerWidth, height: innerHeight, devicePixelRatio };
+}
+
+function onResize() {
+  reportScreenWhenSettled(); // boyut değişirken sayfa durulmuş sayılmaz
+  const viewport = currentViewport();
+  if (viewport.devicePixelRatio !== lastViewport.devicePixelRatio) {
+    lastViewport = viewport; // yakınlaştırma (bkz. background.js > onZoom)
+    return;
+  }
+  if (resizeTimer) clearTimeout(resizeTimer);
+  else sendResize();
+  resizeTimer = setTimeout(finishPendingResize, RESIZE_SEND_MS);
+}
+
+// Bitmemiş boyut değişimi önce gitsin (sıra): başka bir aksiyon gönderilirken ya da parmak izi
+// istenirken de çağrılır.
+function finishPendingResize() {
+  if (!resizeTimer) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = null;
+  sendResize();
+}
+
+// Ekran null: olay geldiğinde düzen zaten değişmiştir. Aksiyonun öncesi background'daki son
+// state'tir; o an açık bir aksiyon varsa ikisinin etkisi ayrılamaz (yakınlaştırmadaki gibi).
+function sendResize() {
+  const viewport = currentViewport();
+  if (viewport.width === lastViewport.width && viewport.height === lastViewport.height) return;
+  lastViewport = viewport;
+  send({ type: 'resize', selector: null, viewport, label: 'Resize' }, null);
+}
+
 function recordValue(el) {
   const realValue = fieldValue(el);
   if (lastRecordedValue.get(el) === realValue) return;
@@ -452,12 +500,15 @@ function isFormField(el) {
 }
 
 // extra: mesaja eklenen, aksiyonda saklanmayan bilgi (ör. select > replaces).
+// viewport: gönderildiği andaki sayfa boyutu. Açık bir yakınlaştırma aksiyonu bu mesajla
+// kapanırsa background onu varılan boyut olarak saklar.
 function send(action, screen, extra = {}) {
   finishPendingKey(); // kararı bekleyen tuş önce gitsin (sıra)
+  finishPendingResize(); // bitmemiş boyut değişimi de
   action.url = location.href;
   action.time = lastSentTime = Date.now();
   if (LOG_STATE) logState(action);
-  message({ type: 'ACTION', action, screen, ...extra });
+  message({ type: 'ACTION', action, screen, viewport: currentViewport(), ...extra });
   reportScreenWhenSettled();
 }
 
@@ -479,6 +530,7 @@ function message(msg) {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'GET_FINGERPRINT') {
     finishPendingKey(); // kararı bekleyen tuş bu edge'e girsin
+    finishPendingResize(); // bitmemiş boyut değişimi de
     sendResponse(fingerprint());
   }
 });
@@ -490,8 +542,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // ile 4 tane olan ekranın edge set'i farklıdır. Türler, Ayarlar filtresi için saklanır;
 // hangilerinin state'e gireceğine background karar verir (ayar sonradan değişse de eski
 // node'lar yeni seçimle karşılaştırılabilir).
+// viewport: kümenin alındığı görünen alan (CSS piksel) ve piksel oranı. Küme bu alana bağlıdır;
+// test aynı boyutta çalıştırılır (docs/03 > Pencere boyutu ve state).
 function fingerprint() {
-  return { url: location.href, title: document.title, elements: countElements(interactableElements()) };
+  return { url: location.href, title: document.title, elements: countElements(interactableElements()), viewport: currentViewport() };
 }
 
 // Elementleri anahtar + tür grubuna göre sayar (yukarıdaki biçim).
@@ -580,7 +634,9 @@ function functionText(el) {
 // değişmemesi ve animasyon bitmemesi; sürekli değişen sayfada en fazla SETTLE_MAX_MS beklenir.
 // Bildirim her aksiyondan sonra ve aksiyonu background'ın yakaladığı değişikliklerden sonra
 // yapılır: sayfa yüklenmesi (adres çubuğu, yenile, link), geri/ileri ve yakınlaştırma
-// (pencere boyutu değişir). Kayıt sekmesi olmayan sekmelerin bildirimini background yok sayar.
+// (sayfanın boyutu değişir). Kayıt sekmesi olmayan sekmelerin bildirimini background yok sayar.
+// Bildirim sayfanın boyutunu da taşır: açık bir yakınlaştırma aksiyonu bununla kapanırsa
+// background onu varılan boyut olarak saklar.
 const SETTLE_QUIET_MS = 300;
 const SETTLE_MAX_MS = 3000;
 
@@ -588,7 +644,7 @@ let settleTimers = null; // { quiet, max }: null değilse sayfanın durulması b
 const settleObserver = new MutationObserver(restartQuietTimer);
 
 addEventListener('popstate', reportScreenWhenSettled);
-addEventListener('resize', reportScreenWhenSettled);
+addEventListener('resize', onResize); // pencere boyutu ya da yakınlaştırma (bkz. onResize)
 addEventListener('pageshow', (event) => event.persisted && reportScreenWhenSettled()); // geri/ileri önbellekten dönüş
 document.addEventListener('transitionend', restartQuietTimer, true);
 document.addEventListener('animationend', restartQuietTimer, true);
@@ -619,7 +675,7 @@ function stopSettle() {
 
 function reportScreen() {
   stopSettle();
-  message({ type: 'SCREEN', screen: countElements(interactableElements()) });
+  message({ type: 'SCREEN', screen: countElements(interactableElements()), viewport: currentViewport() });
 }
 
 

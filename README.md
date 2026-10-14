@@ -175,7 +175,8 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 
 **Yapar:**
 
-- Tıklama, form doldurma (text/select/checkbox ve zengin metin editörleri), Enter, komut tuşları (Escape, oklar, kısayollar; metin harf harf kaydedilmez), metin seçme (fare ve klavye), kopyala/kes/yapıştır (sayfa engellediyse o da kaydedilir), sağ tık menüsü, ekranı değiştiren Tab odağı, kaydırma (sayfa ve kaydırılabilir kutular), tarayıcı yakınlaştırma/uzaklaştırma, adres çubuğundan gezinme, geri/ileri ve yenileme aksiyonlarını kaydeder.
+- Tıklama, form doldurma (text/select/checkbox ve zengin metin editörleri), Enter, komut tuşları (Escape, oklar, kısayollar; metin harf harf kaydedilmez), metin seçme (fare ve klavye), kopyala/kes/yapıştır (sayfa engellediyse o da kaydedilir), sağ tık menüsü, ekranı değiştiren Tab odağı, kaydırma (sayfa ve kaydırılabilir kutular), tarayıcı yakınlaştırma/uzaklaştırma, pencere boyutu değişimi, adres çubuğundan gezinme, geri/ileri ve yenileme aksiyonlarını kaydeder.
+- Her node'un görünen alanını (viewport: sayfanın CSS piksel boyutu ve piksel oranı) kaydeder; test, testi çalıştıranın ekranından bağımsız olarak kayıttaki boyutta çalıştırılabilir. Bkz. [docs/03 > Pencere boyutu ve state](docs/03-state-eslestirme.md#pencere-boyutu-ve-state)
 - Her aksiyon için tekrar oynatılabilir bir CSS selector üretir (`#login-button`, `[data-test=...]` gibi).
 - Node'lar için ekran görüntüsü alır ve graph'ın içinde küçük resim olarak gösterir.
 - Ekranda tıklanabilen etkileşimli element kümesi değişen her durumu (kaydırma dahil) ayrı sayar; birebir aynı kümeyi daha önce görülmüş durum olarak kullanıcıya önerir.

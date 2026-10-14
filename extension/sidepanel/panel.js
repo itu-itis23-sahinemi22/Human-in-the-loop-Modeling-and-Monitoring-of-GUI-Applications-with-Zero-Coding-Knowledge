@@ -241,7 +241,7 @@ function renderDetails() {
 
   $('details-title').textContent = node ? 'Node' : 'Edge';
   $('details-subtitle').textContent = node
-    ? node.url
+    ? node.url + (node.viewport ? ' · ' + viewportText(node.viewport) : '')
     : `${nodeById(edge.source)?.name} → ${nodeById(edge.target)?.name} · ${edge.actions.length} aksiyon`
       + (edge.recordedActions ? ` · düzenlendi (kayıtta ${edge.recordedActions.length})` : '');
   // Kullanıcı o an yazıyorsa input'u ezme
@@ -446,6 +446,7 @@ function actionItem(action) {
   const value = action.type === 'input' ? ` = "${action.value}"`
     : action.type === 'scroll' ? ` → ${action.x}, ${action.y}`
     : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
+    : action.type === 'resize' ? ` → ${viewportText(action.viewport)}`
     : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
     : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
@@ -455,6 +456,12 @@ function actionItem(action) {
   const target = action.target?.index ? `${action.target.key} #${action.target.index} · ` : '';
   li.querySelector('code').textContent = target + (action.selector ?? action.url);
   return li;
+}
+
+// Sayfanın görünen alanı, CSS piksel: "1280×720"; piksel oranı 1 değilse "1280×720 @1.25x"
+function viewportText({ width, height, devicePixelRatio }) {
+  const scale = Math.round(devicePixelRatio * 100) / 100;
+  return `${width}×${height}` + (scale !== 1 ? ` @${scale}x` : '');
 }
 
 function nodeById(id) {
@@ -543,7 +550,7 @@ function graphWalkerModel() {
       generator: 'random(edge_coverage(100))',
       startElementId: state.startNodeId ?? '',
       properties: {
-        graphRecorder: { format: 'graph-recorder/v4', exportedAt: new Date().toISOString(), settings },
+        graphRecorder: { format: 'graph-recorder/v5', exportedAt: new Date().toISOString(), settings },
       },
       vertices: state.nodes.map((n) => ({
         id: n.id,
@@ -556,6 +563,7 @@ function graphWalkerModel() {
           urlKey: n.urlKey,
           title: n.title,
           elements: n.elements, // sayılı küme ({ key, types, count }); state = settings'te işaretli türler
+          viewport: n.viewport, // kümenin alındığı sayfa boyutu (CSS piksel); test aynı boyutta çalıştırılır
           screenshot: n.screenshot,
         },
       })),

@@ -17,6 +17,7 @@ Bu soru projenin akademik çekirdeğidir. Tamamen otomatik araçlar tam da bu no
 - [Neden benzerlik değil, birebir eşitlik?](#neden-benzerlik-değil-birebir-eşitlik)
 - [Küme aynıysa neden hâlâ soruluyor?](#küme-aynıysa-neden-hâlâ-soruluyor)
 - [Kaydırma ve state](#kaydırma-ve-state)
+- [Pencere boyutu ve state](#pencere-boyutu-ve-state)
 - [Gerçek ölçümler (saucedemo.com)](#gerçek-ölçümler-saucedemocom)
 - [Bilinen zayıflıklar](#bilinen-zayıflıklar)
 - [Elenen alternatif yöntemler](#elenen-alternatif-yöntemler)
@@ -204,8 +205,42 @@ Sayfa kaydırıldıktan sonra "Node oluştur"a basıldığında iki durum var:
 **Sonuçları:**
 
 - **Kaydırma konumu state'in parçasıdır.** Aynı sayfanın üst ve alt kısmı iki ayrı node olabilir.
-- **Model pencere boyutuna bağlıdır.** Ekrana sığan elementler pencere boyutuna ve tarayıcı yakınlaştırmasına göre değişir. Kayıt sırasındaki yakınlaştırmalar `zoom` aksiyonu olarak kaydedilir ([04 > Aksiyon](04-veri-modeli.md#aksiyon)). Testi çalıştıran otomasyon aracı, kayıttaki pencere (viewport) boyutunu kullanmalıdır; aksi halde state'ler tutmaz.
+- **Model pencere boyutuna bağlıdır.** Ekrana sığan elementler pencere boyutuna ve tarayıcı yakınlaştırmasına göre değişir. Bkz. aşağıda [Pencere boyutu ve state](#pencere-boyutu-ve-state).
 - **Sayfanın kendi kaydırmaları da kaydedilir.** Tarayıcı kullanıcının ve sayfanın yaptığı kaydırmaları ayırt etmez (ör. bir linke tıklanınca sayfa başa kaydırılır). Konum mutlak olduğu için bu kaydırmaları tekrar oynatmak zararsızdır. Edge'e ismini ise kaydırma olmayan son aksiyon verir (`e_Product`, `e_ScrollUp` değil).
+
+---
+
+## Pencere boyutu ve state
+
+Parmak izi yalnızca ekrandaki elementlerden oluştuğu için state, sayfanın **görünen alanına** (viewport) bağlıdır. Buradaki ölçü monitör çözünürlüğü değil, sayfanın CSS piksel cinsinden boyutudur (`innerWidth × innerHeight`). Aynı monitörde bu boyutu işletim sistemi ölçeklemesi (%125 gibi), pencere boyutu, yan panelin ve DevTools'un kapladığı yer ve tarayıcı yakınlaştırması değiştirir.
+
+**Kayıt ne saklar** ([04 > Node](04-veri-modeli.md#node), [04 > Aksiyon](04-veri-modeli.md#aksiyon)):
+
+| Ne | Nerede | Neden |
+|---|---|---|
+| Node'un görünen alanı | `node.viewport`: `{ width, height, devicePixelRatio }` | Kümenin hangi boyutta alındığı. Test bu boyutta çalıştırılır. |
+| Pencere boyutu değişimi | `resize` aksiyonu, varılan `viewport` | Pencereyi sürüklemek, yan paneli ya da DevTools'u açmak ekrana sığanı değiştirir. Tekrar oynatırken aynı boyut kurulur. |
+| Yakınlaştırma | `zoom` aksiyonu: oran ve varılan `viewport` | Yakınlaştırma da CSS piksel boyutunu ve piksel oranını değiştirir. Tarayıcı yakınlaştırması olmayan araçta (Playwright) aynı ekran bu boyut ve piksel oranıyla kurulur. |
+
+Yakınlaştırma da pencere boyutu gibi sayfanın `resize` olayını tetikler. İkisini `devicePixelRatio` ayırır: yakınlaştırma onu da değiştirir, pencereyi büyütmek değiştirmez (`content.js > onResize()`).
+
+**Testi çalıştıranın ekranı farklıysa:**
+
+| Durum | Ne olur? |
+|---|---|
+| **Daha büyük** | Ekrana daha çok element sığar. Ekrandaki küme beklenen kümenin üst kümesi olur, birebir doğrulama başarısız olur. Kayıtta kaydırmayla ayrılmış iki node tek ekrana düşer. |
+| **Daha küçük** | Daha az element sığar. Küme beklenenin alt kümesi olur, doğrulama yine başarısız olur. Aksiyonun hedefi ekran dışında kalabilir; otomasyon aracının hedefi görmek için kendiliğinden kaydırması da state'i değiştirir. |
+| **Breakpoint aşılır** (mobil düzen) | Element türleri değişir (menü linkleri hamburger menüye girer), aksiyon hedefleri ortadan kalkar. Model o boyut için geçersizdir. |
+
+**Karar:** test, kayıttaki viewport emüle edilerek çalıştırılır. Playwright'ın viewport emülasyonu fiziksel ekrandan bağımsızdır (`browser.newContext({ viewport: { width, height }, deviceScaleFactor })`): testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür ve yukarıdaki durumlar oluşmaz.
+
+Bilerek farklı boyutta test (responsive test) için olası yol: kayıtta ekran filtresi uygulanmamış ikinci bir parmak izi (sayfadaki tüm etkileşimli elementler) saklamak ve doğrulamayı onunla yapmak. Bu, boyut farkını tolere eder ama breakpoint değişimini çözmez; o boyut için ayrı bir graph gerekir.
+
+**Sınırlar:**
+
+- Kayıt farklı boyuttaki bir pencerede **Buradan devam et** ile sürdürülürse aradaki boyut farkı kaydedilmez: o sayfada boyut değişmemiştir.
+- Pencereyi farklı ölçekli bir monitöre taşımak `devicePixelRatio`'yu yakınlaştırma olmadan değiştirir. Bu değişim, yakınlaştırmayla karıştırılmaması için kaydedilmez.
+- Boyut değişirken açık bir aksiyon varsa (tıklayıp sayfa durulmadan pencereyi büyütmek) ikisinin etkisi ayrılamaz; ikisi de "etkisi bilinmiyor" olur ([01 > Edge düzenleme](01-mimari.md#edge-düzenleme)).
 
 ---
 
@@ -241,7 +276,7 @@ Birebir eşitlik kuralında her zayıflık aynı şekilde ortaya çıkar: **olma
 | **Veriye bağlı id'ler** (`add-to-cart-<ürün-adı>`) | Her ürün ve her sepet içeriği ayrı küme, dolayısıyla ayrı node üretir. State sayısı hızla artar. | id içindeki veri kısmını ayıklamak. Dikkat: edge'lerin selector'ları da aynı şekilde genelleştirilmezse çakışma sorunu geri gelir. |
 | **Geçici etkileşimli elementler** (toast'taki "kapat" butonu, açılır ipucu) | Node oluşturma anında görünürse küme değişir, yeni node olur. | Belirli selector'ları parmak izinden hariç tutan bir liste |
 | **Kaydırma konumuna duyarlılık** | Aynı sayfa farklı kaydırma konumlarında farklı node'lar üretir. Ekran kenarında yarım görünen bir element bile kümeyi değiştirebilir; uzun sayfalarda node sayısı artar. | Elementin en az belirli bir kısmı (ör. %50'si) ekrandaysa saymak |
-| **Pencere boyutuna bağımlılık** | Aynı sayfa farklı pencere boyutlarında farklı küme üretir. Kayıt ve test farklı boyutta yapılırsa state'ler tutmaz. | Viewport boyutunu modele kaydetmek, otomasyon aracını aynı boyutta çalıştırmak |
+| **Pencere boyutuna bağımlılık** | Aynı sayfa farklı pencere boyutlarında farklı küme üretir. Kayıt ve test farklı boyutta yapılırsa state'ler tutmaz. | Viewport artık kaydediliyor (node, `resize`, `zoom`); test aynı boyut emüle edilerek çalıştırılır. Bilerek farklı boyutta test için ekran filtresiz ikinci parmak izi ([Pencere boyutu ve state](#pencere-boyutu-ve-state)) |
 | **Tek noktadan isabet testi** | Elementin ortası başka bir katmanla kapalıysa, kenarları tıklanabilir olsa da sayılmaz. | Bilinçli tercih: otomasyon araçları da elementin ortasına tıklar ve ortası kapalıysa hata verir. |
 | **Farklı URL, aynı durum** (`/en/cart` ve `/de/cart`) | Hiç aday olmaz, kopya node oluşur. | URL normalizasyonuna dil kodu gibi kurallar eklemek |
 | **Lazy-load / sonsuz kaydırma** | Kaydırdıkça yeni elementler yüklenir ve ekrana gelir; kimlikli elementlerde (ör. `item_7_title_link`) her kaydırma yeni bir küme, dolayısıyla yeni node demektir. Satıra özel kimliği olmayan listelerde ise görünen satır sayısı aynı kaldıkça state aynı kalır. | Element anahtarı normalizasyonu (aşağıda 1. fikir) |
