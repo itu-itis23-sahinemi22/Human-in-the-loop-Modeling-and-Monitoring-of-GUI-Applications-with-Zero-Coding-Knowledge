@@ -34,7 +34,7 @@
 | Faz | İş | Tahmini süre | Durum |
 |---|---|---|---|
 | 1 | Viewport kaydı ve `resize` aksiyonu (iş 3) | 0,5 gün | Yapıldı |
-| 2 | Runner, ilk sürüm (iş 1) | 2 gün | |
+| 2 | Runner, ilk sürüm (iş 1) | 2 gün | Yapıldı |
 | 3 | Beklemeleri kaydet (iş 4) | 0,5–1 gün | |
 | 4 | Yeni sekmede devam (iş 5) | 1,5–2 gün | |
 | 5 | Karşılaştırma ekranı (iş 2) | 1 gün | |
@@ -94,7 +94,7 @@ Bilerek farklı boyutta test (responsive test) bu haftanın kapsamı dışındad
 
 ## Faz 2: Runner (ilk sürüm)
 
-*İş 1.*
+*İş 1. Durum: yapıldı. Kullanım ve tasarım: [runner/README.md](../runner/README.md).*
 
 ### Amaç
 
@@ -104,28 +104,34 @@ Dışa aktarılan GraphWalker JSON'undaki bir yolu gerçek bir tarayıcıda oyna
 
 - **Araç: Node.js + Playwright.** Eklentiyle aynı dil olduğu için parmak izi kodu sayfaya olduğu gibi enjekte edilir; Java/Selenium'da bu kodun çevrilmesi gerekirdi. Viewport emülasyonu, popup ve sekme olayları, otomatik bekleme hazır gelir. [04](04-veri-modeli.md#aksiyon)'teki tekrar oynatma karşılıkları da zaten Playwright biçiminde yazılmıştır.
 - **Konum: `runner/`.** Eklentiden ayrı durur; eklentinin "build yok, bağımlılık yok" ilkesi bozulmaz. npm bağımlılığı yalnızca runner'da olur.
-- **Ortak parmak izi.** `content.js`'teki parmak izi fonksiyonları (`interactableElements`, `isInteractable`, `elementKey`, `countElements`, `targetOf`) `extension/fingerprint.js`'e taşınır. Eklenti onu content script olarak, runner `page.addInitScript` ile yükler. Kayıt ve test aynı state tanımını kullanır.
+- **Ortak parmak izi.** `content.js`'teki parmak izi fonksiyonları (`interactableElements`, `isInteractable`, `elementKey`, `countElements`, `targetOf`) `extension/fingerprint.js`'e taşınır. Eklenti onu content script olarak, runner `context.addInitScript` ile yükler. Kayıt ve test aynı state tanımını kullanır.
 - **Aksiyonun hedefi.** Önce `target` (`{ key, index }`: ekrandaki n'inci türdeş element, parmak iziyle aynı sıralama), bulunamazsa `selector` kullanılır.
 - **Doğrulama (oracle).** Edge'in aksiyonlarından sonra sayfa durulunca parmak izi alınır ve hedef node'un edge set'iyle (dışa aktarımdaki Ayarlar ile) birebir karşılaştırılır. Eşleşmezse süre dolana kadar tekrar denenir, çünkü sayfa geç yüklenebilir. Başarısızlıkta fark raporlanır: `button:Sil 5 ≠ 4`.
 - **Viewport.** Tarayıcı bağlamı başlangıç node'unun viewport'uyla açılır. `resize` ve `zoom` aksiyonları viewport'u ve piksel oranını değiştirir.
-- **Gizli değerler.** Şifreler kayıtta `******` olarak saklanır. Runner gerçek değeri bir secrets dosyasından ya da ortam değişkeninden alır (ör. `{ "input:password": "..." }`).
+- **Gizli değerler.** Şifreler kayıtta `******` olarak saklanır. Runner gerçek değeri bir secrets dosyasından alır (ör. `{ "input:password": "..." }`).
 - **Yol.** Bu fazda yol elle verilen bir edge listesidir ya da GraphWalker `offline` çıktısıdır. Generator seçimi Faz 6'dadır.
 
-### Yapılacaklar
+### Yapılanlar
 
-- [ ] `extension/fingerprint.js`: parmak izi fonksiyonlarının ortak dosyaya taşınması (eklentinin davranışı değişmez)
-- [ ] `runner/`: model okuma, format kontrolü, viewport'la tarayıcı açma
-- [ ] Aksiyon oynatıcı: `click`, `input`, `enter`, `key`, `scroll`, `navigate`, `history`, `reload`, `resize`, `zoom`; kalan tipler sonra
-- [ ] Doğrulama: durulma bekleme, parmak izi, birebir karşılaştırma, tekrar deneme, fark raporu
-- [ ] Konsol çıktısı: adım adım edge, geçti / kaldı
+- [x] `extension/fingerprint.js`: parmak izi fonksiyonları ortak dosyaya taşındı; eklentinin davranışı değişmedi (Faz 1 testi tekrar koşuldu, 20/20). `urlKey()` ve yeni `diffCounts()` `settings.js`'te.
+- [x] `runner/`: model okuma, format kontrolü (v4, v5), başlangıç node'unun görünen alanıyla tarayıcı açma
+- [x] Yol: virgülle edge adları ya da id'leri, JSON dizi ya da GraphWalker `offline` çıktısı (düz ve `--verbose`). Aynı adlı edge'ler bulunulan node'a göre ayrılır.
+- [x] Aksiyon oynatıcı: `click`, `input`, `enter`, `key`, `contextmenu`, `focus`, `scroll`, `navigate`, `history`, `reload`, `resize`, `zoom`. `select` ve `clipboard` henüz oynatılmıyor.
+- [x] Doğrulama: durulma bekleme, parmak izi, birebir karşılaştırma, tekrar deneme, fark raporu, başarısız adımın ekran görüntüsü
+- [x] Konsol çıktısı: adım adım edge, geçti / kaldı; çıkış kodu
+- [x] Dokümanlar: [runner/README.md](../runner/README.md), [02 > Runner](02-teknolojiler.md#10-runner-playwright-nodejs), 01, 03, 04, 05, README
 
 ### Kabul kriteri
 
-saucedemo'da giriş → ürün listesi → sepet yolu geçer. Bir edge'in hedefi bilerek bozulduğunda (yanlış node) runner farkı göstererek durur.
+Karşılandı ([05 > Test](05-gelistirme.md#test)):
+
+- saucedemo'da eklentiyle kaydedilen 8 edge'lik yol (giriş, sepete ekleme, sepet, yakınlaştırma, pencere boyutu) geçti.
+- Bir edge'in hedefi bilerek bozulunca runner o edge'de durdu ve farkı gösterdi (`add-to-cart` butonu yerine `remove`).
+- GraphWalker'ın `offline` ile ürettiği yollar da geçti.
 
 ### Not
 
-GraphWalker CLI 4.3.3, Java 17 ya da 21 ister ([04 > GraphWalker ile doğrulama](04-veri-modeli.md#graphwalker-ile-doğrulama)). Geliştirme makinesinde Java 25 kurulu; yol üretimi için ayrıca Java 17/21 gerekir.
+GraphWalker CLI 4.3.3, Java 17 ya da 21 ister ([04 > GraphWalker ile doğrulama](04-veri-modeli.md#graphwalker-ile-doğrulama)). Geliştirme makinesinde Java 25'in yanında JDK 17 de kurulu; GraphWalker onunla çalıştı.
 
 ---
 
@@ -230,7 +236,7 @@ Sepette 1 ve 2 ürün olan, edge set'i aynı iki ekran (yalnızca sayaç farklı
 
 *İş 1.*
 
-- **Yol üretimi:** GraphWalker generator'ları ile: `random(edge_coverage(100))`, `random(vertex_coverage(100))`, `a_star(reached_vertex(v_X))` (iki node arası en kısa yol), `quick_random(...)`. Yol `offline` ile önceden üretilir ve runner'a verilir.
+- **Yol üretimi:** GraphWalker generator'ları ile: `random(edge_coverage(100))`, `random(vertex_coverage(100))`, `a_star(reached_vertex(v_X))` (iki node arası en kısa yol), `quick_random(...)`. Yol `offline` ile önceden üretilir ve runner'a verilir; runner bu çıktıyı zaten okuyor (Faz 2). Kalan iş: generator seçimini ve yol üretimini tek komuta bağlamak.
 - **Senaryo dosyası:** `scenarios/*.json`: model, generator, üretilen yol, secrets referansı. Tekrar çalıştırılabilir.
 - **Çıkmaz node'lar:** yol orada biter. Her senaryo temiz bir oturumla (yeni tarayıcı bağlamı) başlar.
 - **Rapor:** JSON ve HTML: senaryo, adım adım edge, süre, geçti / kaldı, hata anındaki ekran görüntüsü ve fark (Faz 5'in görünümüyle). Sonra JUnit XML (CI için).
@@ -255,7 +261,7 @@ Bu hafta yapılmayacaklar:
 |---|---|---|
 | **Sıra kayması** | Dinamik listelerde `target.index` kayar, yanlış elemente tıklanır. | `selector` yedeği; doğrulamada fark raporu hatayı gösterir. |
 | **Gizli durum** | Aynı edge set, aynı durum için yeterli değildir. Doğrulama yalnızca görünen etkileşimli kümeyi kontrol eder; sepet içeriği gibi farkları görmez. | Raporda bu sınır açıkça yazılır. |
-| **Piksel oranını çalışırken değiştirmek** | Playwright'ta `deviceScaleFactor` bağlam açılırken verilir. Kayıttaki yakınlaştırmayı oynatmak için çalışma anında değiştirmek gerekir. | CDP `Emulation.setDeviceMetricsOverride` denenecek; olmazsa yeni bağlam. |
+| **Piksel oranını çalışırken değiştirmek** | Playwright'ta `deviceScaleFactor` bağlam açılırken verilir. Kayıttaki yakınlaştırmayı oynatmak için çalışma anında değiştirmek gerekir. | Çözüldü: CDP `Emulation.setDeviceMetricsOverride` çalışıyor; ayar gezinmeden sonra da kalıyor. |
 | **Sürekli izleme maliyeti** (Faz 3) | Hareketli sayfalarda parmak izi çok sık alınır, kayıt yavaşlar. | Sıklık sınırı; yalnızca anahtar açıkken. |
 | **Otomasyon tespiti** | Bazı siteler otomasyonla açılan tarayıcıyı engeller. | Demo hedefi saucedemo. |
-| **Java sürümü** | GraphWalker 4.3.3, Java 25 ile çalışmaz. | Java 17/21 kurulumu. |
+| **Java sürümü** | GraphWalker 4.3.3, Java 25 ile çalışmaz. | Çözüldü: geliştirme makinesinde JDK 17 var. |

@@ -101,6 +101,8 @@ Tipler:
 
 Şifre alanlarında `value` her zaman `"******"` olarak saklanır.
 
+Runner bu karşılıkları uygular; maskeli değerleri bir secrets dosyasından alır. `select` ve `clipboard` henüz oynatılmıyor ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)).
+
 ---
 
 ## Bekleyen karar (pending)
@@ -248,9 +250,18 @@ GraphWalker'da `edge.actions`, **modelin kendi değişkenlerini** güncelleyen J
 
 Bizim kaydettiğimiz aksiyonlar ise **tarayıcıda yapılacak işlemlerdir** (tıkla, yaz, kaydır). GraphWalker'da bunları yapan şey model dosyası değil, **test kodudur.** GraphWalker, her `v_` ve `e_` ismi için test kodunda aynı isimli bir metot çağırır.
 
+### Tekrar oynatma: runner
+
+Test kodu yazmadan da model çalıştırılabilir: **runner**, modeldeki bir yolu (elle verilen ya da GraphWalker `offline` çıktısı) gerçek bir tarayıcıda oynatır. Her edge'in `properties.uiActions`'ını oynatır, sonra varılan ekranın parmak izini hedef vertex'in `properties.elements`'ı ve `urlKey`'i ile birebir karşılaştırır. Tarayıcı başlangıç vertex'inin `properties.viewport`'uyla açılır. Böylece GraphWalker'ın `v_` / `e_` metotlarının yaptığı iş (edge'de aksiyon, vertex'te doğrulama) modelin kendi verisinden yapılır. Bkz. [runner/README.md](../runner/README.md)
+
+```
+java -jar graphwalker-cli-4.3.3.jar offline -m SwagLabs.json "random(edge_coverage(100))" > yol.txt
+node runner/run.js SwagLabs.json --path yol.txt --secrets secrets.json
+```
+
 ### Sonraki adım: test kodu iskeleti
 
-**Test kodu iskeleti (davranış):** Kaydedilen aksiyonlardan (`properties.uiActions`) her edge için bir metot gövdesi, her node için bir doğrulama üretilebilir. Henüz yapılmadı. Örnek (Java + Selenium):
+**Test kodu iskeleti (davranış):** Kaydedilen aksiyonlardan (`properties.uiActions`) her edge için bir metot gövdesi, her node için bir doğrulama üretilebilir. Henüz yapılmadı; runner aynı işi kod üretmeden yapıyor. Kod üretimi, GraphWalker'ın kendi test koşucusuyla (online mod, guard'lar) çalışmak istenirse gerekir. Örnek (Java + Selenium):
 
 ```java
 // e_Login: kaydedilen 3 aksiyondan üretildi

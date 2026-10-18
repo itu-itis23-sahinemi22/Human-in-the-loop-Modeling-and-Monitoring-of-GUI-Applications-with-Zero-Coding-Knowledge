@@ -7,7 +7,7 @@ Bu soru projenin akademik çekirdeğidir. Tamamen otomatik araçlar tam da bu no
 - **Etkileşimli element kümesi (edge set) farklıysa** makine kesin karar verir: **yeni node.** Kullanıcıya sorulmaz.
 - **Element kümesi birebir aynıysa** makine yalnızca önerir, **insan onaylar.**
 
-İlgili kod: `background.js > findSameStateNodes()`, `stateCounts()`, `urlKey()`, `content.js > fingerprint()`, `elementKey()`, `functionText()`, `targetOf()`, `isInteractable()` ve `settings.js`.
+İlgili kod: `background.js > findSameStateNodes()`, `settings.js > urlKey()`, `stateCounts()`, `fingerprint.js > fingerprint()`, `elementKey()`, `functionText()`, `targetOf()`, `isInteractable()`. Testi çalıştıran runner da aynı tanımla doğrular ([runner/README.md](../runner/README.md)).
 
 ## İçindekiler
 
@@ -92,14 +92,14 @@ Parmak izi şöyle saklanır (her satır bir tür, `types` Ayarlar filtresi içi
 
 1. **Link metni ve form değerleri dahil edilmez.** Kimliksiz "Sauce Labs Backpack" linki ile "Bike Light" linki aynı türü (`a`) üretir; link metni çoğu zaman veridir (ürün adı, başlık) ve her farklı veriyi ayrı state yapardı. Kullanıcının bir alana yazdığı değer de asla kullanılmaz. Buton yazısı ise işlevdir ("Sil", "Kaydet"), kimlik yoksa türe katılır.
 2. **Sayılı küme kullanılır.** Aynı türden 5 buton olan ekran ile 4 buton olan ekran farklıdır: 5. buton 5. olası edge'dir. Sıra önemsizdir; tür ve sayılar eşitse ekranlar eşleşir.
-3. **Yalnızca ekranda, kaydırmadan tıklanabilen elementler sayılır** (`content.js > isClickableOnScreen()`). Model bir otomasyon aracının arayüzden test yapması için kullanılacak; araç ekranda olmayan bir elemente kaydırmadan tıklayamaz. Kontrol bir **isabet testidir** (hit test): elementin ekranda kalan kısmının ortasındaki noktada en üstte duran element (`document.elementFromPoint()`) bu element ya da onun bir parçası mı? Otomasyon araçları da elementin ortasına tıklar. Bu tek kontrolle şunlar elenir:
+3. **Yalnızca ekranda, kaydırmadan tıklanabilen elementler sayılır** (`fingerprint.js > isClickableOnScreen()`). Model bir otomasyon aracının arayüzden test yapması için kullanılacak; araç ekranda olmayan bir elemente kaydırmadan tıklayamaz. Kontrol bir **isabet testidir** (hit test): elementin ekranda kalan kısmının ortasındaki noktada en üstte duran element (`document.elementFromPoint()`) bu element ya da onun bir parçası mı? Otomasyon araçları da elementin ortasına tıklar. Bu tek kontrolle şunlar elenir:
    - DOM'da olup **ekran dışında** kalanlar: sayfanın aşağısında kalan ve kaydırınca görünecek elementler, `transform` ile ekran dışına itilmiş kapalı menüler
    - kaydırılabilir bir kutunun (`overflow:auto`) görünen alanının dışında kalanlar
    - üstü başka bir katmanla (modal, sabit header, cookie banner) kapalı olanlar
    - `display:none`, `hidden` niteliği, `visibility:hidden`, `pointer-events:none` ve `inert` olanlar
 
    Kapalı bir menünün linkleri DOM'da olsa bile sayılmaz. Menü açılınca bu linkler parmak izine girer ve durum farklılaşır. Ekran kenarında **yarım görünen** element sayılır, çünkü görünen kısmına tıklanabilir. `opacity:0` bilerek elenmez: element görünmese de tıklamayı alır (ör. özel tasarım checkbox'ların altındaki gerçek input).
-4. **Devre dışı elementler sayılmaz** (`content.js > isInteractable()`). Tıklanamayan element edge üretemez, dolayısıyla edge set'e ait değildir. Elenenler: `disabled` form elemanları (`:disabled`, disabled bir `<fieldset>` içindekiler dahil) ve `aria-disabled="true"` olan ya da böyle bir elementin içindeki elementler (`role="button"` gibi özel kontroller). **Örnek:** Login butonu `disabled` olunca kümeden çıkar; sayfa geri kalanı aynı olsa bile soru sorulmadan yeni node olur. Buton tekrar aktifleşince küme eski haline döner ve ilk node önerilir.
+4. **Devre dışı elementler sayılmaz** (`fingerprint.js > isInteractable()`). Tıklanamayan element edge üretemez, dolayısıyla edge set'e ait değildir. Elenenler: `disabled` form elemanları (`:disabled`, disabled bir `<fieldset>` içindekiler dahil) ve `aria-disabled="true"` olan ya da böyle bir elementin içindeki elementler (`role="button"` gibi özel kontroller). **Örnek:** Login butonu `disabled` olunca kümeden çıkar; sayfa geri kalanı aynı olsa bile soru sorulmadan yeni node olur. Buton tekrar aktifleşince küme eski haline döner ve ilk node önerilir.
 
 Bu iki filtre sadece **etkileşime girilebilirliği** ilgilendiren durumlara bakar. Checkbox'ın işaretli olması, input'un değeri ya da `aria-expanded` kümeyi değiştirmez; element her iki durumda da etkileşimlidir. (Menü açılınca görünür hale gelen linkler ise 3. madde üzerinden kümeyi değiştirir.)
 
@@ -133,7 +133,7 @@ Kümelerin %67'si ortak olsa da (eski Jaccard ölçüsüyle 4/6) sonuç değişm
 
 ### Edge hedefi state ile aynı düzeyde: "türün n'incisi"
 
-State tür düzeyinde tanımlı ("ekranda 5 tane `button:Sil` var"). Edge'in hedefi de aynı düzeyde tutulur (`content.js > targetOf()`): her aksiyon `target: { key, index }` taşır, yani "ekranda görünen `button:Sil`'lerin DOM sırasıyla 2.'si". Konuma dayalı CSS selector (`li:nth-of-type(16) > button:nth-of-type(2)`) yedek olarak saklanır.
+State tür düzeyinde tanımlı ("ekranda 5 tane `button:Sil` var"). Edge'in hedefi de aynı düzeyde tutulur (`fingerprint.js > targetOf()`): her aksiyon `target: { key, index }` taşır, yani "ekranda görünen `button:Sil`'lerin DOM sırasıyla 2.'si". Konuma dayalı CSS selector (`li:nth-of-type(16) > button:nth-of-type(2)`) yedek olarak saklanır.
 
 Neden gerekli: Kaydırılabilir bir listede liste üstteyken 1-5., kaydırınca 16-20. satırlar görünür. Sayılar eşit olduğu için bu iki ekran aynı state'tir. Edge "16. satırdaki Sil" diye kaydedilseydi, o satır diğer ekranda ekranda olmazdı ve **çakışma** olurdu. "Görünen 2. Sil" ise sayılar eşit olduğu sürece iki ekranda da vardır. Kural: **sayılı kümeleri eşit iki ekranda her "türün n'incisi" hedefi bulunur**; aynı state sayılan ekranlar arasında edge çakışması olmaz.
 

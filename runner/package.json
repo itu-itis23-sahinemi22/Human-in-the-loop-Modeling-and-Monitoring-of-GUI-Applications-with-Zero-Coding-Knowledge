@@ -1,0 +1,16 @@
+{
+  "name": "graph-recorder-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Graph Recorder'ın dışa aktardığı modeldeki bir yolu tarayıcıda oynatır ve her adımda varılan ekranı doğrular.",
+  "type": "module",
+  "bin": {
+    "graph-runner": "run.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

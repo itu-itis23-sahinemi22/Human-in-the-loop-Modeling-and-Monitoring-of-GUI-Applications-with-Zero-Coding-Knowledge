@@ -1,6 +1,11 @@
 # Claude Code'un yerel ayarları
 .claude/
 
+# Runner: bağımlılıklar, başarısız adımların ekran görüntüleri ve gizli değerler (şifreler)
+/runner/node_modules/
+/runner/out/
+secrets*.json
+
 # Projeye ait olmayan yerel dosyalar
 /test*.json
 *.pdf

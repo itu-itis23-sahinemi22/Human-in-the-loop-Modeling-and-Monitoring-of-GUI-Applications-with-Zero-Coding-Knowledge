@@ -45,7 +45,7 @@ Ziyaret edilen **her** sayfaya Chrome tarafından otomatik olarak eklenir (`mani
 
 - **Aksiyon yakalama:** `click`, `mouseup` (metin seçme), `contextmenu`, `change`, `focusin` (Tab ile odak), `focusout` (düzenlenebilir alanlar), `keydown`, `copy` / `cut` / `paste`, `scrollend` ve pencerenin `resize` olaylarını dinler. Her aksiyonu bir nesneye çevirip (`{type, target, selector, label, value, url, time}`; kaydırmada `target`/`value` yerine `x, y`) background'a gönderir. `target` hedefi state ile aynı düzeyde tutar: "ekrandaki n'inci `button:Sil`" ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)).
 - **Aksiyonun sonrası:** Her aksiyondan, sayfa yüklenmesinden, geri/ileriden ve pencere boyutu değişiminden (yakınlaştırma dahil) sonra sayfanın durulmasını bekler (300 ms DOM değişmez; en fazla 3 sn) ve ekranın edge set'ini background'a bildirir (`SCREEN`). Yazmaya başlanınca (`beforeinput`) beklemeden bildirir: yazının etkisi önceki aksiyona karışmasın. Background aksiyonun state'i değiştirip değiştirmediğini bununla bulur. Detay: [Edge düzenleme](#edge-düzenleme)
-- **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini ve sayfanın görünen alanını (viewport) döndürür. Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
+- **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini ve sayfanın görünen alanını (viewport) döndürür. Parmak izinin tanımı `fingerprint.js`'tedir (aşağıda). Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
 - **Selector üretimi:** Her aksiyon için elementi tekil olarak bulan bir CSS selector üretir. Kayıtların ileride tekrar oynatılabilmesi buna bağlıdır.
 
 ### `background.js`: Beyin
@@ -64,9 +64,15 @@ Eklentinin tek "durum sahibi" (single source of truth).
 - `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
 
+### `fingerprint.js`: State'in tanımı
+
+Bir ekranın state'ini tanımlayan kod: etkileşimli elementler (`interactableElements()`, `isInteractable()`), türleri (`elementKey()`), sayılı küme (`countElements()`, `fingerprint()`), aksiyon hedefi (`targetOf()` ve tersi `targetElement()`), görünen alan (`currentViewport()`) ve sayfanın durulma süreleri. Olay dinlemez, mesaj göndermez; yalnızca tanımlar.
+
+Ayrı dosyadadır, çünkü kayıt ile test **aynı tanımı** kullanmalıdır. İki yerde yüklenir: eklentide content script olarak (`settings.js`'ten sonra, `content.js`'ten önce; aynı sayfadaki content script'ler ortak kapsamda çalıştığı için `content.js` bu fonksiyonları doğrudan kullanır) ve runner'da test edilen her sayfaya ([runner/README.md](../runner/README.md)). Böylece runner'ın "varılan ekran beklenen node mu?" kararı, kayıttaki "bu sayfa zaten bir node mu?" kararıyla aynı koddan gelir.
+
 ### `settings.js`: Ortak tanımlar
 
-Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşimli element türleri `INTERACTABLE_TYPES`) ve varsayılan ayarın (`DEFAULT_SETTINGS`) **tek tanımı**. Ayarlara bağlı edge set karşılaştırması (`stateCounts()`, `sameCounts()`) da buradadır; background node eşleştirmede, panel edge düzenlemede kullanır. Build adımı olmadığı için üç parça da bu dosyayı ayrıca yükler: content script olarak `content.js`'ten önce (`manifest.json`), service worker'da `importScripts('settings.js')`, panelde `<script>` ile. Listeye yeni bir tip eklemek; yakalamayı, panel checklist'ini ve filtreyi birlikte günceller.
+Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşimli element türleri `INTERACTABLE_TYPES`) ve varsayılan ayarın (`DEFAULT_SETTINGS`) **tek tanımı**. Ayarlara bağlı state karşılaştırması (`urlKey()`, `stateCounts()`, `sameCounts()`, `diffCounts()`) da buradadır; background node eşleştirmede, panel edge düzenlemede ve birleştirmede, runner doğrulamada kullanır. Build adımı olmadığı için her parça bu dosyayı ayrıca yükler: content script olarak `fingerprint.js` ve `content.js`'ten önce (`manifest.json`), service worker'da `importScripts('settings.js')`, panelde `<script>` ile, runner'da hem sayfaya hem Node tarafına. Listeye yeni bir tip eklemek; yakalamayı, panel checklist'ini ve filtreyi birlikte günceller.
 
 ### `manifest.json`: Kimlik kartı
 

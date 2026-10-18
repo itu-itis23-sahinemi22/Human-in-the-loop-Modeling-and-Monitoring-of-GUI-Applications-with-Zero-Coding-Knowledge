@@ -4,7 +4,7 @@ Bir web sitesinde normal şekilde gezerken, o sitenin **durum grafiğini** (stat
 
 Kullanıcı yalnızca "şu an önemli bir durumdayım" demek için **Node oluştur** butonuna basar. İki basış arasında yaptığı tıklama, yazma, kaydırma ve gezinmeler otomatik olarak **edge** (geçiş) olarak kaydedilir. Ekranda tıklanabilen etkileşimli elementler (butonlar, linkler, alanlar) daha önce kaydedilmiş bir node'unkilerle birebir aynıysa sistem kullanıcıya "Bu aynı node mu?" diye sorar. Element kümesi tek bir elementle bile farklıysa, sayfa ne kadar benzer olursa olsun soru sorulmadan yeni node oluşur.
 
-> Bu demo GraphWalker'dan **bağımsızdır**. Amaç, graph'ın tarayıcıda gezerken çıkarılabildiğini göstermektir. Veri modeli GraphWalker'a kolayca aktarılacak şekilde tasarlanmıştır (bkz. [docs/04-veri-modeli.md](docs/04-veri-modeli.md)).
+> Bu demo GraphWalker'dan **bağımsızdır**. Amaç, graph'ın tarayıcıda gezerken çıkarılabildiğini ve aynı graph'taki yolların tarayıcıda tekrar oynatılıp doğrulanabildiğini göstermektir. Veri modeli GraphWalker'a kolayca aktarılacak şekilde tasarlanmıştır (bkz. [docs/04-veri-modeli.md](docs/04-veri-modeli.md)); yolu GraphWalker'ın generator'ları üretebilir.
 
 ---
 
@@ -71,6 +71,7 @@ Demo için [saucedemo.com](https://www.saucedemo.com) uygundur: test otomasyonu 
 | 6 | **Continue Shopping**'e basın | **Node oluştur** | Panel sorar: *"Bu sayfanın etkileşimli elementleri mevcut v_Inventory_2 node'u ile birebir aynı. Aynı state mi?"* |
 | 7 | | `v_Inventory_2` altındaki **Evet, bu node** | `v_Cart → v_Inventory_2` edge'i oluşur. Graph'ta döngü kapanır. |
 | 8 | | **GraphWalker JSON** | Graph, GraphWalker JSON modeli olarak `SwagLabs.json` dosyasına iner. GraphWalker Studio'da açılır, GraphWalker CLI ile çalıştırılabilir. |
+| 9 | *(terminalde)* `node runner/run.js SwagLabs.json --path e_Login,e_AddToCart --secrets secrets.json` | | Runner yolu yeni bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranın beklenen node olduğunu doğrular. Yolu GraphWalker de üretebilir. Bkz. [runner/README.md](runner/README.md) |
 
 **Temel kurallar:**
 
@@ -111,21 +112,27 @@ bitirme_demo/
 │   ├── 04-veri-modeli.md        ← state, node, edge, aksiyon şemaları + GraphWalker eşlemesi
 │   └── 05-gelistirme.md         ← geliştirme döngüsü, hata ayıklama, genişletme
 │
-└── extension/                   ← Chrome'a yüklenen klasör (build yok, olduğu gibi çalışır)
-    ├── manifest.json            ← eklentinin kimlik kartı: izinler, hangi dosya nerede çalışır
-    ├── background.js            ← BEYİN: graph state'i, node/edge mantığı, state eşleştirme
-    ├── content.js               ← SENSÖR: her sayfaya enjekte edilir, aksiyonları yakalar
-    ├── settings.js              ← AYARLAR: aksiyon/element türü listeleri ve edge set karşılaştırması (üç parça da yükler)
-    ├── sidepanel/               ← ARAYÜZ: Chrome'un yan panelinde açılan sayfa
-    │   ├── panel.html           ←   iskelet (butonlar, kartlar, graph alanı)
-    │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
-    │   ├── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
-    │   └── theme.js             ←   tema seçimi (sayfa çizilmeden önce uygulanır)
-    └── lib/
-        └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)
+├── extension/                   ← Chrome'a yüklenen klasör (build yok, olduğu gibi çalışır)
+│   ├── manifest.json            ← eklentinin kimlik kartı: izinler, hangi dosya nerede çalışır
+│   ├── background.js            ← BEYİN: graph state'i, node/edge mantığı, state eşleştirme
+│   ├── content.js               ← SENSÖR: her sayfaya enjekte edilir, aksiyonları yakalar
+│   ├── fingerprint.js           ← PARMAK İZİ: ekranın state'inin tanımı (content.js ve runner ortak kullanır)
+│   ├── settings.js              ← AYARLAR: aksiyon/element türü listeleri ve state karşılaştırması (her parça yükler)
+│   ├── sidepanel/               ← ARAYÜZ: Chrome'un yan panelinde açılan sayfa
+│   │   ├── panel.html           ←   iskelet (butonlar, kartlar, graph alanı)
+│   │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
+│   │   ├── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
+│   │   └── theme.js             ←   tema seçimi (sayfa çizilmeden önce uygulanır)
+│   └── lib/
+│       └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)
+│
+└── runner/                      ← kaydedilen yolu tarayıcıda tekrar oynatır ve doğrular (Node.js + Playwright)
+    ├── README.md                ← kurulum, kullanım, nasıl çalışır
+    ├── run.js                   ← komut satırı ve akış
+    └── lib/                     ← model ve yol, sayfa, aksiyonlar, doğrulama
 ```
 
-Toplam kod yaklaşık **1250 satır** (yorumlar dahil): `background.js` ~380, `panel.js` ~330, `content.js` ~275, `settings.js` ~45, geri kalanı HTML/CSS/manifest. Kütüphane hariç tek bir dış bağımlılık yoktur.
+Eklenti yaklaşık **2250 satır** (yorumlar dahil): `panel.js` ~720, `content.js` ~640, `background.js` ~620, `fingerprint.js` ~150, `settings.js` ~125; geri kalanı HTML/CSS/manifest. Kütüphane hariç tek bir dış bağımlılık yoktur. Runner yaklaşık 530 satırdır; tek bağımlılığı Playwright'tır ve yalnızca `runner/` klasöründedir.
 
 ---
 
@@ -150,7 +157,8 @@ Eklenti, Chrome'un bize verdiği üç farklı çalışma ortamına bölünmüşt
 - **content.js** sayfanın içinde çalışır ve DOM'a erişebilir. Ama sayfa değişince yok olur, bu yüzden hiçbir şey saklamaz.
 - **background.js** sayfalardan bağımsız yaşar. State'i ve ayarları yalnızca o değiştirir.
 - **panel.js** state'i ve ayarları yalnızca okur ve çizer. Bir değişiklik istediğinde background'a mesaj gönderir.
-- **settings.js** üçünün ortak kullandığı listeleri (aksiyon tipleri, etkileşimli element türleri) tanımlar.
+- **settings.js** üçünün ortak kullandığı listeleri (aksiyon tipleri, etkileşimli element türleri) ve state karşılaştırmasını tanımlar.
+- **fingerprint.js** ekranın state'inin (parmak izinin) tanımıdır. content.js ve runner aynı dosyayı kullanır: kayıt ile test aynı state tanımıyla çalışır.
 
 Detaylar için: [docs/01-mimari.md](docs/01-mimari.md)
 
@@ -184,13 +192,14 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 - Node ve edge'leri GraphWalker geleneğine uygun isimlendirir (`v_Inventory`, `e_Login`).
 - Şifre alanlarını maskeler (`******`).
 - Graph'ı **GraphWalker JSON modeli** olarak dışa aktarır. URL, parmak izi, ekran görüntüsü ve kaydedilen tarayıcı aksiyonları GraphWalker'ın `properties` alanlarında taşınır. GraphWalker CLI 4.3.3 ile doğrulandı (`check`, `offline`). Bkz. [docs/04 > Dışa aktarılan JSON](docs/04-veri-modeli.md#dışa-aktarılan-json)
+- Modeldeki bir yolu (elle verilen ya da GraphWalker'ın ürettiği) **runner** ile gerçek bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranı, kayıttaki state tanımıyla doğrular. Kayıttaki görünen alan ve yakınlaştırma aynen kurulur; başarısız adımda fark ve ekran görüntüsü verir. Bkz. [runner/README.md](runner/README.md)
 
 **Yapmaz (bilinçli olarak kapsam dışı):**
 
 - iframe içi ve Shadow DOM içi aksiyonlar
-- Birden fazla sekmeye yayılan akışlar (kayıt tek sekmeye bağlıdır)
+- Birden fazla sekmeye yayılan akışlar (kayıt ve runner tek sekmeye bağlıdır)
 - Sürükle-bırak, hover menüler, klavye kısayolları
-- GraphWalker için test kodu üretmek ve kaydı tekrar oynatmak (replay). Bunlar bir sonraki adımdır, bkz. [docs/05-gelistirme.md](docs/05-gelistirme.md#yol-haritası).
+- GraphWalker için test kodu (Java) üretmek. Kayıt runner ile tekrar oynatılır ama kod üretilmez, bkz. [docs/05-gelistirme.md](docs/05-gelistirme.md#yol-haritası).
 - JSON'u geri içe aktarma
 
 ---
@@ -204,3 +213,4 @@ Okuma sırası önerisi:
 3. **[03-state-eslestirme.md](docs/03-state-eslestirme.md):** Projenin akademik çekirdeği. İki sayfanın "aynı durum" olduğuna nasıl karar veriliyor?
 4. **[04-veri-modeli.md](docs/04-veri-modeli.md):** Kaydedilen verinin tam şeması ve GraphWalker'a nasıl aktarılacağı
 5. **[05-gelistirme.md](docs/05-gelistirme.md):** Kodu değiştirme, hata ayıklama, yeni özellik ekleme ve yol haritası
+6. **[runner/README.md](runner/README.md):** Kaydedilen yolu tarayıcıda tekrar oynatmak ve her adımı doğrulamak

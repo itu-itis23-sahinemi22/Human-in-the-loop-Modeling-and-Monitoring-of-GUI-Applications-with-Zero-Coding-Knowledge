@@ -15,10 +15,12 @@
 
 1. Kodu düzenleyin.
 2. `chrome://extensions` sayfasında Graph Recorder kartındaki **yenile (⟳)** ikonuna basın.
-3. `content.js`'i ya da `settings.js`'i değiştirdiyseniz kayıt yaptığınız **sayfayı da yenileyin (F5)**. Eski sayfada eski script çalışmaya devam eder.
+3. `content.js`'i, `fingerprint.js`'i ya da `settings.js`'i değiştirdiyseniz kayıt yaptığınız **sayfayı da yenileyin (F5)**. Eski sayfada eski script çalışmaya devam eder.
 4. Yan paneli kapatıp tekrar açın.
 
 Kayıtlı graph, eklenti yenilense de silinmez; `chrome.storage.local`'da durur.
+
+Runner için yenileme gerekmez: her çalıştırmada eklentinin `fingerprint.js` ve `settings.js` dosyalarını yeniden okur. Bu iki dosyadaki bir değişiklik kaydı da testi de etkiler; kayıtla test aynı tanımla kalsın diye ikisi birlikte denenmelidir.
 
 ---
 
@@ -58,8 +60,11 @@ Eklentinin üç parçası üç ayrı ortamda çalıştığı için (bkz. [01-mim
 | "Bekleyen aksiyonlar" listesi dolmuyor | (1) Henüz hiç node oluşturulmadı (kayıt başlamadı). (2) Başka sekmedesiniz. (3) Eklenti yenilendi ama sayfa yenilenmedi. (4) Aksiyon bir iframe içinde. (5) O aksiyon tipinin Ayarlar'da işareti kaldırılmış. (6) Kayıt sekmesi kapatıldı. | Sırasıyla kontrol edin. (6) için: bir node seçip **Buradan devam et**'e basın. |
 | "Node oluştur" butonu kilitli | Son node'dan beri bekleyen aksiyon yok (ilk node hariç node oluşturmak için en az bir aksiyon gerekir) ya da bekleyen bir "aynı node mu?" sorusu var. | Sayfada bir aksiyon yapın ya da soruyu cevaplayın. |
 | Tıklamalar sayfaya hiç ulaşmıyor (eklentiyle ilgisiz) | Chrome'un "şifre ihlali" ya da "şifreyi kaydet" diyaloğu açık. | Diyaloğu kapatın. |
-| Graph'ta "aynı" sayfa iki ayrı node olarak görünüyor | Element kümeleri birebir aynı değil (bilinçli kural). Console'da iki node'un `elements` dizisini karşılaştırın. Sebep genelde (1) farklı kaydırma konumu ya da pencere boyutu: ekrandaki elementler farklı (node detayındaki görünen alanları karşılaştırın), (2) dinamik ya da veriye bağlı bir id (bkz. [03 > Bilinen zayıflıklar](03-state-eslestirme.md#bilinen-zayıflıklar)). | Fark gerçekten anlamsızsa `content.js > elementKey()` içinde o id'yi normalleştirin. Node'ları elle birleştirmeyin: farklı kümeler edge çakışması üretir. |
+| Graph'ta "aynı" sayfa iki ayrı node olarak görünüyor | Element kümeleri birebir aynı değil (bilinçli kural). Console'da iki node'un `elements` dizisini karşılaştırın. Sebep genelde (1) farklı kaydırma konumu ya da pencere boyutu: ekrandaki elementler farklı (node detayındaki görünen alanları karşılaştırın), (2) dinamik ya da veriye bağlı bir id (bkz. [03 > Bilinen zayıflıklar](03-state-eslestirme.md#bilinen-zayıflıklar)). | Fark gerçekten anlamsızsa `fingerprint.js > elementKey()` içinde o id'yi normalleştirin. Node'ları elle birleştirmeyin: farklı kümeler edge çakışması üretir. |
 | Yan panel açılmıyor | Chrome sürümü 114'ten eski | Chrome'u güncelleyin. |
+| Runner başlangıçta kalıyor (*"Beklenen ekrana varılmadı"*, ilk satır) | Runner her çalıştırmaya boş bir oturumla başlar; kayıt giriş yapılmış bir sayfada başlamıştı. | Kaydı giriş sayfasından başlatın; giriş de bir edge olsun. |
+| Runner: *"değeri maskeli (******)"* | Şifre alanının gerçek değeri kayıtta yoktur. | `--secrets` dosyasında hatadaki anahtarla verin: `{ "input:password": "..." }` |
+| Runner'da bir edge'de *"Beklenen ekrana varılmadı"*, fark birkaç tür | Sayfa kayıttakinden farklı bir duruma vardı. Farktaki türlere bakın: kaydedilmemiş bir aksiyon (hover ile açılan menü), gizli durum (sepet içeriği, giriş yapan kullanıcı) ya da değişen veri. | Ekran görüntüsüne (`runner/out`) bakın. Edge'i yeniden kaydedin ya da veriye bağlı id'yi `fingerprint.js > elementKey()` içinde normalleştirin. |
 
 ---
 
@@ -69,7 +74,7 @@ Eklentinin üç parçası üç ayrı ortamda çalıştığı için (bkz. [01-mim
 
 Ayarlanacak bir eşik yoktur. `background.js > findSameStateNodes()` yalnızca URL şablonu ve element kümesi birebir aynı olan node'ları döndürür. Bu kuralı gevşetmek (ör. benzerlik eşiğine geri dönmek) farklı edge set'lerin birleşmesine ve edge çakışmasına yol açar. Gerekçe: [03 > Neden birebir eşitlik?](03-state-eslestirme.md#neden-benzerlik-değil-birebir-eşitlik)
 
-Node sayısı fazla geliyorsa kuralı değil, parmak izini değiştirin: `content.js > elementKey()` içinde dinamik ya da veriye bağlı id'leri normalleştirin.
+Node sayısı fazla geliyorsa kuralı değil, parmak izini değiştirin: `fingerprint.js > elementKey()` içinde dinamik ya da veriye bağlı id'leri normalleştirin.
 
 ### Yeni bir aksiyon tipi eklemek (örnek: çift tıklama)
 
@@ -82,7 +87,8 @@ Node sayısı fazla geliyorsa kuralı değil, parmak izini değiştirin: `conten
    }, true);
    ```
 2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'dblclick', text: 'Çift tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir.
-3. **`docs/04-veri-modeli.md`:** aksiyon tipleri tablosuna yeni satırı ekleyin.
+3. **`runner/lib/actions.js > playAction()`:** tekrar oynatma karşılığını ekleyin (ör. `element.dblclick()`). Eklenmezse runner bu aksiyonda adımı "desteklenmiyor" diye başarısız sayar.
+4. **`docs/04-veri-modeli.md`** ve **`runner/README.md`:** aksiyon tipleri tablolarına yeni satırı ekleyin.
 
 Background'da değişiklik gerekmez: gelen her aksiyonu, tipi Ayarlar'da işaretliyse buffer'a ekler.
 
@@ -102,9 +108,10 @@ Test ettiğiniz site farklı bir test niteliği kullanıyorsa (ör. `data-cy`, `
 
 ### Parmak izine yeni bir sinyal eklemek
 
-1. `content.js > fingerprint()` dönüş nesnesine yeni alanı ekleyin (ör. `h1: document.querySelector('h1')?.innerText`).
+1. `fingerprint.js > fingerprint()` dönüş nesnesine yeni alanı ekleyin (ör. `h1: document.querySelector('h1')?.innerText`).
 2. Alan `capture` nesnesine otomatik kopyalanır (`{ ...page }`), ama node'a kopyalanmaz. `background.js > commit()` içinde node nesnesine elle eklenmeli.
 3. `background.js > findSameStateNodes()` içinde eşleşme koşuluna ekleyin. Sinyal eşleşmeyi yalnızca daraltabilir (daha çok yeni node); element kümesi farklı iki sayfayı eşleştirmemeli.
+4. Runner'ın doğrulaması da aynı koşulu kullanmalıysa `runner/lib/oracle.js > compare()` içine ekleyin; yoksa runner bu sinyali kontrol etmeden geçer.
 
 ### GraphWalker çıktısına alan eklemek
 
@@ -196,6 +203,17 @@ Not: `--virtual-time-budget` ile çalışan headless modda ikinci ve sonraki `sc
 - Tıklama + boyut + yakınlaştırma edge'inin adı `e_Always`; yalnızca boyuttan oluşan edge'in adı `e_Resize`.
 - Dışa aktarım `graph-recorder/v5`; vertex'lerde ve `resize`/`zoom` aksiyonlarında `viewport` var, `changed` yok. Node detayında `707×599 @1.25x` yazıyor.
 
+Parmak izi kodu `fingerprint.js`'e taşındıktan sonra aynı test (iki ek kontrolle: `settings.js > urlKey()` ve panelin fark metni) tekrar koşuldu; 20 kontrolün hepsi geçti.
+
+**Runner.** Uçtan uca: eklentiyle kayıt → dışa aktarım → (GraphWalker) → runner. Kayıt, canlı saucedemo.com'da eklenti yüklü Chromium'la yapıldı: giriş (`******` şifreyle), sepete ekleme, sepet, %125 yakınlaştırma ve geri, alışverişe dönüş, pencereyi daraltma ve geri genişletme. Sonuç 6 node ve 8 edge; iki edge aynı adı (`e_Resize`) taşıyor. Model, panelin dışa aktarımıyla (`graphWalkerModel()`) alındı.
+
+- **Tüm yol:** 8/8 edge geçti (8,5 sn). Kayıttaki gerçek yakınlaştırma ve pencere boyutu, runner'da görünen alan emülasyonuyla aynı state'e vardı.
+- **Bozuk hedef:** `e_AddToCart`'ın hedefi elle `v_Inventory` yapıldı. Runner o edge'de durdu, farkı tam olarak yazdı (`button:add-to-cart-sauce-labs-backpack: beklenen 1, ekranda 0` ve `button:remove-...: beklenen 0, ekranda 1`), ekran görüntüsünü kaydetti; çıkış kodu 1.
+- **Eksik şifre:** `--secrets` olmadan `e_Login`'in 2. aksiyonunda eksik anahtarı (`input:password`) yazarak durdu.
+- **Olmayan edge:** Yolda o node'dan çıkmayan bir edge, tarayıcı açılmadan çıkış kodu 2 ile reddedildi.
+- **Yakınlaştırma:** Yalnızca 1000 px üstünde görünen butonlu yerel bir sayfada kayıt yapıldı: %125 yakınlaştırma butonu gizledi, geri almak gösterdi; pencereyi daraltmak da aynısını yaptı. Runner'da dört edge geçti. Yakınlaştırmanın varılan boyutu modelden silinince (eski kayıt) boyut oranlardan hesaplandı, yine geçti. Ölçüm: emülasyondan sonra sayfa `innerWidth × innerHeight` için 947×599 ve `devicePixelRatio` için 1.25 görüyor; gezinmeden sonra da aynı.
+- **GraphWalker:** CLI 4.3.3 (Java 17) `check` ile v5 modelinde sorun bulmadı. `offline "random(edge_coverage(100))"` 12 ve 10 edge'lik iki yol üretti; düz (`currentElementName`) ve `--verbose` (`currentElementID`) çıktıların ikisi de runner'da geçti.
+
 **Sayılı küme (multiset) ölçümleri.** Mock testlerde: aynı butondan 5 ile 4 olan ekran soru sorulmadan ayrı node; aynı sayılar (sıra farklı) aday; aynı anahtarın farklı tür grupları toplanıyor; Ayarlar filtresi tür bazında uygulanıyor; önceki sürümün biçimiyle kaydedilmiş node çökme yapmadan aday dışı kalıyor. Gerçek Chrome'da 20 satırlık kaydırılabilir listeyle ve canlı saucedemo.com'da ölçüm sonuçları: [03 > Edge hedefi](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi).
 
 Proje "build adımı yok, bağımlılık yok" ilkesini korusun diye bu test betikleri projeye eklenmedi.
@@ -206,8 +224,8 @@ Proje "build adımı yok, bağımlılık yok" ilkesini korusun diye bu test beti
 
 Önem sırasına göre önerilen sonraki adımlar:
 
-1. **GraphWalker test kodu iskeleti:** Model JSON'u artık GraphWalker formatında. Kalan adım, `properties.uiActions`'tan her edge için test metodu üretmek ([04](04-veri-modeli.md#sonraki-adım-test-kodu-iskeleti)). Projeyi uçtan uca tamamlayan adım budur.
-2. **Replay:** Bir edge'in aksiyonlarını Playwright/Selenium koduna dönüştürüp çalıştırmak. Böylece kaydın doğruluğu otomatik doğrulanabilir.
+1. ~~**Replay**~~: yapıldı. Runner, modeldeki bir yolu tarayıcıda oynatıp her adımı kayıttaki state tanımıyla doğruluyor ([runner/README.md](../runner/README.md)). Sonraki adımlar: `select` ve `clipboard` aksiyonlarını oynatmak, yeni sekme açan akışlar, JSON/HTML rapor.
+2. **GraphWalker test kodu iskeleti:** `properties.uiActions`'tan her edge için test metodu üretmek ([04](04-veri-modeli.md#sonraki-adım-test-kodu-iskeleti)). Runner aynı işi kod üretmeden yapıyor; kod üretimi GraphWalker'ın kendi koşucusuyla (online mod, guard'lar) çalışmak için gerekir.
 3. **JSON içe aktarma:** Yarım kalan bir modele daha sonra devam edebilmek için.
 4. **Klavye kısayolu:** `chrome.commands` ile örneğin `Alt+N` = Node oluştur. Kullanıcı farenin panele gitmesine gerek kalmadan çalışır.
 5. ~~**Node birleştirme**~~: yapıldı ([01 > Node birleştirme](01-mimari.md#node-birleştirme)). Sonraki adım olabilir: tekrar eden edge'leri tek tıkla birleştirmek için isteğe bağlı bir araç (şu an yönetimi tamamen kullanıcıda).

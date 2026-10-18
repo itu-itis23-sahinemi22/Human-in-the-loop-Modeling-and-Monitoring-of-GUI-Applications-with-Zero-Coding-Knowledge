@@ -15,7 +15,8 @@ Genel ilke: **demo, en az parçayla çalışan ve her satırı okunabilen bir pr
 7. [Ekran görüntüsü: captureVisibleTab](#7-ekran-görüntüsü-capturevisibletab)
 8. [Kendi selector üreticimiz](#8-kendi-selector-üreticimiz)
 9. [State eşleştirme: element kümesi birebir eşitliği](#9-state-eşleştirme-element-kümesi-birebir-eşitliği)
-10. [Hangi izin neden gerekli?](#hangi-izin-neden-gerekli)
+10. [Runner: Playwright (Node.js)](#10-runner-playwright-nodejs)
+11. [Hangi izin neden gerekli?](#hangi-izin-neden-gerekli)
 
 ---
 
@@ -34,7 +35,7 @@ Genel ilke: **demo, en az parçayla çalışan ve her satırı okunabilen bir pr
 
 | Alternatif | Neden elendi |
 |---|---|
-| **Playwright/Puppeteer ile kontrol edilen tarayıcı** (ör. `playwright codegen`) | Ayrı bir tarayıcı açar, kullanıcının oturumu yoktur. Node.js kurulumu gerekir. *Ama kaydı tekrar oynatmak (replay) için ileride çok uygun bir hedef.* |
+| **Playwright/Puppeteer ile kontrol edilen tarayıcı** (ör. `playwright codegen`) | Ayrı bir tarayıcı açar, kullanıcının oturumu yoktur. Node.js kurulumu gerekir. *Kaydı tekrar oynatmak (replay) için ise doğru araç: runner bunu kullanır (bkz. [10. Runner](#10-runner-playwright-nodejs)).* |
 | **HTTP proxy** (mitmproxy vb.) | Sadece ağ isteklerini görür, kullanıcının neye tıkladığını göremez. SPA'larda çoğu tıklama hiç istek üretmez. |
 | **Bookmarklet / sayfaya JS enjekte etmek** | Sayfa değişince kod ölür. Sitenin CSP kuralları engelleyebilir. Ekran görüntüsü alamaz. |
 | **Electron masaüstü uygulaması** | Ağır, kurulum gerektirir ve kullanıcının asıl tarayıcısı değildir. |
@@ -170,6 +171,31 @@ Genel ilke: **demo, en az parçayla çalışan ve her satırı okunabilen bir pr
 **Elenen alternatif:** Önceki sürümde Jaccard benzerliği (eşik 0.6) kullanılıyordu. "%92 benziyor" sorusuna "Evet" demek farklı edge set'leri birleştirip tam olarak bu çakışmayı üretiyordu.
 
 Algoritmanın tam açıklaması, ölçümler ve diğer elenen alternatifler (DOM ağacı karşılaştırma, görsel karşılaştırma, makine öğrenmesi): [03-state-eslestirme.md](03-state-eslestirme.md)
+
+---
+
+## 10. Runner: Playwright (Node.js)
+
+**Ne için:** Dışa aktarılan modeldeki bir yolu gerçek bir tarayıcıda tekrar oynatmak ve her adımda varılan ekranın beklenen node olduğunu doğrulamak (`runner/`, bkz. [runner/README.md](../runner/README.md)).
+
+**Neden:**
+
+- **Aynı dil, aynı parmak izi.** Runner, eklentinin `settings.js` ve `fingerprint.js` dosyalarını olduğu gibi kullanır: test edilen sayfaya `addInitScript` ile eklenir, Node tarafında `vm` ile yüklenir. Kayıt ve test aynı state tanımını kullanır; başka bir dile çevrilmiş ikinci bir kopya yoktur.
+- **Görünen alan emülasyonu.** `viewport` ve `deviceScaleFactor` fiziksel ekrandan bağımsızdır ve DevTools protokolüyle (CDP) çalışırken de değiştirilebilir. Kayıttaki pencere boyutu ve yakınlaştırma bu sayede birebir kurulur ([03 > Pencere boyutu ve state](03-state-eslestirme.md#pencere-boyutu-ve-state)).
+- **Hazır bekleme mekanizmaları.** Elementin görünür ve tıklanabilir olmasını, tıklamanın başlattığı gezinmeyi kendisi bekler.
+- **Temiz başlangıç.** Her çalıştırma ayrı bir tarayıcı bağlamında (çerez ve depolama boş) başlar; kayıt yapan kullanıcının oturumu teste karışmaz.
+- **Kayıttaki biçimle uyumlu.** Tuş adları (`Control+Enter`) ve tekrar oynatma karşılıkları ([04 > Aksiyon](04-veri-modeli.md#aksiyon)) zaten Playwright biçimindedir. Kurulu Chrome ile de çalışır (`--channel chrome`).
+
+**Elenen alternatifler:**
+
+| Alternatif | Neden elendi |
+|---|---|
+| **Selenium (Java)** | Parmak izi kodu Java'ya çevrilmek ya da `executeScript` ile metin olarak taşınmak zorunda kalırdı. Görünen alan emülasyonu yerleşik değildir: pencere, sayfanın iç boyutu kayıttakine eşit olacak şekilde ayarlanmalıdır; piksel oranı için Chrome'a özel CDP komutları gerekir. GraphWalker'ın Java test kütüphanesiyle doğal uyumu bir artıdır; test kodu üretimine geçilirse yeniden değerlendirilebilir. |
+| **Puppeteer** | Playwright'a çok yakın bir API. Playwright'ı öne çıkaranlar: her çalıştırma için ayrı tarayıcı bağlamı, yeni sekme/popup olaylarını bekleme ve hazır bekleme mekanizmaları. |
+| **Eklentinin kendisi** (kayıt yapılan tarayıcıda oynatmak) | Sayfaya gönderilen sahte olaylar `isTrusted=false` olur; bazı siteler bunları yok sayar (kayıt da bu yüzden onları kaydetmez). Kullanıcının oturumu test ortamını kirletir, temiz başlangıç yoktur. |
+| **Cypress** | Tek sekmede çalışır; yeni sekme açan akışları test edemez. |
+
+**Bilinçli tercih:** Runner eklentiden ayrı bir klasördür; npm bağımlılığı yalnızca oradadır. Eklentinin "build adımı yok, bağımlılık yok" ilkesi ([4. bölüm](#4-vanilla-javascript-build-adımı-yok)) korunur.
 
 ---
 
