@@ -315,6 +315,23 @@ Branch 2'de `planner` alanı `{ "engine": "panel", "strategy": "edges" }`; elle 
 - [x] Panelde Senaryo bölümü: önizleme, elle yol, indir, yükle
 - [x] Dokümanlar: runner/README, 01, 04, 05, README
 
+#### Panelde oynatma (ortak, elle testten sonra eklendi)
+
+Elle testte istendi: koşuyu runner'ı çalıştırmadan, kullanıcının kendi tarayıcısında görsel olarak takip etmek. Runner yerine değil, yanında: panelde oynatma graph'ı kuran kişinin hızlı kontrolü, runner temiz ve tekrarlanabilir test ve rapor.
+
+Kararlar:
+
+- **Başlangıç kullanıcının sorumluluğu.** Oynatma başlangıç sayfasına kendisi gitmez. Ekran koşunun ilk node'uyla karşılaştırılır; farklıysa *"Başlangıç node'ları aynı değil ... Koşu doğru sonuç vermeyecektir"* uyarısı çıkar, kullanıcı yine de oynatabilir.
+- **Gerçek olaylar:** `chrome.debugger` (DevTools protokolü). `debugger` izni ve Chrome'un oynatma boyunca gösterdiği uyarı çubuğu kabul edildi.
+- Oynatma sürerken kayıt durur; koşu geçtiyse kayıt vardığı node'dan sürer.
+
+- [x] `sidepanel/replay.js`: aksiyon tablosu runner'la aynı (`select`, `clipboard` hariç), tıklamadan önce elementin durması ve üstünün açık olması beklenir, her edge sonunda doğrulama
+- [x] `content.js`: `REPLAY` istekleri (locate / focus / choose / scroll / settled); durulma `fingerprint.js > settled` (runner da aynısını kullanır)
+- [x] `background.js`: oynatma sürerken kayıt durur (`chrome.storage.session`), bitince şu anki node
+- [x] Panel: "Koşuyu oynat", Yavaş, Durdur, şifre kutuları, adım listesi, graph'ta canlı ilerleme, kalınan adımda fark ve "Beklenen ekranla karşılaştır"
+- [x] Test: kayıt (şifreli giriş, tıklama, açılır liste, checkbox, Escape, CSS hover, yeni sekme) ve oynatma; yakınlaştırma %100 ve %150 ([05 > Test](05-gelistirme.md#test))
+- [x] Dokümanlar: 01 (Panelde oynatma), 02 (izin), README
+
 ### Branch 1: `planner-graphwalker`
 
 ```
@@ -432,7 +449,7 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 | `select` ve `clipboard` oynatılmıyor | Bu aksiyonları içeren edge "desteklenmiyor" diye kalır. | Alanda `setSelectionRange`, sayfada `Range`; pano izni ve `Control+V`. |
 | Gizli durum görülmez | Sepet sayısı gibi etkileşimli olmayan farklar doğrulamaya girmez. | Node'a isteğe bağlı metin/değer kontrolleri; görsel fark (Faz 5) yardımcı sinyal olarak. |
 | Değerini yalnızca `change` ile işleyen alanlar | Edge'in son aksiyonuysa doğrulama işlenmemiş ekranı görebilir. | Bir sonraki aksiyon aynı alanda değilse `fill`'den sonra `change` göndermek. |
-| Temiz oturum | Kayıt giriş yapılmış sayfada başladıysa başlangıç tutmaz. | Playwright `storageState` ile oturumu dosyadan yüklemek. |
+| Temiz oturum | Kayıt giriş yapılmış sayfada başladıysa başlangıç tutmaz. Kayıt bayat site verisiyle yapıldıysa sonraki ekranlar da tutmaz (aşağıda, Senaryo ve rapor). | Playwright `storageState` ile oturumu dosyadan yüklemek. |
 | Sonuç yalnızca konsolda | Raporlanamaz, CI'a bağlanamaz. | JSON/HTML rapor, JUnit XML (Faz 6). |
 | Runner'ın otomatik testleri repoda yok | Test betikleri her oturumda yeniden yazılıyor. | `runner/test/` altında yerel test sayfalarıyla bir test paketi (eklentinin "bağımlılık yok" ilkesi runner'ı bağlamıyor). |
 | Hedef sırası kayabilir | Dinamik listelerde "türün n'incisi" başka elementi gösterebilir. | Selector ile hedefin aynı elementi gösterip göstermediğini kontrol edip uyarmak. |
@@ -487,4 +504,18 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 | Model ve senaryo ayrı dosyalar | Senaryo, modelin aynı klasörde ve aynı adla durmasını bekler. | Senaryoyu modelin içine (`properties.graphRecorder.scenarios`) gömmek. |
 | HTML rapor tek dosya, ekran görüntüleri gömülü | Çok adımlı ve çok hatalı raporlar büyür. | Yalnızca başarısız adımların görüntülerini gömmek (şu an öyle); başarılı adımlar için isteğe bağlı küçük resimler. |
 | Koşular sırayla çalışır | Uzun senaryolar yavaş. | Koşuları paralel tarayıcı bağlamlarında çalıştırmak (her koşu zaten bağımsız). |
+| Graph bayat site verisiyle oluşturulursa runner doğru sonuç vermez | Kayıt yapılan tarayıcıda sitenin önceden sakladığı bir durum (çerez, localStorage: dolu bir sepet gibi) varsa kayıttaki ekranlar o durumla alınır. Runner her koşuyu temiz tarayıcıda başlattığı için ekranlar tutmaz ve test kalır; hata uygulamada değil kayıttadır. Elle testte görüldü: saucedemo sepeti localStorage'da tutar, çıkışta silmez; girişten sonraki ilk ekranda sepette ürün bekleniyordu. Panelde oynatma aynı tarayıcıda çalıştığı için bu durumda geçebilir: panelde geçen koşu runner'da kalabilir. | Kayıt başlarken sitenin çerez ve localStorage'ını modele kaydetmek, runner'da `storageState` ile yüklemek; ya da kayıt başlarken sitede saklı veri varsa panelde uyarmak. Şimdilik: kayda başlamadan sitenin verisini temizlemek (runner/README > Sınırlar). |
+
+### Panelde oynatma
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| Sonuç tarayıcıda kalan duruma bağlı | Aynı koşu kullanıcının tarayıcısında geçip temiz tarayıcıda (runner) kalabilir, ya da tersi. | Panelde "kayıt başlangıcındaki site verisiyle başla" seçeneği (önce modele kaydedilmesi gerekir; yukarıda). |
+| Başlangıç kullanıcının sorumluluğu | Uyarıya rağmen oynatılırsa sonuçlar anlamsızdır. | Başlangıç node'unun adresine gitme seçeneği (giriş gerektirmeyen siteler için). |
+| Pencere boyutu aksiyonu taklit edilir | `resize` DevTools'un cihaz modu gibi kurulur, oynatma bitince kalkar: koşu geçse de tarayıcının gerçek görünen alanı son node'unkinden farklı olabilir; kayıt oradan sürerse sonraki edge'ler tutmayabilir. | Bitişte görünen alan farkını bildirmek; ya da pencereyi `chrome.windows.update` ile gerçekten boyutlandırmak. |
+| `select` ve `clipboard` oynatılmıyor; tarih, renk, aralık alanlarına yazılamaz | Bu aksiyonları içeren edge kalır. | Runner'daki fikirler; özel alanlarda değeri doğrudan atayıp `input`/`change` göndermek. |
+| Hata ayıklama çubuğu ve izin | Kullanıcı rahatsız olabilir; sekmede DevTools ya da başka bir hata ayıklayıcı bağlıysa bağlanılamayabilir. | Sayfa içi olaylarla çalışan, daha kısıtlı bir "hafif" mod. |
+| Rapor yok | Sonuç yalnızca panelde görünür. | Runner'ın rapor biçimiyle (`report.json`) indirme. |
+| Tek koşu | Senaryodaki koşular tek tek oynatılır; her koşu öncesi başlangıca kullanıcı döner. | Koşu bitince başlangıca dönülmesini bekleyip sıradakine geçmek. |
+| Aynı anda iki panel | Panel açılırken yarım kalmış oynatma bayrağını temizler; başka penceredeki panel o sırada oynatıyorsa kayıt bayrağı erken kalkar. | Bayrağa oynatan panelin kimliğini yazmak. |
 

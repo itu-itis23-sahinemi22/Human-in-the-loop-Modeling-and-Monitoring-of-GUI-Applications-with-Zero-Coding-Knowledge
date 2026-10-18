@@ -93,6 +93,34 @@
       <button id="btn-scenario-download" class="primary">Senaryo indir</button>
     </div>
     <input type="file" id="scenario-file" accept=".json,application/json" hidden>
+
+    <!-- PANELDE OYNATMA: seçili koşu bu tarayıcıda, açık sekmede oynatılır (replay.js). Başlangıç
+         sayfası kullanıcının sorumluluğudur; ekran koşunun ilk node'u değilse uyarı çıkar. -->
+    <div id="replay" class="replay">
+      <h3>Panelde oynat</h3>
+      <p class="hint">Seçili koşuyu bu tarayıcıda, açık sekmede oynatır; her adımı izleyebilirsiniz. Sekme koşunun ilk node'unun ekranında olmalı. Chrome oynatma boyunca üstte "hata ayıklama" çubuğu gösterir.</p>
+      <div id="replay-secrets"></div>
+      <div class="toolbar">
+        <button id="btn-replay" class="primary">Koşuyu oynat</button>
+        <button id="btn-replay-stop" class="danger" hidden>Durdur</button>
+        <label class="option"><input type="checkbox" id="replay-slow" checked> <span>Yavaş (elementi çerçevele)</span></label>
+      </div>
+      <!-- Oynatmadan önce: ekran koşunun ilk node'u değil ya da bekleyen aksiyonlar silinecek -->
+      <div id="replay-check" class="card highlight" hidden>
+        <p id="replay-check-text"></p>
+        <ul id="replay-check-reasons" class="reasons"></ul>
+        <div class="toolbar">
+          <button id="btn-replay-anyway" class="primary">Yine de oynat</button>
+          <button id="btn-replay-cancel">Vazgeç</button>
+        </div>
+      </div>
+      <p id="replay-status" class="small" hidden></p>
+      <ol id="replay-steps" class="replay-steps"></ol>
+      <ul id="replay-diff" class="reasons"></ul>
+      <div class="toolbar" id="replay-result-actions" hidden>
+        <button id="btn-replay-compare">Beklenen ekranla karşılaştır</button>
+      </div>
+    </div>
   </details>
 
   <!-- Graph'ta tıklanan node/edge'in detayları -->
@@ -133,11 +161,29 @@
       </div>
       <p id="compare-info" class="small"></p>
       <ul id="compare-warnings" class="reasons"></ul>
-      <div id="compare-view"></div>
+      <div id="compare-view" class="compare-view"></div>
       <div class="toolbar">
         <button id="btn-compare-yes" class="primary">Evet, bu node</button>
         <button id="btn-compare-cancel">Kapat</button>
       </div>
+    </div>
+  </dialog>
+
+  <!-- Panelde oynatmada kalınan ekran ↔ beklenen node'un kayıttaki ekranı (compare.js) -->
+  <dialog id="replay-compare-dialog" class="compare" aria-labelledby="replay-compare-title">
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="replay-compare-title">Beklenen ekranla karşılaştır</h2>
+        <button id="btn-replay-compare-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
+      </div>
+      <div id="replay-compare-modes" class="segmented" role="group" aria-label="Görünüm">
+        <button data-mode="diff">Fark</button>
+        <button data-mode="slider">Perde</button>
+        <button data-mode="side">Yan yana</button>
+      </div>
+      <p id="replay-compare-info" class="small"></p>
+      <ul id="replay-compare-warnings" class="reasons"></ul>
+      <div id="replay-compare-view" class="compare-view"></div>
     </div>
   </dialog>
 
@@ -247,6 +293,7 @@
   <script src="../settings.js"></script>
   <script src="../scenario.js"></script>
   <script src="compare.js"></script>
+  <script src="replay.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

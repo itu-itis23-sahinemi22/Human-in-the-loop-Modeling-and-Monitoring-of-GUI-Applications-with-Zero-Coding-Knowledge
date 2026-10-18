@@ -7,6 +7,7 @@
 // dosyadadır ve iki yerde yüklenir:
 //   eklenti : manifest.json > content_scripts > js (settings.js'ten sonra, content.js'ten önce)
 //   runner  : test edilen her sayfaya (runner/lib/page.js > INIT_SCRIPT)
+// Panelde oynatma da sayfayı content.js üzerinden aynı fonksiyonlarla okur.
 // settings.js'teki INTERACTABLE_TYPES'a dayanır. Bu dosya olay dinlemez, mesaj göndermez;
 // yalnızca tanımlar. Algoritmanın detayı: docs/03-state-eslestirme.md
 // =============================================================================
@@ -20,9 +21,35 @@ const INTERACTIVE = INTERACTABLE_TYPES.map((t) => t.selector).join(', ');
 
 // Sayfanın durulması: SETTLE_QUIET_MS boyunca DOM'un değişmemesi ve animasyonların bitmesi;
 // sürekli değişen sayfada en fazla SETTLE_MAX_MS beklenir. Kayıt aksiyonun sonrasını
-// (content.js > reportScreenWhenSettled), runner varılan ekranı bu sürelerle bekler.
+// (content.js > reportScreenWhenSettled), tekrar oynatma (runner ve panel) varılan ekranı bu
+// sürelerle bekler (settled).
 const SETTLE_QUIET_MS = 300;
 const SETTLE_MAX_MS = 3000;
+
+// Sayfa durulunca çözülen Promise (tekrar oynatırken her aksiyondan sonra beklenir).
+function settled() {
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(restart);
+    const max = setTimeout(done, SETTLE_MAX_MS);
+    let quiet = null;
+    function restart() {
+      clearTimeout(quiet);
+      quiet = setTimeout(done, SETTLE_QUIET_MS);
+    }
+    function done() {
+      observer.disconnect();
+      clearTimeout(quiet);
+      clearTimeout(max);
+      document.removeEventListener('transitionend', restart, true);
+      document.removeEventListener('animationend', restart, true);
+      resolve();
+    }
+    observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    document.addEventListener('transitionend', restart, true);
+    document.addEventListener('animationend', restart, true);
+    restart();
+  });
+}
 
 // Ekranda tıklanabilen elementlerin SAYILI kümesi (multiset): her anahtar, uyduğu
 // etkileşimli türler ve ekranda kaç tane olduğu:

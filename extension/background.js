@@ -90,6 +90,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handle(message, sender) {
   const state = await getState();
+  if (await isReplaying()) {
+    if (message.type === 'ACTION' || message.type === 'SCREEN') return watchOf(await getSettings(), false);
+    if (message.type === 'CREATE_NODE') throw new Error('Panelde oynatma sürüyor. Bitince ya da durdurunca node oluşturabilirsiniz.');
+  }
   switch (message.type) {
     // content.js -> background
     case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message).then(() => monitorFor(state, sender.tab?.id));
@@ -107,7 +111,54 @@ async function handle(message, sender) {
     case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO':        return undo(state);
+    case 'REPLAY':      return setReplay(state, message);
   }
+}
+
+
+// -----------------------------------------------------------------------------
+// PANELDE OYNATMA: oynatma sürerken kayıt durur
+// -----------------------------------------------------------------------------
+// Panel bir koşuyu kullanıcının kendi tarayıcısında oynatırken (sidepanel/replay.js) fare ve
+// klavye olayları gerçek kullanıcı olayı gibi gelir (isTrusted); kaydedilmemelidir. Oynatma
+// sürerken kayda giden her yol (aksiyon, ekran, gezinme, yakınlaştırma, sekme olayları) yok
+// sayılır. Bayrak chrome.storage.session'dadır: service worker uyuyup uyansa da kalır,
+// tarayıcı kapanınca silinir. Oynatmadan önce bekleyen aksiyonlar atılır (panel önce sorar).
+// Oynatma bitince tarayıcı başka bir ekrandadır: koşu geçtiyse kayıt vardığı node'dan ve
+// oynatmanın bittiği sekmede sürer ("Buradan devam et" gibi); geçmediyse ya da durdurulduysa
+// şu anki node bilinmez, kullanıcı bir node seçip "Buradan devam et"e basar.
+let replayPromise = null;
+
+function isReplaying() {
+  replayPromise ??= chrome.storage.session.get('replay').then((r) => Boolean(r.replay));
+  return replayPromise;
+}
+
+async function setReplay(state, { active, endNodeId = null, tabId = null }) {
+  replayPromise = Promise.resolve(Boolean(active));
+  await chrome.storage.session.set({ replay: Boolean(active) });
+  const settings = await getSettings();
+  if (active) {
+    state.buffer = [];
+    notifyMonitor({ tabId: null }, settings, state.tabId); // kayıt sekmesi izlemeyi bıraksın
+    return save(state);
+  }
+  // Oynatma sekme kapatmış olabilir: kapananlar kayıttan düşer.
+  const open = await Promise.all(state.tabs.map((t) => chrome.tabs.get(t.id).then(() => t, () => null)));
+  state.tabs = open.filter(Boolean);
+  if (!state.tabs.some((t) => t.id === state.tabId)) state.tabId = null;
+  const previous = state.tabId;
+  const node = state.nodes.find((n) => n.id === endNodeId);
+  const tab = node && tabId !== null ? await chrome.tabs.get(tabId).catch(() => null) : null;
+  Object.assign(state, { buffer: [], idleSince: Date.now() });
+  if (node) {
+    Object.assign(state, { currentNodeId: node.id, screen: node.elements });
+    if (tab) Object.assign(state, { tabId: tab.id, tabs: [{ id: tab.id, url: tab.url, title: tab.title }], viewport: node.viewport ?? null });
+  } else {
+    Object.assign(state, { currentNodeId: null, screen: null });
+  }
+  notifyMonitor(state, settings, previous);
+  return save(state);
 }
 
 
@@ -296,6 +347,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(onNavigation);
 
 async function onNavigation(details) {
   if (details.frameId !== 0) return; // sadece ana sayfa, iframe'ler değil
+  if (await isReplaying()) return;
   const action = navigationAction(details);
   if (action) addAction(await getState(), details.tabId, action);
 }
@@ -326,7 +378,7 @@ chrome.tabs.onZoomChange.addListener((change) => {
 });
 
 async function onZoom({ tabId, oldZoomFactor, newZoomFactor }) {
-  if (newZoomFactor === oldZoomFactor) return;
+  if (newZoomFactor === oldZoomFactor || await isReplaying()) return;
   const state = await getState();
   if (state.tabId !== tabId) return;
   const open = openAction(state);
@@ -373,10 +425,13 @@ function inTabQueue(fn) {
   return run;
 }
 
-chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => inTabQueue(() => onTabOpenedByPage(details)));
-chrome.tabs.onActivated.addListener(({ tabId }) => inTabQueue(() => onTabActivated(tabId)));
-chrome.tabs.onUpdated.addListener((tabId, change) => inTabQueue(() => onTabUpdated(tabId, change)));
-chrome.tabs.onRemoved.addListener((tabId, info) => inTabQueue(() => onTabRemoved(tabId, info)));
+// Panelde oynatma sürerken sekme olayları kayda girmez (bkz. PANELDE OYNATMA).
+const unlessReplaying = (fn) => async () => (await isReplaying() ? undefined : fn());
+
+chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => inTabQueue(unlessReplaying(() => onTabOpenedByPage(details))));
+chrome.tabs.onActivated.addListener(({ tabId }) => inTabQueue(unlessReplaying(() => onTabActivated(tabId))));
+chrome.tabs.onUpdated.addListener((tabId, change) => inTabQueue(unlessReplaying(() => onTabUpdated(tabId, change))));
+chrome.tabs.onRemoved.addListener((tabId, info) => inTabQueue(unlessReplaying(() => onTabRemoved(tabId, info))));
 
 // Sekmenin aktif olduğu olay bundan önce gelebilir; bekleyen soru varsa o da güncellenir.
 async function onTabOpenedByPage({ sourceTabId, tabId }) {

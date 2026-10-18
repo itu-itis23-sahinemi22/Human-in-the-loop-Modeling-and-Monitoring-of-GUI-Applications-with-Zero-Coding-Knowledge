@@ -10,40 +10,13 @@ import { readFileSync } from 'node:fs';
 
 const extension = (name) => readFileSync(new URL(`../../extension/${name}`, import.meta.url), 'utf8');
 
-// Sayfa içinde çalışır: SETTLE_QUIET_MS boyunca DOM değişmeyince ve animasyonlar bitince,
-// sürekli değişen sayfada en fazla SETTLE_MAX_MS sonra çözülür. Kayıttaki durulma tanımıyla
-// aynıdır (content.js > reportScreenWhenSettled); süreler fingerprint.js'ten gelir.
-function settled() {
-  return new Promise((resolve) => {
-    const observer = new MutationObserver(restart);
-    const max = setTimeout(done, SETTLE_MAX_MS);
-    let quiet = null;
-    function restart() {
-      clearTimeout(quiet);
-      quiet = setTimeout(done, SETTLE_QUIET_MS);
-    }
-    function done() {
-      observer.disconnect();
-      clearTimeout(quiet);
-      clearTimeout(max);
-      document.removeEventListener('transitionend', restart, true);
-      document.removeEventListener('animationend', restart, true);
-      resolve();
-    }
-    observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-    document.addEventListener('transitionend', restart, true);
-    document.addEventListener('animationend', restart, true);
-    restart();
-  });
-}
-
 // Her sayfaya, sayfanın kendi kodundan önce eklenir (context.addInitScript). Eklentinin
 // dosyaları sayfanın global adlarıyla çakışmasın diye bir fonksiyonun içinde çalışır;
-// dışarıya yalnızca window.__graphRecorder açılır.
+// dışarıya yalnızca window.__graphRecorder açılır. settled(): durulma tanımı kayıttakiyle
+// aynıdır (fingerprint.js).
 export const INIT_SCRIPT = `window.__graphRecorder = (() => {
 ${extension('settings.js')}
 ${extension('fingerprint.js')}
-${settled}
 return { fingerprint, targetElement, settled };
 })();`;
 

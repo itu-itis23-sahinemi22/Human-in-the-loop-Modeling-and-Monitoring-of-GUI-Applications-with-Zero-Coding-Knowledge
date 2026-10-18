@@ -209,6 +209,7 @@ Algoritmanın tam açıklaması, ölçümler ve diğer elenen alternatifler (DOM
 | `storage` | Graph state'ini saklamak (`chrome.storage.local`) |
 | `unlimitedStorage` | Ekran görüntüleri 10 MB varsayılan kotayı aşabilir. |
 | `webNavigation` | Adres çubuğu, geri/ileri ve yenileme gibi sayfa dışı gezinmeleri yakalamak |
+| `debugger` | Panelde oynatma: fare ve klavye olaylarını gerçek kullanıcı olayı olarak göndermek, pencere boyutu aksiyonunu kurmak (DevTools protokolü, `chrome.debugger`). Yalnızca oynatma sürerken bağlanır; Chrome bu sırada üstte bir uyarı çubuğu gösterir. |
 | `host_permissions: <all_urls>` | (1) `content.js`'i her siteye eklemek. (2) `captureVisibleTab` ile ekran görüntüsü almak. Hangi sitenin modelleneceğini önceden bilemeyiz. |
 
 **Neden `activeTab` yetmedi?** `activeTab` izni yalnızca belirli kullanıcı hareketlerinde (ikon tıklaması, klavye kısayolu) o sekme için geçici yetki verir. Bizim ise content script'in kayıt boyunca, sayfalar arası geçişlerde bile her sayfada hazır olması gerekiyor.

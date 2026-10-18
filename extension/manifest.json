@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Web sitesinde gezerken, kullanıcının işaretlediği durumlardan yönlü bir graph (node + edge) çıkarır.",
 
-  "permissions": ["sidePanel", "storage", "unlimitedStorage", "webNavigation"],
+  "permissions": ["sidePanel", "storage", "unlimitedStorage", "webNavigation", "debugger"],
   "host_permissions": ["<all_urls>"],
 
   "background": {

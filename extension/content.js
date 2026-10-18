@@ -4,12 +4,14 @@
 // Chrome bu dosyayı ziyaret edilen her web sayfasının içine otomatik enjekte eder
 // (bkz. manifest.json > content_scripts).
 //
-// Üç görevi var:
+// Görevleri:
 //   1) Kullanıcının sayfada yaptığı aksiyonları (tıklama, yazma, Enter, tuş, kaydırma)
 //      yakalayıp background.js'e göndermek.
 //   2) background.js istediğinde sayfanın "parmak izini" (fingerprint) çıkarmak.
 //   3) Aksiyondan sonra sayfa durulunca ekranı background.js'e bildirmek; aksiyonun
 //      state'i değiştirip değiştirmediği bununla bulunur.
+//   4) Panelde oynatmada panelin istediği elementi bulmak, sayfanın durulmasını beklemek
+//      (fare ve klavyeyi panel kendisi gönderir; bkz. sidepanel/replay.js).
 //
 // Parmak izinin (state'in) tanımı fingerprint.js'tedir; runner da aynı dosyayı kullanır.
 // Oradaki fonksiyonlar (interactableElements, countElements, targetOf, elementKey...) ve
@@ -518,6 +520,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse(fingerprint());
   }
   if (message.type === 'MONITOR') setWatch(message);
+  if (message.type === 'REPLAY') {
+    replayRequest(message).then(sendResponse, (error) => sendResponse({ error: error.message }));
+    return true; // cevap asenkron
+  }
 });
 
 
@@ -670,6 +676,101 @@ function sendHover(el) {
     label: 'Hover ' + ((isFormField(el) ? fieldName(el) : visibleText(el)) || el.tagName.toLowerCase()),
     ...(el.matches(INTERACTIVE) && { target: targetOf(el) }),
   }, before);
+}
+
+
+// -----------------------------------------------------------------------------
+// PANELDE OYNATMA (sidepanel/replay.js)
+// -----------------------------------------------------------------------------
+// Panel aksiyonları kullanıcının kendi tarayıcısında tekrar oynatırken sayfayla ilgili işleri
+// buraya sorar. Fare ve klavye olaylarını panel DevTools protokolüyle (chrome.debugger) kendisi
+// gönderir: gerçek kullanıcı olayı gibidir (isTrusted). Element runner'daki sırayla aranır:
+// önce kayıttaki hedef ("bu türün ekrandaki n'incisi"), yoksa CSS selector. Oynatma sürerken
+// bu sayfanın gönderdiği aksiyonları background kaydetmez.
+//   settled : sayfa durulunca parmak izi
+//   locate  : elementin tıklanacak noktası (ekran dışındaysa önce kaydırılır), noktada başka
+//             bir katman var mı, türü; vurgu istenirse element o süre boyunca çerçevelenir
+//   focus   : elemente odaklan; select ise içeriğini seç (yazılacak metin eskisinin yerine geçer)
+//   choose  : açılır listede değeri seç
+//   scroll  : sayfayı ya da kutuyu kayıttaki konuma kaydır
+async function replayRequest({ op, target, selector, highlight, select, value, x, y }) {
+  if (op === 'settled') {
+    await settled();
+    return fingerprint();
+  }
+  if (op === 'scroll') {
+    const box = selector ? document.querySelector(selector) : window;
+    if (!box) return { missing: true };
+    box.scrollTo({ left: x, top: y, behavior: 'instant' });
+    return {};
+  }
+  const found = replayElement(target, selector);
+  if (!found) return { missing: true };
+  const { el, viaSelector } = found;
+  if (op === 'locate') {
+    if (!clickPoint(el)) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    if (highlight) await flash(el, highlight);
+    const point = clickPoint(el);
+    if (!point) return { missing: true };
+    // Noktada başka bir katman (açılan menü, modal) varsa tıklama elemente ulaşmaz.
+    const hit = document.elementFromPoint(point.x, point.y);
+    const kind = el.tagName === 'SELECT' ? 'select' : el.type === 'checkbox' || el.type === 'radio' ? 'check' : 'fill';
+    return { ...point, covered: !(hit && el.contains(hit)), viaSelector, kind, checked: Boolean(el.checked) };
+  }
+  if (op === 'focus') {
+    el.focus();
+    if (select && typeof el.select === 'function') el.select();
+    else if (select && el.isContentEditable) getSelection().selectAllChildren(el);
+    return { viaSelector };
+  }
+  if (op === 'choose') {
+    el.value = String(value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { viaSelector };
+  }
+  return { error: `Bilinmeyen istek: ${op}` };
+}
+
+// viaSelector: kayıttaki hedef ekranda yoktu, selector'la bulundu (panel uyarır).
+function replayElement(target, selector) {
+  if (target?.index) {
+    const el = targetElement(target);
+    if (el) return { el, viaSelector: false };
+  }
+  if (!selector) return null;
+  let el = null;
+  try {
+    el = document.querySelector(selector);
+  } catch {
+    return null;
+  }
+  if (!el || !el.getClientRects().length || el.checkVisibility?.() === false) return null;
+  return { el, viaSelector: Boolean(target?.index) };
+}
+
+// Elementin ekranda kalan ilk parçasının ortası (fingerprint.js > isClickableOnScreen gibi).
+function clickPoint(el) {
+  for (const rect of el.getClientRects()) {
+    const left = Math.max(rect.left, 0);
+    const top = Math.max(rect.top, 0);
+    const right = Math.min(rect.right, innerWidth);
+    const bottom = Math.min(rect.bottom, innerHeight);
+    if (left < right && top < bottom) return { x: (left + right) / 2, y: (top + bottom) / 2 };
+  }
+  return null;
+}
+
+// Oynatılacak elementi kısa süre çerçeveler (kullanıcı takip edebilsin). Çerçeve tıklamayı
+// almaz (pointer-events: none) ve aksiyondan önce kaldırılır.
+function flash(el, ms) {
+  const r = el.getBoundingClientRect();
+  const box = document.createElement('div');
+  box.style.cssText = `position:fixed;left:${r.left - 4}px;top:${r.top - 4}px;width:${r.width + 8}px;height:${r.height + 8}px;`
+    + 'box-sizing:border-box;border:3px solid #f59e0b;border-radius:6px;box-shadow:0 0 0 4px rgba(245,158,11,.3);'
+    + 'z-index:2147483647;pointer-events:none;';
+  document.documentElement.append(box);
+  return new Promise((resolve) => setTimeout(() => { box.remove(); resolve(); }, ms));
 }
 
 

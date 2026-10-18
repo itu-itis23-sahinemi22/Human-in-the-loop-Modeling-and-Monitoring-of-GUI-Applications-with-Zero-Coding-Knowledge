@@ -17,6 +17,7 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - [Node birleştirme](#node-birleştirme)
 - [Geri al](#geri-al)
 - [Kayıt hangi sekmede?](#kayıt-hangi-sekmede)
+- [Panelde oynatma](#panelde-oynatma)
 - [Service worker'ın ölümlülüğü](#service-workerın-ölümlülüğü)
 
 ---
@@ -49,6 +50,7 @@ Ziyaret edilen **her** sayfaya Chrome tarafından otomatik olarak eklenir (`mani
 - **Aksiyonun sonrası:** Her aksiyondan, sayfa yüklenmesinden, geri/ileriden ve pencere boyutu değişiminden (yakınlaştırma dahil) sonra sayfanın durulmasını bekler (300 ms DOM değişmez; en fazla 3 sn) ve ekranın edge set'ini background'a bildirir (`SCREEN`). Yazmaya başlanınca (`beforeinput`) beklemeden bildirir: yazının etkisi önceki aksiyona karışmasın. Background aksiyonun state'i değiştirip değiştirmediğini bununla bulur. Detay: [Edge düzenleme](#edge-düzenleme)
 - **Parmak izi:** Background `GET_FINGERPRINT` isteği gönderdiğinde ekranda, kaydırmadan tıklanabilen ve devre dışı olmayan etkileşimli elementlerin listesini ve sayfanın görünen alanını (viewport) döndürür. Parmak izinin tanımı `fingerprint.js`'tedir (aşağıda). Detay: [03-state-eslestirme.md](03-state-eslestirme.md)
 - **Selector üretimi:** Her aksiyon için elementi tekil olarak bulan bir CSS selector üretir. Kayıtların ileride tekrar oynatılabilmesi buna bağlıdır.
+- **Panelde oynatma:** Panel bir koşuyu oynatırken elementin yerini, sayfanın durulmasını ve parmak izini `REPLAY` isteğiyle buradan alır (bkz. [Panelde oynatma](#panelde-oynatma)).
 
 ### `background.js`: Beyin
 
@@ -64,13 +66,14 @@ Eklentinin tek "durum sahibi" (single source of truth).
 
 - `panel.html`: iskelet. Butonlar, onay kartı, graph alanı, detay kartı ve bekleyen aksiyonlar listesi. Sağ üstteki çark, panelin üstünde açılan **Ayarlar** penceresini (`<dialog>`) açar; kaydedilmemiş değişiklik uyarısı da ayrı bir `<dialog>`'dur.
 - **Senaryo** bölümü (`panel.js > SENARYO`): test yollarını (koşular) kurar ve graph üzerinde önizler: seçili koşunun edge'leri sıra numarasıyla vurgulu, vardığı node işaretli, diğerleri soluk. Elle yolda koşunun vardığı node'dan çıkan bir edge'e tıklanır (gidilebilecekler kesik çizgili); yol çıkmaz bir node'a varınca "Yeni koşu" baştan başlar. Senaryo panelin kendi durumudur (graph state'i değil); "Senaryo indir" ile dosyaya alınır, runner oynatır ([04 > Senaryo dosyası](04-veri-modeli.md#senaryo-dosyası)).
-- `compare.js`: onay kartındaki görsel karşılaştırma: iki ekran görüntüsünün piksel farkı, farklı bölgeler, fark oranı ([03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma)).
+- `compare.js`: onay kartındaki görsel karşılaştırma: iki ekran görüntüsünün piksel farkı, farklı bölgeler, fark oranı ([03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma)). Panelde oynatmada kalınan ekran da bununla karşılaştırılır.
+- `replay.js`: **Panelde oynat**: seçili koşuyu kullanıcının tarayıcısında, açık sekmede oynatır (bkz. [Panelde oynatma](#panelde-oynatma)).
 - `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular (iki liste ve "Beklemeler" bölümü: anahtar ve alt sınır) bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
 
 ### `fingerprint.js`: State'in tanımı
 
-Bir ekranın state'ini tanımlayan kod: etkileşimli elementler (`interactableElements()`, `isInteractable()`), türleri (`elementKey()`), sayılı küme (`countElements()`, `fingerprint()`), aksiyon hedefi (`targetOf()` ve tersi `targetElement()`), görünen alan (`currentViewport()`) ve sayfanın durulma süreleri. Olay dinlemez, mesaj göndermez; yalnızca tanımlar.
+Bir ekranın state'ini tanımlayan kod: etkileşimli elementler (`interactableElements()`, `isInteractable()`), türleri (`elementKey()`), sayılı küme (`countElements()`, `fingerprint()`), aksiyon hedefi (`targetOf()` ve tersi `targetElement()`), görünen alan (`currentViewport()`), sayfanın durulma süreleri ve tekrar oynatırken beklenen durulma (`settled()`). Olay dinlemez, mesaj göndermez; yalnızca tanımlar.
 
 Ayrı dosyadadır, çünkü kayıt ile test **aynı tanımı** kullanmalıdır. İki yerde yüklenir: eklentide content script olarak (`settings.js`'ten sonra, `content.js`'ten önce; aynı sayfadaki content script'ler ortak kapsamda çalıştığı için `content.js` bu fonksiyonları doğrudan kullanır) ve runner'da test edilen her sayfaya ([runner/README.md](../runner/README.md)). Böylece runner'ın "varılan ekran beklenen node mu?" kararı, kayıttaki "bu sayfa zaten bir node mu?" kararıyla aynı koddan gelir.
 
@@ -132,6 +135,8 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `SET_CURRENT` | panel → background | `{ id, tabId }` | "Buradan devam et": şu anki node'u değiştirir, buffer'ı temizler. Kayıt sekmesi kapandıysa kaydı `tabId` sekmesine bağlar. |
 | `RESET` | panel → background | (boş) | Graph'ı sıfırlar. Ayarlara dokunmaz. |
 | `SET_SETTINGS` | panel → background | `{ settings }` | Ayarlar'daki seçimi kaydeder (`settings` anahtarı). |
+| `REPLAY` | panel → background | `{ active, endNodeId?, tabId? }` | Panelde oynatma başladı (`active: true`: kayıt durur, bekleyen aksiyonlar atılır) ya da bitti. Bitince `endNodeId` varsa (koşu geçti) kayıt o node'dan ve `tabId` sekmesinde sürer; yoksa şu anki node bilinmez. Bkz. [Panelde oynatma](#panelde-oynatma) |
+| `REPLAY` | panel → content | `{ op, target?, selector?, ... }` | Panelde oynatmada sayfa işleri: `settled` (durulunca parmak izi), `locate` (elementin tıklanacak noktası, üstü kapalı mı, türü; istenirse çerçeveler), `focus`, `choose` (açılır liste), `scroll`. |
 
 Background her mesaja üç cevaptan biriyle döner:
 
@@ -392,6 +397,37 @@ Kayıt **ilk "Node oluştur"un yapıldığı sekmede** başlar. Akış başka se
 **Tekrar oynatırken** sekme sıra numarasıyla değil adresiyle (URL şablonu) bulunur. GraphWalker'ın yolu edge'leri kayıttaki sırayla yürümeyebilir; aynı sekmeyi açan bir edge iki kez geçilirse sıra numaraları kayardı ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)).
 
 **Kayıt sekmelerinin hepsi kapanırsa** aksiyon kaydı durur. Başka bir sekmede soruya "Evet" denince kayıt, o sekme **şu anki node'un ekranındaysa** (URL şablonu ve edge set'i aynı) sürer; değilse sonraki edge'ler kayıttaki ekranlarla tutmayacağı için reddedilir. Diğer yol: graph'ta bir node seçip **Buradan devam et**. Panelin durum satırı bu durumu hatırlatır.
+
+---
+
+## Panelde oynatma
+
+Senaryo bölümündeki **Koşuyu oynat**, seçili koşuyu kullanıcının kendi tarayıcısında, açık sekmede oynatır; kullanıcı her adımı görür. Runner aynı işi temiz bir tarayıcıda yapar ve rapor yazar ([runner/README.md](../runner/README.md)); panelde oynatma ise graph'ı kuran kişinin hızlı, görsel kontrolüdür: "kaydım tekrar oynatılabiliyor mu?".
+
+```
+panel.js ▸ Koşuyu oynat
+   │ 1. başlangıç kontrolü: GET_FINGERPRINT ↔ koşunun ilk node'u (farklıysa uyarı kartı)
+   │ 2. REPLAY {active: true} ──▶ background: kayıt durur
+   ▼
+replay.js ── her edge, her aksiyon ─────────────────────────────────────┐
+   │  content.js'e REPLAY {op}: locate / focus / choose / scroll        │
+   │  chrome.debugger (CDP): Input.dispatchMouseEvent / KeyEvent,       │
+   │                         Input.insertText, Emulation (resize)       │
+   │  chrome.tabs: navigate, back/forward, reload, zoom, sekmeler       │
+   │  edge sonunda: REPLAY {op: settled} ▸ compareScreen ↔ hedef node   │
+   ▼                                                                    │
+panel: graph'ta ilerleme (yeşil / kesik / kırmızı), adım listesi ◀──────┘
+   │ 3. REPLAY {active: false, endNodeId, tabId} ──▶ background
+   ▼    geçtiyse kayıt vardığı node'dan sürer; kaldıysa şu anki node bilinmez
+```
+
+- **Başlangıç kullanıcının sorumluluğudur.** Oynatma sayfaya kendisi gitmez. Önce ekran, koşunun ilk node'uyla (graph'ın başlangıcı) aynı kuralla karşılaştırılır: URL şablonu ve edge set'i. Farklıysa panel uyarır: *"Başlangıç node'ları aynı değil ... Koşu doğru sonuç vermeyecektir."* Fark listesiyle birlikte gösterilir; kullanıcı "Yine de oynat" diyebilir. Görünen alan farklıysa ve "Bekleyen aksiyonlar" silinecekse de aynı kartta söylenir.
+- **Gerçek olaylar.** Fare, klavye ve metin girişi DevTools protokolüyle (`chrome.debugger`) gönderilir: sayfa bunları gerçek kullanıcı olayı (`isTrusted`) olarak görür; CSS `:hover`, sayfanın tuş dinleyicileri, `target=_blank` link çalışır. Sayfanın içinden üretilen olaylar (`dispatchEvent`) bunları yapamazdı. Bedeli: `debugger` izni ve Chrome'un oynatma boyunca gösterdiği "hata ayıklama başlatıldı" çubuğu. Çubukta "İptal"e basılırsa oynatma durur.
+- **Aksiyonlar runner'la aynı tablodur** ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)): element önce kayıttaki hedefle ("türün n'incisi"), yoksa selector'la bulunur; tıklamadan önce fare elementin üzerine gelir, element kaydıysa ya da üstü bir katmanla kapalıysa yeniden bulunur (Playwright'ın tıklamadan önce elementin durmasını beklemesi gibi). Her aksiyondan sonra sayfanın durulması beklenir (`fingerprint.js > settled`); her edge'in sonunda varılan ekran hedef node'la karşılaştırılır, eşleşene kadar 10 sn tekrar denenir. `select` ve `clipboard` henüz oynatılmaz.
+- **Şifreler.** Kayıtta `******` olan alanlar için panel şifre kutusu gösterir; değer yalnızca panel açıkken bellekte durur, saklanmaz.
+- **Kayıt durur.** Oynatılan olaylar gerçek olay gibi geldiği için oynatma sürerken background kayda giden her yolu (aksiyon, ekran, gezinme, yakınlaştırma, sekme olayları) yok sayar. Bayrak `chrome.storage.session`'dadır: service worker uyuyup uyansa da kalır. Panel oynatma sürerken kapanırsa bir sonraki açılışta bayrak temizlenir.
+- **Bitince.** Koşu geçtiyse kayıt vardığı node'dan, oynatmanın bittiği sekmede sürer ("Buradan devam et" gibi). Kaldıysa ya da durdurulduysa tarayıcının hangi ekranda olduğu bilinmez: şu anki node boşalır, kullanıcı bir node seçip "Buradan devam et"e basar. Kalınan adımda fark listesi görünür; **Beklenen ekranla karşılaştır** kalınan ekranın görüntüsünü, beklenen node'un kayıttaki görüntüsüyle onay kartındaki görünümlerle (Fark, Perde, Yan yana) karşılaştırır.
+- **Yavaş** seçiliyken her element aksiyondan önce kısa süre çerçevelenir ve aksiyonlar arasında beklenir: kullanıcı takip edebilsin.
 
 ---
 

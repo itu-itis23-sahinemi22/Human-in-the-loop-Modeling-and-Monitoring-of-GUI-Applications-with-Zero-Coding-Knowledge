@@ -87,6 +87,13 @@ function graphStyle() {
     },
     { selector: 'edge.run-next', style: { 'line-style': 'dashed', 'line-color': color('--graph-run'), 'target-arrow-color': color('--graph-run') } },
     { selector: 'node.run-end', style: { 'border-color': color('--graph-run'), 'border-width': 4 } },
+    // Panelde oynatma: geçen edge'ler ve varılan node'lar yeşil, oynatılan edge kesik çizgili,
+    // kalınan edge ve beklenen node kırmızı (bkz. renderReplay).
+    { selector: 'edge.replay-passed', style: { 'line-color': color('--graph-pass'), 'target-arrow-color': color('--graph-pass') } },
+    { selector: 'node.replay-passed', style: { 'border-color': color('--graph-pass'), 'border-width': 4 } },
+    { selector: 'edge.replay-running', style: { 'line-style': 'dashed', width: 5 } },
+    { selector: 'edge.replay-failed', style: { 'line-color': color('--graph-fail'), 'target-arrow-color': color('--graph-fail'), width: 5 } },
+    { selector: 'node.replay-failed', style: { 'border-color': color('--graph-fail'), 'border-width': 4 } },
   ];
 }
 
@@ -121,7 +128,7 @@ document.addEventListener('themechange', () => {
 renderThemeButton();
 
 cy.on('tap', (event) => {
-  if (scenarioEditing() && event.target !== cy && event.target.isEdge()) return addScenarioEdge(event.target.id());
+  if (scenarioEditing() && !replay && event.target !== cy && event.target.isEdge()) return addScenarioEdge(event.target.id());
   selectedId = event.target === cy ? null : event.target.id(); // boşluğa tıklayınca seçimi kaldır
   renderDetails();
 });
@@ -188,8 +195,8 @@ function renderStatus() {
   // İlk node dışında, bekleyen aksiyon yoksa node oluşturulamaz (aksiyonsuz edge tekrar oynatılamaz).
   // Beklemeler kaydediliyorsa ekran beklerken değişmiş olabilir; karar background'ındır.
   const noActions = state.nodes.length > 0 && state.buffer.length === 0 && !settings.recordWaits;
-  $('btn-node').disabled = busy || Boolean(state.pending) || noActions;
-  $('btn-node').title = noActions ? 'Bekleyen aksiyon yok: önce sayfada bir aksiyon yap.' : '';
+  $('btn-node').disabled = busy || Boolean(state.pending) || noActions || Boolean(replay);
+  $('btn-node').title = replay ? 'Panelde oynatma sürüyor.' : noActions ? 'Bekleyen aksiyon yok: önce sayfada bir aksiyon yap.' : '';
 }
 
 // Kayda katılmamış sekme sorusu (background.js > SEKMELER). Sekmeyi kayıt sekmesi açtıysa
@@ -816,9 +823,10 @@ function renderScenario() {
   const filled = runs.filter((r) => r.length);
   const coverage = coverageOf(graph, filled);
   const problem = runProblem(graph, runs);
+  const locked = Boolean(replay); // oynatma sürerken senaryo değişmez
   $('scenario-badge').textContent = filled.length ? `${coverage.edges[0]}/${coverage.edges[1]}` : '';
   $('scenario-runs').replaceChildren(...runs.map((r, i) => {
-    const button = Object.assign(document.createElement('button'), { textContent: `Koşu ${i + 1} (${r.length})` });
+    const button = Object.assign(document.createElement('button'), { textContent: `Koşu ${i + 1} (${r.length})`, disabled: locked });
     button.classList.toggle('active', i === scenarioRun);
     button.onclick = () => { scenarioRun = i; renderScenario(); };
     return button;
@@ -833,13 +841,16 @@ function renderScenario() {
     : !graph.start ? 'Önce graph kaydedin.'
       : next.length ? `"${nodeById(end)?.name}" node'undan çıkan bir edge'e tıklayın (kesik çizgili).`
         : `Koşu çıkmaz bir node'da (${nodeById(end)?.name}) bitti. Kalan edge'ler için "Yeni koşu".`;
-  $('btn-scenario-undo').disabled = !run.length && runs.length === 1;
-  $('btn-scenario-new-run').disabled = !run.length;
-  $('btn-scenario-clear').disabled = !filled.length;
+  $('btn-scenario-undo').disabled = locked || (!run.length && runs.length === 1);
+  $('btn-scenario-new-run').disabled = locked || !run.length;
+  $('btn-scenario-clear').disabled = locked || !filled.length;
+  $('btn-scenario-load').disabled = locked;
+  $('scenario-strategy').disabled = locked;
   $('btn-scenario-download').disabled = !filled.length || Boolean(problem);
+  renderReplay();
 
   // Graph'ta önizleme: yalnızca bölüm açıkken
-  cy.elements().removeClass('faded run-edge run-next run-end');
+  cy.elements().removeClass('faded run-edge run-next run-end replay-passed replay-running replay-failed');
   if (!$('scenario').open || !graph.start) return;
   cy.elements().addClass('faded');
   const orders = new Map();
@@ -848,7 +859,8 @@ function renderScenario() {
   const visited = [graph.start, ...run.map((id) => graph.edges.find((e) => e.id === id)?.target)];
   for (const id of visited) if (id) cy.getElementById(id).removeClass('faded');
   cy.getElementById(end).addClass('run-end');
-  if (scenarioEditing()) for (const edge of next) cy.getElementById(edge.id).removeClass('faded').addClass('run-next');
+  if (scenarioEditing() && !locked) for (const edge of next) cy.getElementById(edge.id).removeClass('faded').addClass('run-next');
+  markReplay();
 }
 
 function addScenarioEdge(id) {
@@ -941,6 +953,230 @@ $('scenario-file').onchange = async () => {
   }
   renderScenario();
 };
+
+
+// -----------------------------------------------------------------------------
+// PANELDE OYNATMA: seçili koşu bu tarayıcıda, açık sekmede (replay.js)
+// -----------------------------------------------------------------------------
+// Başlangıç sayfası kullanıcının sorumluluğudur: oynatma sayfaya kendisi gitmez. Önce ekran
+// koşunun ilk node'uyla (graph'ın başlangıcı) karşılaştırılır; farklıysa uyarı çıkar, kullanıcı
+// yine de oynatabilir. Oynatma sürerken background kaydı durdurur; bitince koşu geçtiyse kayıt
+// vardığı node'dan sürer, geçmediyse şu anki node bilinmez (background.js > PANELDE OYNATMA).
+// Graph'ta ilerleme canlı görünür; kalınan adımda fark listesi ve beklenen ekranla görsel
+// karşılaştırma.
+
+let replay = null;        // sürüyorsa oynatma (replay.js > startReplay)
+let replayResult = null;  // son oynatmanın sonucu ve hangi koşu için olduğu (runKey)
+let replayStart = null;   // uyarı kartı açıkken başlatılmayı bekleyen oynatma { tab, edges }
+const replaySecrets = {}; // maskeli alanların değerleri: yalnızca panel açıkken bellekte, saklanmaz
+
+function replayEdges() {
+  return (scenario.runs[scenarioRun] ?? []).map((id) => state.edges.find((e) => e.id === id)).filter(Boolean);
+}
+
+// Panelde gösterilen oynatma: süren ya da seçili koşu için en son biten.
+function shownReplay() {
+  if (replay) return replay;
+  return replayResult?.runKey === JSON.stringify(scenario.runs[scenarioRun]) ? replayResult : null;
+}
+
+function renderReplay() {
+  const edges = replayEdges();
+  const running = Boolean(replay);
+  const problem = runProblem(scenarioGraph(), scenario.runs);
+  $('btn-replay').hidden = running;
+  $('btn-replay-stop').hidden = !running;
+  $('btn-replay').disabled = !edges.length || Boolean(problem) || Boolean(state.pending) || Boolean(replayStart);
+  $('btn-replay').title = state.pending ? 'Önce bekleyen "aynı node mu?" sorusunu cevaplayın.' : edges.length ? '' : 'Önce koşuya edge ekleyin.';
+  $('replay-slow').disabled = running;
+  renderReplaySecrets(edges, running);
+
+  const shown = shownReplay();
+  $('replay-status').hidden = !shown;
+  $('replay-steps').replaceChildren(...(shown?.steps ?? []).map(replayStepItem));
+  const broken = !running && shown?.steps.find((s) => s.status === 'failed');
+  $('replay-diff').replaceChildren(...(broken?.mismatch ? mismatchLines(broken.mismatch, nodeById(broken.target)) : [])
+    .map((text) => Object.assign(document.createElement('li'), { textContent: text })));
+  $('replay-result-actions').hidden = !(broken?.screenshot && nodeById(broken.target)?.screenshot);
+  if (shown) $('replay-status').textContent = replayStatusText(shown, running);
+}
+
+function replayStatusText(shown, running) {
+  const total = shown.steps.length;
+  const passed = shown.steps.filter((s) => s.status === 'passed').length;
+  if (running) {
+    const step = shown.steps[shown.step];
+    if (!step) return 'Oynatma başlıyor…';
+    const actions = state.edges.find((e) => e.id === step.edgeId)?.actions.length ?? 0;
+    return `Oynatılıyor · adım ${shown.step + 1}/${total}: ${step.name}`
+      + (shown.actionLabel ? ` · aksiyon ${shown.action + 1}/${actions}: ${shown.actionLabel}` : ` · ekran "${nodeById(step.target)?.name}" mi?`);
+  }
+  const time = seconds(shown.steps.reduce((sum, s) => sum + (s.duration ?? 0), 0));
+  if (shown.status === 'passed') return `Geçti · ${total}/${total} edge · ${time}`;
+  return `${shown.status === 'stopped' ? 'Durduruldu' : 'Kaldı'} · ${passed}/${total} edge geçti · ${time}`;
+}
+
+function replayStepItem(step) {
+  const li = document.createElement('li');
+  li.className = step.status;
+  li.innerHTML = '<span class="mark"></span><span class="name"></span><span class="time"></span>';
+  li.querySelector('.mark').textContent = { passed: '✓', failed: '✗', stopped: '■', running: '▶', skipped: '–', pending: '·' }[step.status];
+  li.querySelector('.name').textContent = `${step.name} → ${nodeById(step.target)?.name ?? step.target}`;
+  for (const note of [step.error, ...step.warnings].filter(Boolean)) {
+    li.querySelector('.name').append(Object.assign(document.createElement('small'), { textContent: note }));
+  }
+  if (step.duration !== undefined && step.status !== 'skipped') li.querySelector('.time').textContent = seconds(step.duration);
+  return li;
+}
+
+// Beklenen node ile ekranın farkı: URL şablonu, sayısı farklı türler, görünen alan.
+function mismatchLines(m, node) {
+  const LIMIT = 12;
+  const viewport = m.screen.viewport && node?.viewport && viewportText(m.screen.viewport) !== viewportText(node.viewport);
+  return [
+    ...(m.url !== m.expectedUrl ? [`URL şablonu: beklenen ${m.expectedUrl}, ekranda ${m.url}`] : []),
+    ...m.diff.slice(0, LIMIT).map(({ key, expected, actual }) => `${key}: beklenen ${expected}, ekranda ${actual}`),
+    ...(m.diff.length > LIMIT ? [`(+${m.diff.length - LIMIT} tür daha)`] : []),
+    ...(viewport ? [`Görünen alan: kayıtta ${viewportText(node.viewport)}, ekranda ${viewportText(m.screen.viewport)}`] : []),
+  ];
+}
+
+// Graph'ta ilerleme: aynı edge koşuda iki kez geçiyorsa son durumu görünür.
+function markReplay() {
+  const shown = shownReplay();
+  if (!shown) return;
+  const MARK = { passed: 'replay-passed', running: 'replay-running', failed: 'replay-failed', stopped: 'replay-failed' };
+  for (const step of shown.steps) {
+    if (!MARK[step.status]) continue;
+    cy.getElementById(step.edgeId).removeClass('replay-passed replay-running replay-failed').addClass(MARK[step.status]);
+    if (step.status === 'passed') cy.getElementById(step.target).removeClass('replay-failed').addClass('replay-passed');
+    if (step.status === 'failed' && step.mismatch) cy.getElementById(step.target).removeClass('replay-passed').addClass('replay-failed');
+  }
+}
+
+// Koşudaki maskeli (******) alanlar için şifre kutuları. Kutular yalnızca anahtarlar değişince
+// yeniden kurulur (yazılan kaybolmasın).
+let replaySecretKeys = null;
+
+function renderReplaySecrets(edges, running) {
+  const keys = maskedKeys(edges);
+  if (keys.join('\n') !== replaySecretKeys) {
+    replaySecretKeys = keys.join('\n');
+    $('replay-secrets').replaceChildren(...keys.map((key) => {
+      const label = document.createElement('label');
+      label.className = 'field';
+      label.innerHTML = '<span></span> <input type="password" autocomplete="off">';
+      label.querySelector('span').textContent = `Maskeli değer (${key})`;
+      const input = label.querySelector('input');
+      input.value = replaySecrets[key] ?? '';
+      input.oninput = () => { replaySecrets[key] = input.value; };
+      return label;
+    }));
+  }
+  for (const input of $('replay-secrets').querySelectorAll('input')) input.disabled = running;
+}
+
+// "Koşuyu oynat": önce kontroller. Uyarı varsa kart açılır, kullanıcı karar verir.
+$('btn-replay').onclick = async () => {
+  const edges = replayEdges();
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !edges.length) return;
+  const missing = maskedKeys(edges).filter((key) => !replaySecrets[key]);
+  if (missing.length) return showMessage({ error: `Koşuda maskeli (******) alanlar var. Oynatmadan önce değerlerini girin: ${missing.join(', ')}` });
+  const page = await chrome.tabs.sendMessage(tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
+  if (!page) return showMessage({ error: 'Bu sekmeye erişilemedi. Sayfayı yenileyip (F5) tekrar deneyin. (chrome:// sayfaları desteklenmez.)' });
+
+  const start = nodeById(state.startNodeId);
+  const check = compareScreen(start, page, settings);
+  const reasons = [
+    ...(check.ok ? [] : mismatchLines(check, start)),
+    ...(check.ok && start.viewport && viewportText(start.viewport) !== viewportText(page.viewport)
+      ? [`Görünen alan farklı: kayıtta ${viewportText(start.viewport)}, şu an ${viewportText(page.viewport)}. Sonraki ekranlar tutmayabilir.`] : []),
+    ...(state.buffer.length ? [`"Bekleyen aksiyonlar"daki ${state.buffer.length} aksiyon silinecek: oynatma kaydı durdurur.`] : []),
+  ];
+  showMessage(null);
+  if (!reasons.length) return runReplay(tab, edges);
+  replayStart = { tab, edges };
+  $('replay-check-text').textContent = check.ok
+    ? 'Oynatmadan önce:'
+    : `Başlangıç node'ları aynı değil: bu sekme koşunun ilk node'unun ("${start.name}") ekranında değil. Koşu doğru sonuç vermeyecektir.`;
+  $('replay-check-reasons').replaceChildren(...reasons.map((text) => Object.assign(document.createElement('li'), { textContent: text })));
+  $('replay-check').hidden = false;
+  renderReplay();
+};
+
+$('btn-replay-anyway').onclick = () => {
+  const start = replayStart;
+  closeReplayCheck();
+  if (start) runReplay(start.tab, start.edges);
+};
+$('btn-replay-cancel').onclick = closeReplayCheck;
+$('btn-replay-stop').onclick = () => replay?.stop();
+
+function closeReplayCheck() {
+  replayStart = null;
+  $('replay-check').hidden = true;
+  renderReplay();
+}
+
+async function runReplay(tab, edges) {
+  const runKey = JSON.stringify(scenario.runs[scenarioRun]);
+  await send({ type: 'REPLAY', active: true });
+  replay = startReplay({
+    tabId: tab.id, edges, settings, secrets: replaySecrets, slow: $('replay-slow').checked,
+    nodes: new Map(state.nodes.map((n) => [n.id, n])),
+    onUpdate: renderScenario,
+  });
+  renderStatus();
+  renderScenario();
+  const result = await replay.done;
+  replay = null;
+  replayResult = { runKey, ...result };
+  await send({ type: 'REPLAY', active: false, endNodeId: result.endNodeId, tabId: result.tabId });
+  const broken = result.steps.find((s) => s.status === 'failed' || s.status === 'stopped');
+  const end = nodeById(result.endNodeId);
+  showMessage(broken
+    ? { error: `Koşu ${broken.status === 'stopped' ? 'durduruldu' : `"${broken.name}" adımında kaldı`}. Kayda devam etmek için bulunduğunuz ekranın node'unu seçip "Buradan devam et"e basın.` }
+    : { notice: `Koşu geçti: ${result.steps.length}/${result.steps.length} edge. Kayıt "${end?.name}" node'undan sürüyor.` });
+  renderStatus();
+  renderScenario();
+}
+
+// Kalınan ekran ↔ beklenen node'un kayıttaki ekranı (onay kartındaki karşılaştırmanın görünümleri).
+$('btn-replay-compare').onclick = () => {
+  renderReplayCompare();
+  $('replay-compare-dialog').showModal();
+};
+$('btn-replay-compare-close').onclick = () => $('replay-compare-dialog').close();
+for (const button of $('replay-compare-modes').querySelectorAll('button')) {
+  button.onclick = () => { compareMode = button.dataset.mode; renderReplayCompare(); };
+}
+
+async function renderReplayCompare() {
+  const step = replayResult?.steps.find((s) => s.status === 'failed');
+  const node = nodeById(step?.target);
+  if (!step?.screenshot || !node?.screenshot) return $('replay-compare-dialog').close();
+  for (const button of $('replay-compare-modes').querySelectorAll('button')) button.classList.toggle('active', button.dataset.mode === compareMode);
+  step.visualDiff ??= compareScreenshots(step.screenshot, node.screenshot).catch(() => null);
+  const [result, current, other] = await Promise.all([step.visualDiff, loadImage(step.screenshot), loadImage(node.screenshot)]);
+  $('replay-compare-info').textContent = (result
+    ? `Görsel fark: ${percent(result.ratio)} · ${result.boxes.length ? `${result.boxes.length} farklı bölge` : 'farklı bölge yok'}`
+    : 'Görsel fark hesaplanamadı.') + ` · Şu anki sayfa: oynatmanın kaldığı ekran; beklenen: ${node.name}.`;
+  const screen = step.mismatch?.screen ?? {};
+  $('replay-compare-warnings').replaceChildren(...compareWarnings({ url: screen.url ?? node.url, title: screen.title ?? node.title, viewport: screen.viewport }, node, result)
+    .map((text) => Object.assign(document.createElement('li'), { textContent: text })));
+  $('replay-compare-view').replaceChildren(...compareView(current, other, node, result));
+}
+
+// Panel, oynatma sürerken kapandıysa kayıt durmuş kalmasın: bayrak temizlenir, eklentinin
+// sekmelere bağlantısı kesilir.
+chrome.storage.session.get('replay').then((r) => {
+  if (!r.replay) return;
+  chrome.debugger.getTargets().then((targets) => {
+    for (const t of targets) if (t.attached && t.tabId) chrome.debugger.detach({ tabId: t.tabId }).catch(() => { });
+  });
+  send({ type: 'REPLAY', active: false });
+});
 
 
 // -----------------------------------------------------------------------------

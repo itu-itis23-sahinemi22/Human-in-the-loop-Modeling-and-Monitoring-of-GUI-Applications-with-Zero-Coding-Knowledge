@@ -72,7 +72,8 @@ Demo için [saucedemo.com](https://www.saucedemo.com) uygundur: test otomasyonu 
 | 7 | | `v_Inventory_2` altındaki **Evet, bu node** | `v_Cart → v_Inventory_2` edge'i oluşur. Graph'ta döngü kapanır. |
 | 8 | | **GraphWalker JSON** | Graph, GraphWalker JSON modeli olarak `SwagLabs.json` dosyasına iner. GraphWalker Studio'da açılır, GraphWalker CLI ile çalıştırılabilir. |
 | 9 | | **Senaryo** bölümünü açıp graph'ta edge'lere tıklayarak bir yol kurun, **Senaryo indir** | Seçili koşu graph'ta vurgulanır; yol çıkmaz bir node'da biterse "Yeni koşu" baştan başlar. Senaryo, modelin yanına `SwagLabs-senaryo.json` olarak iner. |
-| 10 | *(terminalde)* `node runner/run.js SwagLabs-senaryo.json --secrets secrets.json` | | Runner her koşuyu yeni bir tarayıcıda temiz oturumla oynatır, her edge'den sonra varılan ekranın beklenen node olduğunu doğrular ve `report.html`, `report.json`, `junit.xml` yazar. Bkz. [runner/README.md](runner/README.md) |
+| 10 | Giriş sayfasına dönün (koşunun ilk node'u) | Senaryo bölümünde şifreyi girip **Koşuyu oynat** | Koşu bu tarayıcıda, açık sekmede oynatılır: element çerçevelenir, tıklanır; graph'ta geçen edge'ler yeşile döner. Ekran koşunun ilk node'u değilse önce uyarı çıkar. Kalınan adımda fark listesi ve beklenen ekranla görsel karşılaştırma. Bkz. [docs/01 > Panelde oynatma](docs/01-mimari.md#panelde-oynatma) |
+| 11 | *(terminalde)* `node runner/run.js SwagLabs-senaryo.json --secrets secrets.json` | | Runner her koşuyu yeni bir tarayıcıda temiz oturumla oynatır, her edge'den sonra varılan ekranın beklenen node olduğunu doğrular ve `report.html`, `report.json`, `junit.xml` yazar. Bkz. [runner/README.md](runner/README.md) |
 
 **Temel kurallar:**
 
@@ -126,6 +127,7 @@ bitirme_demo/
 │   │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
 │   │   ├── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
 │   │   ├── compare.js           ←   onay kartındaki görsel karşılaştırma (piksel farkı, bölgeler)
+│   │   ├── replay.js            ←   panelde oynatma: seçili koşu bu tarayıcıda (DevTools protokolü)
 │   │   └── theme.js             ←   tema seçimi (sayfa çizilmeden önce uygulanır)
 │   └── lib/
 │       └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)
@@ -136,7 +138,7 @@ bitirme_demo/
     └── lib/                     ← model ve yol, sayfa, aksiyonlar, doğrulama
 ```
 
-Eklenti yaklaşık **2250 satır** (yorumlar dahil): `panel.js` ~720, `content.js` ~640, `background.js` ~620, `fingerprint.js` ~150, `settings.js` ~125; geri kalanı HTML/CSS/manifest. Kütüphane hariç tek bir dış bağımlılık yoktur. Runner yaklaşık 530 satırdır; tek bağımlılığı Playwright'tır ve yalnızca `runner/` klasöründedir.
+Eklenti yaklaşık **4750 satır** (yorumlar dahil): `panel.js` ~1320, `background.js` ~970, `content.js` ~850, `replay.js` ~470, `fingerprint.js` ~180, `compare.js` ~170, `settings.js` ~150; geri kalanı HTML/CSS/manifest. Kütüphane hariç tek bir dış bağımlılık yoktur. Runner yaklaşık 870 satırdır; tek bağımlılığı Playwright'tır ve yalnızca `runner/` klasöründedir.
 
 ---
 
@@ -198,6 +200,7 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 - Graph'ı **GraphWalker JSON modeli** olarak dışa aktarır. URL, parmak izi, ekran görüntüsü ve kaydedilen tarayıcı aksiyonları GraphWalker'ın `properties` alanlarında taşınır. GraphWalker CLI 4.3.3 ile doğrulandı (`check`, `offline`). Bkz. [docs/04 > Dışa aktarılan JSON](docs/04-veri-modeli.md#dışa-aktarılan-json)
 - Akış birden fazla sekmeye yayılabilir: site yeni sekme açtığında ya da kullanıcı başka bir sitenin sekmesine geçtiğinde panel "Bu sekmede devam edilsin mi?" diye sorar. "Evet" denirse kayıt orada sürer, "Hayır" denirse o sekme kaydı kirletmez. Bkz. [docs/01 > Kayıt hangi sekmede?](docs/01-mimari.md#kayıt-hangi-sekmede)
 - Panelde test senaryosu kurulur ve graph üzerinde önizlenir (bir ya da birden fazla koşu); senaryo dosyaya indirilir.
+- Seçili koşu **panelde, kullanıcının kendi tarayıcısında** oynatılır ve izlenir: gerçek fare ve klavye olaylarıyla (DevTools protokolü), her edge'den sonra aynı doğrulamayla. Başlangıç sayfası kullanıcının sorumluluğudur; ekran koşunun ilk node'u değilse uyarı çıkar. Bkz. [docs/01 > Panelde oynatma](docs/01-mimari.md#panelde-oynatma)
 - Senaryoyu (ya da GraphWalker'ın ürettiği bir yolu) **runner** ile gerçek bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranı, kayıttaki state tanımıyla doğrular. Her koşu temiz oturumla başlar; kayıttaki görünen alan ve yakınlaştırma aynen kurulur. Sonuç HTML (fark ve görsel fark dahil), JSON ve JUnit XML raporu olarak yazılır. Bkz. [runner/README.md](runner/README.md)
 
 **Yapmaz (bilinçli olarak kapsam dışı):**

@@ -23,6 +23,8 @@
   --graph-label-bg: #ffffff;
   --graph-current: #16a34a;
   --graph-run: #d97706;
+  --graph-pass: #16a34a;
+  --graph-fail: #dc2626;
   color-scheme: light;
 }
 
@@ -47,6 +49,8 @@
   --graph-label-bg: #1e293b;
   --graph-current: #22c55e;
   --graph-run: #f59e0b;
+  --graph-pass: #22c55e;
+  --graph-fail: #f87171;
   color-scheme: dark;
 }
 
@@ -124,14 +128,14 @@ button[hidden] { display: none; }
 dialog.compare { width: min(96vw, 960px); }
 .segmented { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
 .segmented button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
-#compare-view canvas, #compare-view img { display: block; width: 100%; border: 1px solid var(--border); border-radius: 4px; }
-#compare-view figure { margin: 0; }
-#compare-view figcaption, .curtain-labels { font-size: 11px; color: var(--muted); }
+.compare-view canvas, .compare-view img { display: block; width: 100%; border: 1px solid var(--border); border-radius: 4px; }
+.compare-view figure { margin: 0; }
+.compare-view figcaption, .curtain-labels { font-size: 11px; color: var(--muted); }
 .compare-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
 .curtain { position: relative; }
 .curtain .over { position: absolute; inset: 0; height: 100%; }
 .curtain-labels { display: flex; justify-content: space-between; margin-top: 2px; }
-#compare-view input[type="range"] { width: 100%; }
+.compare-view input[type="range"] { width: 100%; }
 
 .field { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
 .field input {
@@ -230,6 +234,21 @@ dialog.alert .choice .hint { margin: 4px 2px 0; }
 }
 #scenario summary { cursor: pointer; font-weight: 600; }
 #scenario[open] summary { margin-bottom: 6px; }
+
+/* Panelde oynatma: adımlar (geçti / kaldı / sürüyor / atlandı) */
+.replay { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.replay h3 { font-size: 12px; margin: 0 0 4px; }
+.replay-steps { margin: 4px 0; padding-left: 0; list-style: none; font-size: 12px; }
+.replay-steps li { display: flex; gap: 6px; margin: 2px 0; }
+.replay-steps .mark { width: 14px; flex: none; text-align: center; font-weight: 700; }
+.replay-steps .passed .mark { color: var(--ok); }
+.replay-steps .failed .mark, .replay-steps .stopped .mark { color: var(--danger); }
+.replay-steps .running { font-weight: 600; }
+.replay-steps .running .mark { color: var(--graph-run); }
+.replay-steps .skipped, .replay-steps .pending { color: var(--muted); }
+.replay-steps .time { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.replay-steps small { display: block; color: var(--muted); }
+#replay-secrets .field input { font-family: inherit; }
 
 .badge {
   display: inline-block;
