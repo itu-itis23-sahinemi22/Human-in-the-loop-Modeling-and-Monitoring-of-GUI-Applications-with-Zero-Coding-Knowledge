@@ -12,6 +12,7 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - [Edge oluşturma kuralları](#edge-oluşturma-kuralları)
 - [Aksiyonlar nasıl yakalanıyor?](#aksiyonlar-nasıl-yakalanıyor)
 - [Edge düzenleme](#edge-düzenleme)
+- [Beklemeler](#beklemeler)
 - [Node birleştirme](#node-birleştirme)
 - [Geri al](#geri-al)
 - [Kayıt hangi sekmede?](#kayıt-hangi-sekmede)
@@ -56,12 +57,12 @@ Eklentinin tek "durum sahibi" (single source of truth).
 - Tarayıcı seviyesindeki gezinmeleri (adres çubuğu, geri/ileri, yenile) `chrome.webNavigation` ile kendisi yakalar.
 - "Node oluştur" isteğinde parmak izi ve ekran görüntüsü alır, element kümesi birebir aynı olan node'u arar, node ve edge ekler.
 - Her değişiklikten sonra state'in tamamını `chrome.storage.local`'a yazar.
-- Panelin Ayarlar penceresindeki seçimleri `settings` anahtarında saklar ve uygular: işaretsiz aksiyon tiplerini buffer'a almaz, işaretsiz element türlerini state karşılaştırmasına katmaz.
+- Panelin Ayarlar penceresindeki seçimleri `settings` anahtarında saklar ve uygular: işaretsiz aksiyon tiplerini buffer'a almaz, işaretsiz element türlerini state karşılaştırmasına katmaz. "Beklemeleri kaydet" açıksa aksiyonlar arasındaki boşlukları ve ekranın kendiliğinden değişmesini bekleme olarak kaydeder (bkz. [Beklemeler](#beklemeler)).
 
 ### `sidepanel/`: Arayüz
 
 - `panel.html`: iskelet. Butonlar, onay kartı, graph alanı, detay kartı ve bekleyen aksiyonlar listesi. Sağ üstteki çark, panelin üstünde açılan **Ayarlar** penceresini (`<dialog>`) açar; kaydedilmemiş değişiklik uyarısı da ayrı bir `<dialog>`'dur.
-- `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
+- `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular (iki liste ve "Beklemeler" bölümü: anahtar ve alt sınır) bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
 
 ### `fingerprint.js`: State'in tanımı
@@ -108,8 +109,9 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 
 | Mesaj | Gönderen → Alan | İçerik | Ne yapar |
 |---|---|---|---|
-| `ACTION` | content → background | `{ action, screen, viewport, replaces? }` | Aksiyonu buffer'a ekler. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `viewport`, gönderildiği andaki sayfa boyutudur; açık bir yakınlaştırma aksiyonu bununla kapanırsa varılan boyut olarak saklanır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
-| `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. |
+| `ACTION` | content → background | `{ action, screen, viewport, typingSince?, replaces? }` | Aksiyonu buffer'a ekler; gerekiyorsa önüne bir bekleme koyar ([Beklemeler](#beklemeler)). `typingSince`: aksiyondan önce yazmaya başlanan an; önceki bekleme o anda biter. Cevap `{ monitor }`: bu sekme ekranı aksiyonsuz da izlesin mi. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `viewport`, gönderildiği andaki sayfa boyutudur; açık bir yakınlaştırma aksiyonu bununla kapanırsa varılan boyut olarak saklanır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
+| `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; yoksa ve ekran değiştiyse, beklemeler kaydediliyorsa ekranı değiştiren bir bekleme ekler. Ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. Cevap `{ monitor }` (ACTION'daki gibi). |
+| `MONITOR` | background → content | `{ on }` | Kayıt sekmesine ekranı aksiyonsuz da izleyip izlemeyeceğini bildirir: ayar değişince, kayıt bir sekmeye bağlanınca. Yeni yüklenen sayfa bunu ilk ACTION / SCREEN cevabından öğrenir. |
 | `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements, viewport }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. `viewport`, kümenin alındığı görünen alandır: `{ width, height, devicePixelRatio }`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
 | `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
@@ -201,7 +203,7 @@ Durumların tamamı (`from` = şu anki node):
 **İsimlendirme:**
 
 - Node: `v_` + URL'nin son anlamlı parçası (`/inventory.html` → `v_Inventory`). Yoksa sayfa başlığı kullanılır (`Swag Labs` → `v_SwagLabs`). Aynı isim varsa sonuna `_2`, `_3` eklenir.
-- Edge: `e_` + son aksiyonun etiketi (`Login` butonu → `e_Login`, `Add to cart` → `e_AddToCart`). Kaydırmalar ve pencere boyutu değişimleri atlanır: bir linke tıklandıktan sonra sayfa kendini başa kaydırsa da, arada DevTools açılsa da edge `e_Product` olur. Edge yalnızca bunlardan oluşuyorsa adı `e_ScrollDown` / `e_ScrollUp` / `e_Resize` olur.
+- Edge: `e_` + son aksiyonun etiketi (`Login` butonu → `e_Login`, `Add to cart` → `e_AddToCart`). Kaydırmalar ve pencere boyutu değişimleri atlanır: bir linke tıklandıktan sonra sayfa kendini başa kaydırsa da, arada DevTools açılsa da edge `e_Product` olur. Beklemeler de atlanır. Edge yalnızca bunlardan oluşuyorsa adı `e_ScrollDown` / `e_ScrollUp` / `e_Resize` / `e_Wait` olur.
 - Türkçe karakterler sadeleştirilir (`Giriş yap` → `GirisYap`), çünkü bu isimler ileride Java/JS metot adı olacak.
 
 ---
@@ -280,9 +282,32 @@ node (S0) ── tıkla ── duruldu: S1 ── zoom ── duruldu: S2 ──
 - Sonrası bildirilmeden yeni aksiyon gelirse (ör. yazıp hemen Enter) açık aksiyon, yeni aksiyonun yapıldığı andaki ekranla kapatılır. Yazmanın öncesi yazmaya başlamadan önceki state'tir; yazarken ortaya çıkan buton da yazmanın etkisi sayılır.
 - Sonrası bildirilmeden background'ın yakaladığı bir aksiyon ya da pencere boyutu değişimi gelirse (ör. tıklayıp 300 ms içinde Ctrl +) iki aksiyonun etkisi ayrılamaz; ikisi de *etkisi bilinmiyor* olur.
 - Tab ile odak (`focus`) işaretlendiği an state'i değiştirmediyse düşer: formda alandan alana geçmek edge'e gürültü olarak girmez. Bekleyen tek aksiyon böyle düşerse "Node oluştur" node oluşturmaz.
-- Sayfanın aksiyonsuz değişimleri (durulduktan sonra gelen yükleme, hover) ayrıca izlenmez; bir sonraki aksiyonun etkisine karışır.
+- Sayfanın aksiyonsuz değişimleri (durulduktan sonra gelen yükleme, hover) "Beklemeleri kaydet" kapalıyken izlenmez; bir sonraki aksiyonun etkisine karışır. Açıkken ekranı değiştiren bir bekleme olarak kaydedilir (aşağıda).
 
-Bu bir **ipucudur, kesin doğrulama değil**: bir aksiyon edge set'i değiştirmeden de önemli olabilir (sunucuda bir şeyi değiştirmek gibi). Kesin doğrulama ileride tekrar oynatmayla yapılabilir.
+Bu bir **ipucudur, kesin doğrulama değil**: bir aksiyon edge set'i değiştirmeden de önemli olabilir (sunucuda bir şeyi değiştirmek gibi). Kesin doğrulamayı runner yapar: yolu tekrar oynatıp her edge'in hedef ekrana vardığını kontrol eder ([runner/README.md](../runner/README.md)).
+
+---
+
+## Beklemeler
+
+Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılır. Örnek: internet bankacılığında oturum zaman aşımı kullanıcıyı çıkış ekranına atar. Graph'ı kuran kişi bu durumu modele eklemek isteyebilir. Ayarlar'daki **Beklemeleri kaydet** açıkken bekleme bir aksiyon (`wait`) olarak kaydedilir. Varsayılan kapalıdır; kapalıyken kayıt eskisi gibidir.
+
+**Bekleme kaydedilir, elle eklenmez.** Gözlenmiş bir aksiyondur; edge düzenlemedeki "aksiyon eklenemez" kuralı geçerli kalır. Bekleme sayfaya dokunmaz ama ekranı değiştirebilir; bunu görmek için kayıt sekmesinin ekranı aksiyonsuz da izlenir.
+
+**Nasıl kaydedilir** (`background.js > BEKLEMELER`):
+
+- Background, ekranın son aksiyondan (ya da node'dan) sonra durulduğu anı tutar (`state.idleSince`).
+- **Ekran beklerken kendiliğinden değişirse** bekleme o anda kapanır ve *ekranı değiştirdi* işaretini alır. Süresi değişime kadar geçen süredir (ör. tam zaman aşımı süresi). Böyle bir bekleme ne kadar kısa olursa olsun kaydedilir. Sonraki boşluk yeni bir beklemedir.
+- **Ekran değişmediyse** iki aksiyon arasındaki boşluk, Ayarlar'daki **alt sınırdan** (varsayılan 1 sn) uzunsa *ekranı değiştirmedi* işaretli bir bekleme olarak ikinci aksiyondan önce eklenir. Daha kısa boşluklar kaydedilmez; yoksa her edge, düşünme süresinden doğan beklemelerle dolardı. Ekranı değiştirmeyen bekleme edge düzenlemede uyarısız silinir.
+- **Node'dan sonraki ilk aksiyona** ve **son aksiyondan "Node oluştur"a** kadar geçen süre aksiyonlar arasında değildir; ekran değişmediyse kaydedilmez.
+- **Yazma:** yazma aksiyonu alan odaktan çıkınca gönderilir. Yazmadan önceki bekleme yazmaya başlanan anda biter (`typingSince`). Yazarken ekranda olanlar (ör. beliren "Temizle" butonu) kendiliğinden değişim sayılmaz.
+- Bekleyen tek aksiyon bir bekleme olabilir (zaman aşımı senaryosu): "Node oluştur" buna izin verir, edge'in adı `e_Wait` olur. Beklemeler kaydediliyorsa "Node oluştur" butonu bekleyen aksiyon yokken de açıktır; background önce ekrana bakar, değişim yoksa node oluşturmaz.
+
+**İzleme** (`content.js > setMonitoring`): yalnızca anahtar açıkken ve kayıt sekmesinde çalışır. DOM değişince sayfanın durulması beklenir (300 ms DOM değişmez, en fazla 3 sn) ve ekran (edge set) değiştiyse `SCREEN` gönderilir; değişmediyse gönderilmez. Sürekli değişen bir sayfada parmak izi en fazla 3 sn'de bir alınır. Hangi sekmenin izleyeceğini background söyler (`MONITOR` ya da `ACTION` / `SCREEN` cevabı).
+
+**Sınır:** aksiyonsuz her değişim bekleme sayılır. Kaydedilmeyen hareketlerin etkisi de buna dahildir: fareyi üzerine getirince (hover) açılan bir menü, bekleme olarak görünür.
+
+**Tekrar oynatma:** runner bekleme süresi kadar bekler. Ekranı değiştiren bekleme biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar.
 
 ---
 

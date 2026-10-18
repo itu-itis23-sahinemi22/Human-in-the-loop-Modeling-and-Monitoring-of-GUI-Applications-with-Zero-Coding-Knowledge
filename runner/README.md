@@ -142,6 +142,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `reload` | `reload()` |
 | `resize` | Görünen alan `viewport` boyutuna ayarlanır |
 | `zoom` | Görünen alan varılan boyuta ve piksel oranına ayarlanır. Eski kayıtlarda varılan boyut yoktur; yakınlaştırma oranlarından hesaplanır. |
+| `wait` | `ms` kadar beklenir. Ekranı değiştiren bekleme (oturum zaman aşımı) biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar. |
 | `select`, `clipboard` | Henüz oynatılmıyor; adım "desteklenmiyor" diye başarısız olur |
 
 ---

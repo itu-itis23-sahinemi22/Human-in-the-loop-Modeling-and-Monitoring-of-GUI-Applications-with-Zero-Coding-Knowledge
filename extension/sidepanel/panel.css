@@ -195,6 +195,16 @@ dialog.alert .choice .hint { margin: 4px 2px 0; }
 .checklist input { margin: 2px 0 0; }
 .checklist b { font-weight: normal; }
 .checklist code { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.option { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.option input[type="number"] {
+  width: 64px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+.option input:disabled { opacity: 0.5; }
 
 .badge {
   display: inline-block;

@@ -30,6 +30,7 @@ Tüm veri `chrome.storage.local` içinde **`state`** anahtarı altında, tek bir
 | `buffer` | `Action[]` | Son node'dan beri yapılan, henüz bir edge'e dönüşmemiş aksiyonlar. Panelde "Bekleyen aksiyonlar" listesi. |
 | `pending` | `Pending \| null` | Element kümesi birebir aynı bir node bulunduğunda kullanıcının cevabını bekleyen karar |
 | `screen` | `{ key, types, count }[] \| null` | Hemen önceki state: en son görülen ekranın edge set'i (node `elements` ile aynı biçim). Sıradaki aksiyonun öncesidir; aksiyonun `changed` işareti bununla bulunur. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
+| `idleSince` | `number \| null` | Ekranın son aksiyondan (ya da node'dan) sonra durulduğu an (ms). O andan beri aksiyon yok; beklemeler bununla ölçülür. Aksiyon yapılınca `null` olur. Bkz. [01 > Beklemeler](01-mimari.md#beklemeler) |
 | `undo` | `Silme[]` | Geri al yığını, en yenisi sonda, en fazla 20. Her kayıt silineni ve eski yerini tutar: `{ kind: 'node', node, index, edges: [{ edge, index }], startNodeId, currentNodeId }`, `{ kind: 'edge', edge, index }`, `{ kind: 'action', edgeId, index, action }` ya da `{ kind: 'merge', keepId, node, index, edges: [{ id, source, target }], startNodeId, currentNodeId }` (birleştirmede taşınan edge'lerin eski uçları). Bkz. [01 > Geri al](01-mimari.md#geri-al) |
 
 ---
@@ -98,6 +99,7 @@ Tipler:
 | `navigate` | background.js | | `"GoTo cart"` | `goto(url)` |
 | `history` | background.js | | `"Back"` | `goBack()` ya da `goto(url)` |
 | `reload` | background.js | | `"Reload"` | `reload()` |
+| `wait` | background.js | `ms` (`number`): beklemenin süresi. `time` beklemenin başladığı andır. `changed` işaretini kayıt anında alır: `true` ekran beklerken kendiliğinden değişti (ör. oturum zaman aşımı), `false` değişmedi. Yalnızca Ayarlar'da "Beklemeleri kaydet" açıkken kaydedilir ([01 > Beklemeler](01-mimari.md#beklemeler)). | `"Wait"` | `waitForTimeout(ms)` |
 
 Şifre alanlarında `value` her zaman `"******"` olarak saklanır.
 
@@ -127,6 +129,8 @@ Panelin **Ayarlar** bölümündeki seçim, `chrome.storage.local` içinde state'
 |---|---|---|
 | `disabledActions` | `string[]` | İşareti kaldırılmış aksiyon tipleri (ör. `["scroll"]`). Bu tipteki aksiyonlar buffer'a eklenmez. |
 | `disabledInteractables` | `string[]` | İşareti kaldırılmış etkileşimli element türleri (ör. `["a", "label"]`). Bu türlerin anahtarları state karşılaştırmasına girmez. |
+| `recordWaits` | `boolean` | "Beklemeleri kaydet": aksiyonlar arasındaki boşluklar ve ekranın kendiliğinden değişmesi `wait` aksiyonu olarak kaydedilir; kayıt sekmesinin ekranı sürekli izlenir. Varsayılan `false`. |
+| `minWaitSeconds` | `number` | Ekranı değiştirmeyen bir beklemenin kaydedilmesi için en kısa süre (saniye). Varsayılan `1`. Ekranı değiştiren bekleme her zaman kaydedilir. |
 
 İşaretli olanlar değil işareti **kaldırılanlar** saklanır: listelere ileride eklenen yeni bir tip kendiliğinden işaretli gelir.
 
@@ -151,7 +155,7 @@ Kayda özel bilgiler (URL, parmak izi, ekran görüntüsü, kaydedilen tarayıc�
         "graphRecorder": {
           "format": "graph-recorder/v5",
           "exportedAt": "2026-10-07T12:00:00.000Z",
-          "settings": { "disabledActions": [], "disabledInteractables": ["label"] }
+          "settings": { "disabledActions": [], "disabledInteractables": ["label"], "recordWaits": false, "minWaitSeconds": 1 }
         }
       },
       "vertices": [

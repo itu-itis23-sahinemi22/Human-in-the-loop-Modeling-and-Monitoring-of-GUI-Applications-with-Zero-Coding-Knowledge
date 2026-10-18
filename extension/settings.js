@@ -52,7 +52,10 @@ const INTERACTABLE_TYPES = [
 
 // Varsayılan: her şey işaretli. İşareti KALDIRILANLAR listelenir; böylece listelere
 // ileride eklenen yeni bir tip kendiliğinden işaretli gelir.
-const DEFAULT_SETTINGS = { disabledActions: [], disabledInteractables: [] };
+// Beklemeler (docs/01 > Beklemeler): recordWaits açıkken aksiyonlar arasındaki en az
+// minWaitSeconds saniyelik boşluklar 'wait' aksiyonu olarak kaydedilir ve kayıt sekmesinin
+// ekranı sürekli izlenir. Varsayılan kapalı: izleme her sayfada maliyetlidir.
+const DEFAULT_SETTINGS = { disabledActions: [], disabledInteractables: [], recordWaits: false, minWaitSeconds: 1 };
 
 
 // -----------------------------------------------------------------------------
@@ -115,6 +118,7 @@ function normalizeState(state) {
   state.undo ??= [];
   state.pending ??= null;
   state.screen ??= null;
+  state.idleSince ??= null;
   const pending = state.pending;
   if (pending && !Array.isArray(pending.candidateIds)) {
     pending.candidateIds = pending.candidateId ? [pending.candidateId] : [];

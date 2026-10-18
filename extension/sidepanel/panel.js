@@ -20,8 +20,9 @@ let selectedId = null;   // graph'ta tıklanan node/edge
 let busy = false;        // "Node oluştur" isteği sürerken butonu kilitlemek için
 let lastGraphKey = '';   // graph değişmediyse yeniden çizmemek için
 
-// Aksiyon tiplerinin ekranda görünen adları (settings.js)
-const ACTION_TEXT = Object.fromEntries(ACTION_TYPES.map((a) => [a.type, a.text]));
+// Aksiyon tiplerinin ekranda görünen adları (settings.js). Bekleme listede yok: Ayarlar'da
+// ayrı bir seçenektir ("Beklemeleri kaydet").
+const ACTION_TEXT = { ...Object.fromEntries(ACTION_TYPES.map((a) => [a.type, a.text])), wait: 'Bekle' };
 
 
 // -----------------------------------------------------------------------------
@@ -170,8 +171,10 @@ function renderStatus() {
       + (current ? current.name : 'seçili değil (bir node seçip "Buradan devam et"e bas)')
       + (state.tabId === null ? ' · Kayıt sekmesi kapandı: devam edeceğin sekmede bir node seçip "Buradan devam et"e bas.' : '');
   }
+  if (settings.recordWaits) $('status').textContent += ` · Beklemeler kaydediliyor (en az ${seconds(settings.minWaitSeconds * 1000)})`;
   // İlk node dışında, bekleyen aksiyon yoksa node oluşturulamaz (aksiyonsuz edge tekrar oynatılamaz).
-  const noActions = state.nodes.length > 0 && state.buffer.length === 0;
+  // Beklemeler kaydediliyorsa ekran beklerken değişmiş olabilir; karar background'ındır.
+  const noActions = state.nodes.length > 0 && state.buffer.length === 0 && !settings.recordWaits;
   $('btn-node').disabled = busy || Boolean(state.pending) || noActions;
   $('btn-node').title = noActions ? 'Bekleyen aksiyon yok: önce sayfada bir aksiyon yap.' : '';
 }
@@ -447,6 +450,7 @@ function actionItem(action) {
     : action.type === 'scroll' ? ` → ${action.x}, ${action.y}`
     : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
     : action.type === 'resize' ? ` → ${viewportText(action.viewport)}`
+    : action.type === 'wait' ? ` → ${seconds(action.ms)}`
     : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
     : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
@@ -456,6 +460,11 @@ function actionItem(action) {
   const target = action.target?.index ? `${action.target.key} #${action.target.index} · ` : '';
   li.querySelector('code').textContent = target + (action.selector ?? action.url);
   return li;
+}
+
+// Süre: "3,2 sn"
+function seconds(ms) {
+  return `${(ms / 1000).toFixed(1).replace('.', ',')} sn`;
 }
 
 // Sayfanın görünen alanı, CSS piksel: "1280×720"; piksel oranı 1 değilse "1280×720 @1.25x"
@@ -617,17 +626,26 @@ for (const { id, items } of CHECKLISTS) {
   }));
   $(id).onchange = renderSaveButton;
 }
+$('settings-record-waits').onchange = renderSaveButton;
+$('settings-min-wait').oninput = renderSaveButton;
 
-// Taslak: kutuların o anki hali (işareti kaldırılanlar).
-function settingsFromChecklists() {
-  return Object.fromEntries(CHECKLISTS.map(({ id, key }) =>
-    [key, [...$(id).querySelectorAll('input:not(:checked)')].map((box) => box.value)]));
+// Taslak: kutuların o anki hali (listelerde işareti kaldırılanlar) ve bekleme seçenekleri.
+// Geçersiz alt sınır (boş, negatif) varsayılana döner.
+function draftSettings() {
+  const minWait = Number($('settings-min-wait').value);
+  return {
+    ...Object.fromEntries(CHECKLISTS.map(({ id, key }) =>
+      [key, [...$(id).querySelectorAll('input:not(:checked)')].map((box) => box.value)])),
+    recordWaits: $('settings-record-waits').checked,
+    minWaitSeconds: $('settings-min-wait').value !== '' && minWait >= 0 ? minWait : DEFAULT_SETTINGS.minWaitSeconds,
+  };
 }
 
 function isDirty() {
-  const draft = settingsFromChecklists();
+  const draft = draftSettings();
   const same = (a, b) => [...a].sort().join('\n') === [...b].sort().join('\n');
-  return CHECKLISTS.some(({ key }) => !same(draft[key], settings[key]));
+  return CHECKLISTS.some(({ key }) => !same(draft[key], settings[key]))
+    || draft.recordWaits !== settings.recordWaits || draft.minWaitSeconds !== settings.minWaitSeconds;
 }
 
 // Kutuları kaydedilmiş ayarlara eşitler (taslağı atar).
@@ -635,6 +653,8 @@ function loadDraft() {
   for (const { id, key } of CHECKLISTS) {
     for (const box of $(id).querySelectorAll('input')) box.checked = !settings[key].includes(box.value);
   }
+  $('settings-record-waits').checked = settings.recordWaits;
+  $('settings-min-wait').value = settings.minWaitSeconds;
   renderSaveButton();
 }
 
@@ -642,11 +662,14 @@ function renderSaveButton() {
   const dirty = isDirty();
   $('btn-settings-save').disabled = !dirty;
   if (dirty) $('settings-saved').hidden = true;
+  $('settings-min-wait').disabled = !$('settings-record-waits').checked; // alt sınır yalnızca beklemeler kaydedilirken anlamlı
 }
 
 async function saveSettings() {
-  await send({ type: 'SET_SETTINGS', settings: settingsFromChecklists() });
-  settings = { ...DEFAULT_SETTINGS, ...settingsFromChecklists() }; // storage bildirimi gelmeden buton doğru görünsün
+  const draft = draftSettings();
+  await send({ type: 'SET_SETTINGS', settings: draft });
+  settings = { ...DEFAULT_SETTINGS, ...draft }; // storage bildirimi gelmeden buton doğru görünsün
+  $('settings-min-wait').value = settings.minWaitSeconds;
   renderSaveButton();
   $('settings-saved').hidden = false;
 }
@@ -714,5 +737,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
     // Kaydedilmiş ayarlar değişti. Açık pencerede taslak korunur, sadece buton güncellenir.
     settings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
     renderSaveButton();
+    renderStatus(); // "Beklemeler kaydediliyor" ve "Node oluştur" kilidi ayara bağlı
   }
 });

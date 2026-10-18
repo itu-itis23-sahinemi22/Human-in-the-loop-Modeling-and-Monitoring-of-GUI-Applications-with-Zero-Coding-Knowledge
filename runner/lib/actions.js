@@ -22,6 +22,9 @@ export async function playAction(page, action, run) {
     case 'reload': return page.reload();
     case 'resize': return run.setViewport({ ...run.viewport, ...action.viewport });
     case 'zoom': return run.setViewport(action.viewport ?? zoomed(run.viewport, action));
+    // Kayıttaki bekleme. Ekranı değiştiren bekleme (oturum zaman aşımı) biraz geç sonuçlansa
+    // da doğrulamadaki tekrar deneme onu yakalar.
+    case 'wait': return page.waitForTimeout(action.ms);
     default: throw new Error(`"${action.type}" aksiyonu runner'da henüz desteklenmiyor.`);
   }
 }

@@ -35,7 +35,7 @@
 |---|---|---|---|
 | 1 | Viewport kaydı ve `resize` aksiyonu (iş 3) | 0,5 gün | Yapıldı |
 | 2 | Runner, ilk sürüm (iş 1) | 2 gün | Yapıldı |
-| 3 | Beklemeleri kaydet (iş 4) | 0,5–1 gün | |
+| 3 | Beklemeleri kaydet (iş 4) | 0,5–1 gün | Yapıldı |
 | 4 | Yeni sekmede devam (iş 5) | 1,5–2 gün | |
 | 5 | Karşılaştırma ekranı (iş 2) | 1 gün | |
 | 6 | Senaryo planlama ve rapor (iş 1) | kalan süre | |
@@ -137,7 +137,7 @@ GraphWalker CLI 4.3.3, Java 17 ya da 21 ister ([04 > GraphWalker ile doğrulama]
 
 ## Faz 3: Beklemeleri kaydet
 
-*İş 4.*
+*İş 4. Durum: yapıldı. Tasarım: [01 > Beklemeler](01-mimari.md#beklemeler).*
 
 ### Problem
 
@@ -145,7 +145,8 @@ Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılı
 
 ### Karar
 
-- Panelde **Beklemeleri kaydet** anahtarı olur. Kapalıyken kayıt bugünkü gibidir.
+- Ayarlar'da **Beklemeleri kaydet** anahtarı olur (varsayılan kapalı). Kapalıyken kayıt bugünkü gibidir.
+- Ekranı değiştirmeyen beklemeler için **alt sınır** varsayılan 1 saniyedir ve Ayarlar'dan değiştirilebilir. Ekranı değiştiren bekleme süresi ne olursa olsun kaydedilir.
 - Açıkken aksiyonlar arasında geçen süre `wait` aksiyonu olarak kaydedilir (`ms`).
 - Açıkken state sürekli izlenir. Ekran aksiyonsuz değişirse bunu bekleme yapmıştır; bekleme "ekranı değiştirdi" işaretini alır.
 - Bekleme elle eklenmez, kaydedilir; yani gözlenmiş bir aksiyondur. Edge düzenlemedeki "aksiyon eklenemez" kuralı geçerli kalır.
@@ -156,15 +157,21 @@ Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılı
 - **Ekranı değiştirmeyen bekleme** "ekranı değiştirmedi" işaretiyle gelir ve edge düzenlemede uyarısız silinir.
 - **Sürekli izleme** yalnızca anahtar açıkken ve kayıt sekmesinde çalışır: DOM her durulduğunda parmak izi alınır. Sürekli hareket eden sayfalarda (carousel) sıklık sınırlanır.
 - **Bekleyen tek aksiyon bir bekleme olabilir** (zaman aşımı senaryosu). "Node oluştur" buna izin verir; edge'in adı `e_Wait` olur.
+- **Node'dan sonraki ilk aksiyona ve son aksiyondan "Node oluştur"a** kadar geçen süre aksiyonlar arasında değildir; ekran değişmediyse kaydedilmez.
+- **Yazma:** yazma aksiyonu alan odaktan çıkınca gönderilir. Yazmadan önceki bekleme yazmaya başlanan anda biter; yazarken ekranda olanlar kendiliğinden değişim sayılmaz.
 - **Runner'da** `wait`, süre kadar beklemek demektir. Runner ayrıca kendi bekleme mekanizmalarını kullanır (durulma, Playwright'ın otomatik beklemesi, doğrulamada tekrar deneme); bu yüzden kayıttaki her kısa boşluk testte gerekli değildir.
 
-### Açık soru
+### Yapılanlar
 
-Çok kısa boşluklar (Fill ile Click arasındaki 0,5 saniye gibi) da bekleme olarak kaydedilsin mi, yoksa bir alt sınır mı konsun (ör. 1 saniye)?
+- [x] Ayarlar'da "Beklemeler" bölümü: anahtar ve alt sınır (saniye). Alt sınır anahtar kapalıyken pasif; geçersiz değer varsayılana döner. Durum satırı beklemelerin kaydedildiğini gösterir.
+- [x] `wait` aksiyonu: aksiyonlar arası bekleme, ekranı değiştiren bekleme, `e_Wait`, panelde süre
+- [x] Kayıt sekmesinde ekranı aksiyonsuz izleme (yalnızca anahtar açıkken), yazma süresince izlemenin susması
+- [x] Runner: `wait` oynatma
+- [x] Dokümanlar: 01, 04, 05, README, runner/README
 
 ### Kabul kriteri
 
-Bir test sayfasında N saniye sonra kendiliğinden çıkış yapan bir oturum: anahtar açık, beklenir, "Node oluştur"a basılır. `e_Wait` edge'i oluşur; süresi N'ye yakındır ve "ekranı değiştirdi" işaretlidir. Runner aynı yolu oynatır ve geçer.
+Karşılandı ([05 > Test](05-gelistirme.md#test)): son tıklamadan 4 sn sonra kendiliğinden "Oturum sona erdi"ye geçen bir sayfada beklenince `e_Wait` edge'i oluştu (3,7 sn, "ekranı değiştirdi"); runner aynı yolu oynattı ve geçti.
 
 ---
 

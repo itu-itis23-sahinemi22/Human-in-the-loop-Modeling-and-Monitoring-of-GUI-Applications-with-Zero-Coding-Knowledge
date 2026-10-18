@@ -102,6 +102,12 @@
         <div id="settings-actions" class="checklist"></div>
       </fieldset>
       <fieldset>
+        <legend>Beklemeler</legend>
+        <p class="hint">Açıkken iki aksiyon arasındaki boşluk "Bekle" aksiyonu olarak kaydedilir ve kayıt sekmesinin ekranı sürekli izlenir. Ekran beklerken kendiliğinden değişirse (ör. oturum zaman aşımı) bekleme o anda biter ve "ekranı değiştirdi" işaretini alır; böyle bir bekleme alt sınırdan kısa da olsa kaydedilir.</p>
+        <label class="option"><input type="checkbox" id="settings-record-waits"> <span>Beklemeleri kaydet</span></label>
+        <label class="option">Alt sınır <input type="number" id="settings-min-wait" min="0" step="0.5"> saniye</label>
+      </fieldset>
+      <fieldset>
         <legend>State'e dahil edilecek etkileşimli elementler</legend>
         <p class="hint">İşaretli olmayan türdeki elementler state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut node'lar o anki seçime göre karşılaştırılır.</p>
         <div id="settings-interactables" class="checklist"></div>

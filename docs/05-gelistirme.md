@@ -134,6 +134,9 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Ctrl + ile yakınlaştırınca "Bekleyen aksiyonlar"da `Yakınlaştır/Uzaklaştır  Zoom in → %110` gibi bir satır çıkıyor; Ctrl - ile `Zoom out`. Ctrl + tekerlekle birkaç çentik tek satır oluyor. Chrome menüsünden yakınlaştırıp node oluşturunca edge'deki zoom aksiyonunun etkisi "bilinmiyor" değil, "ekranı değiştirdi / değiştirmedi". Başka bir sitenin sekmesinde yakınlaştırma kaydedilmiyor (aynı sitenin başka sekmesinde yakınlaştırılınca Chrome kayıt sekmesini de yakınlaştırır; bu kaydedilir).
 - [ ] Pencere kenarını sürükleyince "Bekleyen aksiyonlar"da tek bir `Pencere boyutu  Resize → 1100×760` gibi satır çıkıyor; yan paneli genişletmek ya da DevTools'u açmak da aynı satırı üretiyor. Ctrl + ile yakınlaştırınca bu satır çıkmıyor, yalnızca `Zoom in` çıkıyor. Yalnızca pencere boyutundan oluşan edge'in adı `e_Resize`; tıklama + pencere boyutu edge'inin adı tıklamadan geliyor.
 - [ ] Node detayında URL'nin yanında görünen alan (`1280×720`, yakınlaştırmada `@1.25x` gibi) yazıyor. GraphWalker JSON'unda format `graph-recorder/v5`, her vertex'te `viewport`, `resize` ve `zoom` aksiyonlarında varılan `viewport` var.
+- [ ] Ayarlar'da **Beklemeler**: alt sınır başta 1 ve pasif; **Beklemeleri kaydet** işaretlenince aktif. Kaydedince durum satırında "Beklemeler kaydediliyor (en az 1,0 sn)" yazıyor; alt sınır boş bırakılırsa 1'e dönüyor.
+- [ ] Beklemeler açıkken iki tıklama arasında 2 sn beklemek `Bekle  Wait → 2,0 sn` satırı bırakıyor; 1 sn'den kısa boşluk bırakmıyor. Node oluşturduktan sonra ilk aksiyondan önceki bekleme kaydedilmiyor. Bir alana yazarken beliren buton bekleme sayılmıyor.
+- [ ] Belli bir süre sonra kendiliğinden değişen bir sayfada (oturum zaman aşımı) hiçbir şey yapmadan beklemek, ekran değişince `Bekle` satırı bırakıyor; "Node oluştur" `e_Wait` edge'ini oluşturuyor ve aksiyonun yanında "ekranı değiştirdi" yazıyor. Anahtar kapalıyken bekleme satırı hiç çıkmıyor.
 - [ ] Sayfada (alan dışında) Escape'e basınca `Tuş  Press Escape` satırı çıkıyor; ok tuşunu basılı tutunca tek satır `Press ArrowDown ×N` oluyor. Alana yazılan harfler satır üretmiyor; alan değeri `Fill` olarak geliyor. Ctrl +, F5, Tab ve butonda Enter tuş olarak kaydedilmiyor.
 - [ ] Arama kutusuna yazıp ArrowDown ile öneri seçip Enter'a basınca sıra: `Fill`, `Press ArrowDown`, `Submit`.
 - [ ] Türkçe klavyede bir alana `@` yazmak (AltGr+Q) tuş olarak kaydedilmiyor.
@@ -213,6 +216,16 @@ Parmak izi kodu `fingerprint.js`'e taşındıktan sonra aynı test (iki ek kontr
 - **Olmayan edge:** Yolda o node'dan çıkmayan bir edge, tarayıcı açılmadan çıkış kodu 2 ile reddedildi.
 - **Yakınlaştırma:** Yalnızca 1000 px üstünde görünen butonlu yerel bir sayfada kayıt yapıldı: %125 yakınlaştırma butonu gizledi, geri almak gösterdi; pencereyi daraltmak da aynısını yaptı. Runner'da dört edge geçti. Yakınlaştırmanın varılan boyutu modelden silinince (eski kayıt) boyut oranlardan hesaplandı, yine geçti. Ölçüm: emülasyondan sonra sayfa `innerWidth × innerHeight` için 947×599 ve `devicePixelRatio` için 1.25 görüyor; gezinmeden sonra da aynı.
 - **GraphWalker:** CLI 4.3.3 (Java 17) `check` ile v5 modelinde sorun bulmadı. `offline "random(edge_coverage(100))"` 12 ve 10 edge'lik iki yol üretti; düz (`currentElementName`) ve `--verbose` (`currentElementID`) çıktıların ikisi de runner'da geçti.
+
+**Beklemeler.** Yerel bir test sayfasında: iki buton, yazınca beliren bir "Temizle" butonu ve son tıklama ya da tuştan 4 sn sonra ekranı kendiliğinden "Oturum sona erdi"ye çeviren bir zaman aşımı. 15 kontrolün hepsi geçti:
+
+- Ayarlar arayüzü: alt sınır varsayılan 1 ve anahtar kapalıyken pasif; işaretleyince alan ve Kaydet aktif; boş alt sınır kaydedilince 1'e döndü; durum satırı güncellendi.
+- Tıkla, 1,5 sn bekle, Tıkla, 0,3 sn sonra Tıkla, yaz, Tıkla: edge `click, wait (1,2 sn, ekranı değiştirmedi), click, click, input, click`. Kısa boşluk ve node'dan sonraki ilk boşluk kaydedilmedi; yazarken beliren buton bekleme sayılmadı.
+- Hiçbir şey yapmadan beklemek: zaman aşımı ekranı değiştirince tek bir bekleme (3,7 sn, ekranı değiştirdi) kaydedildi; "Node oluştur" `e_Wait` edge'ini oluşturdu. Panelde `Bekle  Wait → 3,7 sn`.
+- Anahtar kapalıyken iki tıklama arasındaki 1,5 sn kaydedilmedi.
+- Runner aynı modelin üç edge'ini (zaman aşımı dahil) geçti.
+
+Bu değişiklikten sonra önceki testler de tekrar koşuldu ve geçti: pencere boyutu (20/20), yakınlaştırma tekrarı (4/4, iki model), saucedemo kayıt ve runner (8/8).
 
 **Sayılı küme (multiset) ölçümleri.** Mock testlerde: aynı butondan 5 ile 4 olan ekran soru sorulmadan ayrı node; aynı sayılar (sıra farklı) aday; aynı anahtarın farklı tür grupları toplanıyor; Ayarlar filtresi tür bazında uygulanıyor; önceki sürümün biçimiyle kaydedilmiş node çökme yapmadan aday dışı kalıyor. Gerçek Chrome'da 20 satırlık kaydırılabilir listeyle ve canlı saucedemo.com'da ölçüm sonuçları: [03 > Edge hedefi](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi).
 

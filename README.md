@@ -92,8 +92,9 @@ Panelde diğer işlemler:
 - **Sil:** seçili node'u (ve ona bağlı edge'leri) ya da seçili edge'i siler.
 - **Geri al** (araç çubuğu) ya da **Ctrl+Z:** son silmeyi geri alır: node (bağlı edge'leriyle birlikte), edge ya da edge'den silinen aksiyon eski yerine döner. Son 20 silme saklanır. Butonun üzerine gelince neyin geri alınacağı yazar. Ctrl+Z için panele odaklanmış olmak gerekir; isim alanında yazarken Ctrl+Z metni geri alır.
 - **Sıfırla:** graph'ı temizler (ayarlar kalır). Yanlışlıkla basılmasın diye iki kez tıklamak gerekir. Sıfırlama geri alınamaz.
-- **Ayarlar** (sağ üstteki çark simgesi, panelin üstünde açılan pencere): iki checklist. Değişiklikler **Kaydet**'e basınca uygulanır; Kaydet yalnızca bir değişiklik varken aktiftir. Kaydetmeden kapatmaya çalışırsanız (✕, Esc ya da pencere dışına tıklama) "Kaydet ve çık / Kaydetmeden çık / Geri dön" uyarısı çıkar.
+- **Ayarlar** (sağ üstteki çark simgesi, panelin üstünde açılan pencere): iki checklist ve beklemeler. Değişiklikler **Kaydet**'e basınca uygulanır; Kaydet yalnızca bir değişiklik varken aktiftir. Kaydetmeden kapatmaya çalışırsanız (✕, Esc ya da pencere dışına tıklama) "Kaydet ve çık / Kaydetmeden çık / Geri dön" uyarısı çıkar.
   - *Kaydedilecek aksiyonlar:* işaretsiz tipteki aksiyonlar (ör. Kaydır) "Bekleyen aksiyonlar"a eklenmez.
+  - *Beklemeler:* **Beklemeleri kaydet** açıkken iki aksiyon arasındaki, **alt sınırdan** (varsayılan 1 sn) uzun boşluklar "Bekle" aksiyonu olarak kaydedilir. Kayıt sekmesinin ekranı sürekli izlenir: ekran beklerken kendiliğinden değişirse (ör. internet bankacılığında oturum zaman aşımı) bekleme "ekranı değiştirdi" işaretini alır; böylece hiçbir tıklamayla ulaşılamayan bu durum da graph'a girer (`e_Wait`). Varsayılan kapalı. Detay: [docs/01 > Beklemeler](docs/01-mimari.md#beklemeler)
   - *State'e dahil edilecek etkileşimli elementler:* işaretsiz türdeki elementler (ör. Link) state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut node'lar o anki seçime göre karşılaştırılır. Detay: [docs/03 > Ayarlar](docs/03-state-eslestirme.md#ayarlar-hangi-türler-statee-girer)
 
 > saucedemo'daki şifre herkese açık olduğu için Chrome bir "şifreniz bir veri ihlalinde bulundu" uyarısı gösterebilir. Uyarıyı kapatıp devam edin; eklentiyle ilgisi yoktur.
@@ -183,7 +184,7 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 
 **Yapar:**
 
-- Tıklama, form doldurma (text/select/checkbox ve zengin metin editörleri), Enter, komut tuşları (Escape, oklar, kısayollar; metin harf harf kaydedilmez), metin seçme (fare ve klavye), kopyala/kes/yapıştır (sayfa engellediyse o da kaydedilir), sağ tık menüsü, ekranı değiştiren Tab odağı, kaydırma (sayfa ve kaydırılabilir kutular), tarayıcı yakınlaştırma/uzaklaştırma, pencere boyutu değişimi, adres çubuğundan gezinme, geri/ileri ve yenileme aksiyonlarını kaydeder.
+- Tıklama, form doldurma (text/select/checkbox ve zengin metin editörleri), Enter, komut tuşları (Escape, oklar, kısayollar; metin harf harf kaydedilmez), metin seçme (fare ve klavye), kopyala/kes/yapıştır (sayfa engellediyse o da kaydedilir), sağ tık menüsü, ekranı değiştiren Tab odağı, kaydırma (sayfa ve kaydırılabilir kutular), tarayıcı yakınlaştırma/uzaklaştırma, pencere boyutu değişimi, adres çubuğundan gezinme, geri/ileri ve yenileme aksiyonlarını kaydeder. İstenirse aksiyonlar arasındaki beklemeleri de kaydeder; yalnızca beklenerek ulaşılan durumlar (oturum zaman aşımı) da graph'a girer.
 - Her node'un görünen alanını (viewport: sayfanın CSS piksel boyutu ve piksel oranı) kaydeder; test, testi çalıştıranın ekranından bağımsız olarak kayıttaki boyutta çalıştırılabilir. Bkz. [docs/03 > Pencere boyutu ve state](docs/03-state-eslestirme.md#pencere-boyutu-ve-state)
 - Her aksiyon için tekrar oynatılabilir bir CSS selector üretir (`#login-button`, `[data-test=...]` gibi).
 - Node'lar için ekran görüntüsü alır ve graph'ın içinde küçük resim olarak gösterir.

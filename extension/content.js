@@ -237,6 +237,7 @@ function onFocusIn(event) {
 // içindeki paragraflara değil; event.target her zaman alanın kendisidir.
 function onFocusOut(event) {
   if (event.isTrusted && event.target.isContentEditable) recordValue(event.target);
+  typingSince = null; // yazma bitti (değer değişmediyse aksiyon gönderilmemiş olabilir)
 }
 
 function onKeyDown(event) {
@@ -477,19 +478,26 @@ function fieldValue(el) {
 // extra: mesaja eklenen, aksiyonda saklanmayan bilgi (ör. select > replaces).
 // viewport: gönderildiği andaki sayfa boyutu. Açık bir yakınlaştırma aksiyonu bu mesajla
 // kapanırsa background onu varılan boyut olarak saklar.
+// typingSince: bu aksiyondan önce yazmaya başlanan an (bkz. onBeforeInput); aksiyondan önceki
+// bekleme o anda biter.
 function send(action, screen, extra = {}) {
   finishPendingKey(); // kararı bekleyen tuş önce gitsin (sıra)
   finishPendingResize(); // bitmemiş boyut değişimi de
   action.url = location.href;
   action.time = lastSentTime = Date.now();
   if (LOG_STATE) logState(action);
-  message({ type: 'ACTION', action, screen, viewport: currentViewport(), ...extra });
+  message({ type: 'ACTION', action, screen, viewport: currentViewport(), ...(typingSince && { typingSince }), ...extra });
+  typingSince = null;
   reportScreenWhenSettled();
 }
 
+// Background ACTION ve SCREEN'e, bu sekmenin ekranı aksiyonsuz da izleyip izlemeyeceğiyle
+// cevap verir ({ monitor }; bkz. setMonitoring).
 function message(msg) {
   try {
-    chrome.runtime.sendMessage(msg).catch(() => { });
+    chrome.runtime.sendMessage(msg).then((response) => {
+      if (response && 'monitor' in response) setMonitoring(response.monitor);
+    }, () => { });
   } catch {
     // Eklenti yeniden yüklendiyse bu eski script'in bağlantısı kopar. Sayfa yenilenince düzelir.
   }
@@ -509,6 +517,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     finishPendingResize(); // bitmemiş boyut değişimi de
     sendResponse(fingerprint());
   }
+  if (message.type === 'MONITOR') setMonitoring(message.on);
 });
 
 
@@ -528,18 +537,31 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // background onu varılan boyut olarak saklar.
 let settleTimers = null; // { quiet, max }: null değilse sayfanın durulması bekleniyor
 const settleObserver = new MutationObserver(restartQuietTimer);
+let typingSince = null;  // yazmaya başlanan an; yazma aksiyonu gönderilene kadar (bkz. onBeforeInput)
+let watchOnly = false;   // bekleyen bildirim yalnızca izlemeden geldi, aksiyon yok (bkz. onWatchedChange)
+let lastReported = null; // en son bildirilen ekran (JSON)
 
 addEventListener('popstate', reportScreenWhenSettled);
 addEventListener('resize', onResize); // pencere boyutu ya da yakınlaştırma (bkz. onResize)
 addEventListener('pageshow', (event) => event.persisted && reportScreenWhenSettled()); // geri/ileri önbellekten dönüş
 document.addEventListener('transitionend', restartQuietTimer, true);
 document.addEventListener('animationend', restartQuietTimer, true);
-// Yazmaya başlanınca sayfa durulmuş sayılır: yazının etkisi önceki aksiyona (ör. Tab ile odak)
-// karışmasın, yazmanın öncesi bu an olsun. Capture phase: sayfa henüz tepki vermemiştir.
-document.addEventListener('beforeinput', (event) => event.isTrusted && settleTimers && reportScreen(), true);
+document.addEventListener('beforeinput', onBeforeInput, true);
 reportScreenWhenSettled(); // sayfa yüklendi
 
+// Yazmaya başlanınca sayfa durulmuş sayılır: yazının etkisi önceki aksiyona (ör. Tab ile odak)
+// karışmasın, yazmanın öncesi bu an olsun. Capture phase: sayfa henüz tepki vermemiştir.
+// Yazma aksiyonu ise alan değişip odak çıkınca gönderilir (bkz. recordValue). O zamana kadar
+// yazmaya başlanan an tutulur: aksiyondan önceki bekleme o anda biter ve yazarken ekranda
+// olanlar kendiliğinden değişim sayılmaz (bkz. onWatchedChange).
+function onBeforeInput(event) {
+  if (!event.isTrusted) return;
+  if (settleTimers) reportScreen();
+  typingSince ??= Date.now();
+}
+
 function reportScreenWhenSettled() {
+  watchOnly = false;
   stopSettle();
   settleTimers = { quiet: setTimeout(reportScreen, SETTLE_QUIET_MS), max: setTimeout(reportScreen, SETTLE_MAX_MS) };
   settleObserver.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
@@ -559,9 +581,37 @@ function stopSettle() {
   settleObserver.disconnect();
 }
 
+// Yalnızca izlemeden gelen bildirim (watchOnly) ekran değişmediyse gönderilmez.
 function reportScreen() {
   stopSettle();
-  message({ type: 'SCREEN', screen: countElements(interactableElements()), viewport: currentViewport() });
+  const screen = countElements(interactableElements());
+  const key = JSON.stringify(screen);
+  if (watchOnly && key === lastReported) return;
+  lastReported = key;
+  message({ type: 'SCREEN', screen, viewport: currentViewport() });
+}
+
+// EKRANI İZLEMEK (Ayarlar > Beklemeleri kaydet): açıkken kayıt sekmesinde ekran aksiyonsuz da
+// izlenir. DOM değişince sayfanın durulması beklenir; ekran (edge set) değiştiyse bildirilir.
+// Background böylece bir beklemenin ekranı değiştirip değiştirmediğini bilir (ör. oturum zaman
+// aşımı; bkz. background.js > BEKLEMELER). Hangi sekmenin kayıt sekmesi olduğunu ve ayarı
+// background bildirir: MONITOR mesajı ya da ACTION / SCREEN'in cevabı. Sürekli değişen sayfada
+// parmak izi en fazla SETTLE_MAX_MS'de bir alınır.
+const watchObserver = new MutationObserver(onWatchedChange);
+let monitoring = false;
+
+function setMonitoring(on) {
+  if (on === monitoring) return;
+  monitoring = on;
+  if (on) watchObserver.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  else watchObserver.disconnect();
+}
+
+// Durulma zaten bekleniyorsa (aksiyondan sonra) ya da kullanıcı yazıyorsa bir şey yapılmaz.
+function onWatchedChange() {
+  if (settleTimers || typingSince !== null) return;
+  reportScreenWhenSettled();
+  watchOnly = true;
 }
 
 

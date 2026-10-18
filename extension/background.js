@@ -33,6 +33,7 @@ function emptyState() {
     edges: [],
     buffer: [],           // Son node'dan beri yapılan, henüz edge'e dönüşmemiş aksiyonlar
     screen: null,         // Hemen önceki state: en son görülen ekranın edge set'i (bkz. observeScreen)
+    idleSince: null,      // Ekranın son aksiyondan sonra durulduğu an; o andan beri aksiyon yok (bkz. BEKLEMELER)
     pending: null,        // Aynı element kümeli node bulunduğunda kullanıcının onayını bekleyen karar
     undo: [],             // Edge'lerden silinen aksiyonlar ("Geri al" için; en yenisi sonda)
   };
@@ -61,10 +62,12 @@ function getSettings() {
   return settingsPromise;
 }
 
-function setSettings(settings) {
+async function setSettings(state, settings) {
   const merged = { ...DEFAULT_SETTINGS, ...settings };
+  if (!(merged.minWaitSeconds >= 0)) merged.minWaitSeconds = DEFAULT_SETTINGS.minWaitSeconds;
   settingsPromise = Promise.resolve(merged);
-  return chrome.storage.local.set({ settings: merged });
+  await chrome.storage.local.set({ settings: merged });
+  notifyMonitor(state, merged);
 }
 
 
@@ -84,8 +87,8 @@ async function handle(message, sender) {
   const state = await getState();
   switch (message.type) {
     // content.js -> background
-    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message);
-    case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen, message.viewport);
+    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message).then(() => monitorFor(state, sender.tab?.id));
+    case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen, message.viewport, sender.tab?.url).then(() => monitorFor(state, sender.tab?.id));
     // panel -> background
     case 'CREATE_NODE': return createNode(state, message.tabId, message.windowId);
     case 'RESOLVE':     return resolvePending(state, message.targetId);
@@ -94,7 +97,7 @@ async function handle(message, sender) {
     case 'DELETE':      return remove(state, message.id);
     case 'SET_CURRENT': return setCurrent(state, message.id, message.tabId);
     case 'RESET':       return reset(state);
-    case 'SET_SETTINGS': return setSettings(message.settings);
+    case 'SET_SETTINGS': return setSettings(state, message.settings);
     case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO':        return undo(state);
@@ -113,7 +116,8 @@ async function handle(message, sender) {
 // replaces: bu aksiyonun yerini aldığı, aynı hareketten önceki aksiyonun zamanı. Çift/üçlü
 // tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp).
 // viewport: aksiyonun gönderildiği andaki sayfa boyutu (content.js gönderir; bkz. observeScreen).
-async function addAction(state, tabId, action, { screen = null, replaces = null, viewport = null } = {}) {
+// typingSince: yazma aksiyonunda yazmaya başlanan an (bkz. waitBefore).
+async function addAction(state, tabId, action, { screen = null, replaces = null, viewport = null, typingSince = null } = {}) {
   const settings = await getSettings();
   // Kayıt başlamadıysa ya da aksiyon başka bir sekmeden geldiyse yok say.
   if (state.tabId === null || tabId !== state.tabId) return;
@@ -132,15 +136,35 @@ async function addAction(state, tabId, action, { screen = null, replaces = null,
     return save(state);
   }
   if (open) observeScreen(state, screen, settings, viewport);
+  else waitBefore(state, settings, action, screen, typingSince);
   // Ayarlarda işaretli olmayan tipteki aksiyon "Bekleyen aksiyonlar"a eklenmez.
   if (!settings.disabledActions.includes(action.type)) state.buffer.push(action);
+  state.idleSince = null; // aksiyon yapıldı: boşluk, etkisi durulunca yeniden başlar
   return save(state);
 }
 
-async function onScreen(state, tabId, screen, viewport) {
+// Sayfa durulunca gelen ekran: açık aksiyonu kapatır; açık aksiyon yoksa ekran aksiyonsuz
+// değişmiş olabilir (bkz. observeIdle).
+async function onScreen(state, tabId, screen, viewport, url) {
   if (state.tabId === null || tabId !== state.tabId) return;
-  observeScreen(state, screen, await getSettings(), viewport);
+  const settings = await getSettings();
+  if (openAction(state)) observeScreen(state, screen, settings, viewport);
+  else observeIdle(state, settings, screen, Date.now(), url);
   return save(state);
+}
+
+// ACTION ve SCREEN'in cevabı: bu sekme ekranı aksiyonsuz da izlesin mi? Yalnızca kayıt
+// sekmesi ve "Beklemeleri kaydet" açıkken (bkz. content.js > setMonitoring). Yeni yüklenen
+// sayfa bunu ilk bildiriminin cevabından öğrenir.
+async function monitorFor(state, tabId) {
+  const settings = await getSettings();
+  return { monitor: settings.recordWaits && state.tabId !== null && tabId === state.tabId };
+}
+
+// Ayar değişince ya da kayıt bir sekmeye bağlanınca o sekmeye hemen bildirilir.
+function notifyMonitor(state, settings) {
+  if (state.tabId === null) return;
+  chrome.tabs.sendMessage(state.tabId, { type: 'MONITOR', on: settings.recordWaits }).catch(() => { });
 }
 
 
@@ -177,8 +201,59 @@ function observeScreen(state, screen, settings, viewport = null) {
     if (open.type === 'zoom' && viewport) open.viewport = viewport;
     // Tab ile odak yalnızca state'i değiştirdiyse aksiyondur; formda alandan alana geçmek gürültüdür.
     if (open.type === 'focus' && open.changed === false) state.buffer.pop();
+    state.idleSince = Date.now(); // aksiyonun etkisi duruldu: boşluk başlar
   }
   state.screen = screen;
+}
+
+
+// -----------------------------------------------------------------------------
+// BEKLEMELER (Ayarlar > Beklemeleri kaydet)
+// -----------------------------------------------------------------------------
+// Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılır: internet
+// bankacılığında oturum zaman aşımı kullanıcıyı çıkışa atar. Anahtar açıkken aksiyonlar
+// arasındaki süre 'wait' aksiyonu olarak kaydedilir. Bekleme sayfaya dokunmaz ama ekranı
+// değiştirebilir; bunu görmek için kayıt sekmesinin ekranı aksiyonsuz da izlenir
+// (content.js > setMonitoring). Bekleme elle eklenmez, kaydedilir: gözlenmiş bir aksiyondur.
+//
+// state.idleSince: ekranın son aksiyondan (ya da node'dan) sonra durulduğu an. Aksiyon
+// yapılınca null olur, etkisi durulunca (observeScreen) yeniden başlar.
+//   - Ekran bu sırada kendiliğinden değişirse bekleme o anda kapanır ve "ekranı değiştirdi"
+//     işaretini alır; süresi değişime kadar geçen süredir, ne kadar kısa olursa olsun
+//     kaydedilir. Sonraki boşluk yeni bir beklemedir.
+//   - Ekran değişmediyse iki aksiyon arasındaki boşluk en az minWaitSeconds sürdüyse
+//     "ekranı değiştirmedi" bekleme olarak ikinci aksiyondan önce eklenir.
+//   - Node oluşturduktan sonra ilk aksiyona ve son aksiyondan "Node oluştur"a kadar geçen
+//     süre aksiyonlar arasında değildir; ekran değişmediyse kaydedilmez.
+
+// Açık aksiyon yokken görülen ekran: önceki ekrandan farklıysa aradaki bekleme ekranı
+// değiştirmiştir. Ayar kapalıyken yalnızca ekranı "hemen önceki state" yapar.
+function observeIdle(state, settings, screen, now, url) {
+  const before = stateCounts(state.screen, settings);
+  const after = stateCounts(screen, settings);
+  if (settings.recordWaits && state.idleSince !== null && before && after && !sameCounts(before, after)) {
+    state.buffer.push(waitAction(state.idleSince, now, url, true));
+    state.idleSince = now;
+  }
+  state.idleSince ??= now; // önceki aksiyon kaydedilmeyen bir tipteydi: boşluk şimdi başlar
+  state.screen = screen;
+}
+
+// Aksiyondan önceki boşluk. Aksiyonun ekranı (yapıldığı an) öncekinden farklıysa izlemenin
+// henüz bildirmediği bir değişim vardır: o da bekleme olur. Yazmada aksiyonun ekranı
+// yazılanın sonrasıdır, karşılaştırılmaz; bekleme yazmaya başlanan anda biter.
+function waitBefore(state, settings, action, screen, typingSince) {
+  const end = typingSince ?? action.time;
+  if (screen && action.type !== 'input') observeIdle(state, settings, screen, end, action.url);
+  const previous = state.buffer.at(-1);
+  const between = previous && previous.type !== 'wait'; // iki aksiyonun arası
+  if (settings.recordWaits && between && state.idleSince !== null && end - state.idleSince >= settings.minWaitSeconds * 1000) {
+    state.buffer.push(waitAction(state.idleSince, end, action.url, false));
+  }
+}
+
+function waitAction(from, to, url, changed) {
+  return { type: 'wait', ms: Math.round(to - from), label: 'Wait', selector: null, url, time: Math.round(from), changed };
 }
 
 // Adres çubuğuna yazma, geri/ileri ve yenileme sayfanın İÇİNDE olmadığı için
@@ -270,7 +345,9 @@ async function createNode(state, tabId, windowId) {
   }
   // Aksiyonsuz bir edge tekrar oynatılamaz. Bu yüzden ilk node dışında, son node'dan beri
   // hiç aksiyon kaydedilmediyse node oluşturulmaz. (Panel bu durumda butonu zaten kilitler.)
-  if (state.nodes.length > 0 && state.buffer.length === 0) {
+  // Beklemeler kaydediliyorsa ekran beklerken değişmiş olabilir; önce ekrana bakılır.
+  const settings = await getSettings();
+  if (state.nodes.length > 0 && state.buffer.length === 0 && !settings.recordWaits) {
     return { notice: 'Bekleyen aksiyon yok. Node oluşturmak için önce sayfada bir aksiyon yapın.' };
   }
 
@@ -282,10 +359,11 @@ async function createNode(state, tabId, windowId) {
   }
 
   const capture = { ...page, urlKey: urlKey(page.url) };
-  const settings = await getSettings();
   const matches = findSameStateNodes(state, capture, settings);
-  // Bu ekran açık aksiyonun sonrasıdır; sıradaki aksiyonun öncesi de node'un state'i.
-  observeScreen(state, page.elements, settings, page.viewport);
+  // Bu ekran açık aksiyonun sonrasıdır; sıradaki aksiyonun öncesi de node'un state'i. Açık
+  // aksiyon yoksa ekran beklerken değişmiş olabilir (bkz. observeIdle).
+  if (openAction(state)) observeScreen(state, page.elements, settings, page.viewport);
+  else if (state.nodes.length > 0) observeIdle(state, settings, page.elements, Date.now(), page.url);
   // Bekleyen tek aksiyon state'i değiştirmeyen bir odaktıysa düşmüştür (bkz. observeScreen).
   if (state.nodes.length > 0 && state.buffer.length === 0) {
     await save(state);
@@ -295,7 +373,10 @@ async function createNode(state, tabId, windowId) {
   capture.screenshot = await takeScreenshot(windowId);
   const actions = state.buffer;
   state.buffer = [];
+  state.screen = page.elements;
+  state.idleSince = Date.now(); // node'un ekranında boşluk başlar
   state.tabId = tabId;
+  notifyMonitor(state, settings);
 
   if (matches.length) {
     state.pending = { capture, actions, candidateIds: matches.map((n) => n.id) };
@@ -361,10 +442,11 @@ function commit(state, capture, actions, targetId) {
   // createNode() bekleyen aksiyon yoksa baştan durur.)
   const from = state.currentNodeId;
   if (from) {
-    // Edge'e adını son aksiyon verir. Kaydırma ve pencere boyutu çoğu zaman asıl aksiyonun
-    // yan ürünü olduğu için (sayfa tıklamadan sonra kendisi de kaydırabilir, arada DevTools
-    // açılabilir) atlanır; edge sadece bunlardan oluşuyorsa adı onlardan gelir: e_ScrollDown, e_Resize.
-    const lastLabel = (actions.findLast((a) => a.type !== 'scroll' && a.type !== 'resize') ?? actions.at(-1))?.label;
+    // Edge'e adını son aksiyon verir. Kaydırma, pencere boyutu ve bekleme çoğu zaman asıl
+    // aksiyonun yan ürünü olduğu için (sayfa tıklamadan sonra kendisi de kaydırabilir, arada
+    // DevTools açılabilir) atlanır; edge sadece bunlardan oluşuyorsa adı onlardan gelir:
+    // e_ScrollDown, e_Resize, e_Wait (ör. oturum zaman aşımı).
+    const lastLabel = (actions.findLast((a) => !['scroll', 'resize', 'wait'].includes(a.type)) ?? actions.at(-1))?.label;
     state.edges.push({
       id: 'e' + state.nextId++,
       name: 'e_' + (toPascalCase(lastLabel ?? '') || 'Transition'),
@@ -555,7 +637,7 @@ async function mergeNodes(state, keepId, removeId) {
 
 // Aynı kaynak, hedef ve aksiyon dizisine sahip edge'lerden fazla olanların sayısı.
 function countDuplicateEdges(edges) {
-  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.viewport, a.key, a.count, a.text, a.operation])]);
+  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.viewport, a.ms, a.key, a.count, a.text, a.operation])]);
   const seen = new Set();
   let duplicates = 0;
   for (const e of edges) {
@@ -570,13 +652,15 @@ function countDuplicateEdges(edges) {
 // bir sonraki edge'in hangi node'dan çıkacağını elle seçer. Buffer temizlenir.
 // Kayıt sekmesi kapatılmışsa kayıt, butona basılan sekmede sürer: aksi halde hiçbir
 // aksiyon kaydedilemez ve bekleyen aksiyon olmadan node da oluşturulamaz.
-function setCurrent(state, id, tabId) {
+async function setCurrent(state, id, tabId) {
   const node = state.nodes.find((n) => n.id === id);
   if (!node) return;
   state.currentNodeId = id;
   state.buffer = [];
   state.screen = node.elements; // kullanıcı bu node'un ekranında: sıradaki aksiyonun öncesi
+  state.idleSince = Date.now();
   state.tabId ??= tabId ?? null;
+  notifyMonitor(state, await getSettings());
   return save(state);
 }
 
