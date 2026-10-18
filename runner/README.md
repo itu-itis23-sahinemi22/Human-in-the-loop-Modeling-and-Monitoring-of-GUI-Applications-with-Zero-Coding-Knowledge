@@ -92,6 +92,8 @@ Senaryo, başlangıç node'undan başlayan bir ya da birden fazla **koşudur** (
 
 Senaryo panelde kurulur (**Senaryo** bölümü: elle yol, önizleme, indir) ya da bir planlayıcı üretir.
 
+Panelde koşuların başlangıç node'u seçilebilir (dosyada `start`). Runner her koşuyu temiz bir tarayıcıda graph'ın başlangıcından oynatır; graph'ın ortasındaki bir node'dan başlayan senaryoyu (ör. giriş gerektiren `v_Inventory`) çalıştırmadan reddeder (çıkış kodu `2`). Böyle bir senaryo panelde **Koşuyu oynat** ile oynatılır.
+
 ### Raporlar
 
 Her çalıştırma `--out` klasörüne (varsayılan `runner/out/<senaryo>-<zaman>/`, git'e girmez) üç rapor yazar:

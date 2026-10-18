@@ -332,6 +332,12 @@ Kararlar:
 - [x] Test: kayıt (şifreli giriş, tıklama, açılır liste, checkbox, Escape, CSS hover, yeni sekme) ve oynatma; yakınlaştırma %100 ve %150 ([05 > Test](05-gelistirme.md#test))
 - [x] Dokümanlar: 01 (Panelde oynatma), 02 (izin), README
 
+Elle testten sonra iki ek (kararlar: başlangıç seçimi yalnızca panel için; runner böyle senaryoyu reddeder):
+
+- [x] Senaryoda başlangıç node'u: "Başlangıç" listesi, dosyada `start`; önizleme, elle yol ve kapsama seçilen node'dan; başlangıç değişince yürünemeyen koşular temizlenir; panelde oynatmanın başlangıç kontrolü bu node'la; runner reddeder (çıkış kodu 2)
+- [x] Uyarı kartında "Başlangıç node'unun boyutuna getir": sekmenin yakınlaştırması ve pencere boyutu, başlangıç node'unun kaydedildiği andaki görünen alana getirilir, kontrol yenilenir; pencere büyüyemiyorsa (tam ekran, ekran küçük) dokunulmaz, kullanıcı yan paneli daraltmaya yönlendirilir, kalan miktar sürükledikçe güncellenir
+- [x] Test: başlangıç seçimi, indirilen dosya, runner reddi, yükleme, o node'dan oynatma, boyut getirme (büyük ve küçük sanal ekran)
+
 ### Branch 1: `planner-graphwalker`
 
 ```
@@ -438,7 +444,7 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 
 | Zayıflık | Etki | İyileştirme fikri |
 |---|---|---|
-| Farklı boyuttaki pencerede "Buradan devam et" | Boyut farkı kaydedilmez; test o edge'de tutmayabilir. | Sekme değişiminde yapıldı (Faz 4: yeni sekme farklı boyuttaysa `resize` eklenir). "Buradan devam et" ve kapanmış sekmeden sonra devam için de aynısı yapılabilir. |
+| Farklı boyuttaki pencerede "Buradan devam et" | Boyut farkı kaydedilmez; test o edge'de tutmayabilir. | Sekme değişiminde yapıldı (Faz 4: yeni sekme farklı boyuttaysa `resize` eklenir). "Buradan devam et" ve kapanmış sekmeden sonra devam için de aynısı yapılabilir; ya da node detayına panelde oynatmadaki "Başlangıç node'unun boyutuna getir" butonu (`replay.js > fitViewport`). |
 | Farklı ölçekli monitöre taşıma | `devicePixelRatio` yakınlaştırmasız değişir, kaydedilmez. | Background'ın yakınlaştırma olayıyla eşleştirip ayırt etmek. |
 | Bilerek farklı boyutta test yok | Responsive davranış test edilemez. | Ekran filtresiz ikinci parmak izi ve toleranslı doğrulama modu. |
 
@@ -512,6 +518,9 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 |---|---|---|
 | Sonuç tarayıcıda kalan duruma bağlı | Aynı koşu kullanıcının tarayıcısında geçip temiz tarayıcıda (runner) kalabilir, ya da tersi. | Panelde "kayıt başlangıcındaki site verisiyle başla" seçeneği (önce modele kaydedilmesi gerekir; yukarıda). |
 | Başlangıç kullanıcının sorumluluğu | Uyarıya rağmen oynatılırsa sonuçlar anlamsızdır. | Başlangıç node'unun adresine gitme seçeneği (giriş gerektirmeyen siteler için). |
+| Başlangıcı graph'ın başlangıcı olmayan senaryo runner'da oynatılamaz | Senaryo yalnızca panelde, kullanıcının tarayıcısındaki durumla oynatılır; rapor ve CI yok. | Runner'da hazırlık yolu: graph'ın başlangıcından seçilen node'a en kısa yolu önce oynatıp doğrulamak (raporda "hazırlık", kapsamaya sayılmaz); ya da giriş gerektirmeyen sayfalarda doğrudan adrese gitmek. |
+| "Başlangıç node'unun boyutuna getir" gerçek pencereyi değiştirir | Pencere küçülür ya da büyür, sitenin yakınlaştırması değişir (Chrome site başına saklar). Kayıt sekmesindeyse değişim aksiyon olarak kaydedilir (oynatma başlayınca bekleyen aksiyonlar zaten atılır). | Ekran yetmezse oynatma boyunca taklide (DevTools cihaz modu) geçmeyi önermek. |
+| Yan panelin genişliği eklentinin elinde değil | Fark yan panelden geliyorsa (kayıttan sonra panel genişletildi) ve pencere ekranı kaplıyorsa görünen alan otomatik tutturulamaz; kullanıcı paneli sürükler, kart kalan miktarı canlı gösterir. Tam piksele sürüklemek zahmetli olabilir (yakınlaştırma %80 iken bir ekran pikseli 1,25 CSS pikseli). | Görünen alan uyarısına küçük bir tolerans (ör. 2 CSS pikseli) tanımak; ya da kayıtta panelin genişliğini de saklayıp kullanıcıya baştan söylemek. |
 | Pencere boyutu aksiyonu taklit edilir | `resize` DevTools'un cihaz modu gibi kurulur, oynatma bitince kalkar: koşu geçse de tarayıcının gerçek görünen alanı son node'unkinden farklı olabilir; kayıt oradan sürerse sonraki edge'ler tutmayabilir. | Bitişte görünen alan farkını bildirmek; ya da pencereyi `chrome.windows.update` ile gerçekten boyutlandırmak. |
 | `select` ve `clipboard` oynatılmıyor; tarih, renk, aralık alanlarına yazılamaz | Bu aksiyonları içeren edge kalır. | Runner'daki fikirler; özel alanlarda değeri doğrudan atayıp `input`/`change` göndermek. |
 | Hata ayıklama çubuğu ve izin | Kullanıcı rahatsız olabilir; sekmede DevTools ya da başka bir hata ayıklayıcı bağlıysa bağlanılamayabilir. | Sayfa içi olaylarla çalışan, daha kısıtlı bir "hafif" mod. |

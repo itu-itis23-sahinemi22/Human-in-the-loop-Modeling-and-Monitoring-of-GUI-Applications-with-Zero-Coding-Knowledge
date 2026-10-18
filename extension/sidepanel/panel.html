@@ -82,6 +82,8 @@
   <details id="scenario" class="card">
     <summary>Senaryo <span id="scenario-badge" class="badge"></span></summary>
     <label class="option">Strateji <select id="scenario-strategy"></select></label>
+    <label class="option">Başlangıç <select id="scenario-start"></select></label>
+    <p id="scenario-start-hint" class="hint" hidden>Bu başlangıçla senaryo yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda, graph'ın başlangıcından başlatır ve böyle bir senaryoyu reddeder.</p>
     <div id="scenario-runs" class="segmented" role="group" aria-label="Koşu"></div>
     <p id="scenario-summary" class="small"></p>
     <p id="scenario-hint" class="hint"></p>
@@ -109,7 +111,12 @@
       <div id="replay-check" class="card highlight" hidden>
         <p id="replay-check-text"></p>
         <ul id="replay-check-reasons" class="reasons"></ul>
+        <!-- Pencere büyüyemediğinde: yan paneli ne kadar daraltmak gerektiği (sürükledikçe güncellenir) -->
+        <p id="replay-fit-guide" class="fit-guide" role="status" hidden></p>
         <div class="toolbar">
+          <!-- Görünen alan başlangıç node'unun kaydedildiği andakinden farklıysa: sekmenin yakınlaştırması
+               ve pencere boyutu ona getirilir -->
+          <button id="btn-replay-fit" hidden>Başlangıç node'unun boyutuna getir</button>
           <button id="btn-replay-anyway" class="primary">Yine de oynat</button>
           <button id="btn-replay-cancel">Vazgeç</button>
         </div>

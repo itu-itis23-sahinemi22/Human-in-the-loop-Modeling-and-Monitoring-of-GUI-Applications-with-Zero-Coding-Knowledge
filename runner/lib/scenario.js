@@ -26,6 +26,11 @@ export function loadInput(path, pathOption) {
   if (json.format === SCENARIO_FORMAT) {
     if (pathOption) throw new Error('Senaryo dosyası verildiğinde --path kullanılmaz: yollar senaryonun içinde.');
     const model = loadModel(resolve(dirname(path), json.model));
+    // Başlangıcı graph'ın başlangıcı olmayan senaryo panelde oynatılır (extension/scenario.js).
+    if (json.start && json.start !== model.start.id) {
+      const start = model.vertices.get(json.start);
+      throw new Error(`Senaryo ${start ? `"${start.name}"` : `modelde olmayan "${json.start}"`} node'undan başlıyor. Runner her koşuyu temiz bir tarayıcıda, graph'ın başlangıcından ("${model.start.name}") oynatır; bu senaryoyu panelde "Koşuyu oynat" ile oynatın.`);
+    }
     const runs = json.runs.map((run, i) => {
       try {
         return resolvePath(model, run);

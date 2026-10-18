@@ -87,6 +87,7 @@ function graphStyle() {
     },
     { selector: 'edge.run-next', style: { 'line-style': 'dashed', 'line-color': color('--graph-run'), 'target-arrow-color': color('--graph-run') } },
     { selector: 'node.run-end', style: { 'border-color': color('--graph-run'), 'border-width': 4 } },
+    { selector: 'node.run-start', style: { 'border-color': color('--graph-run'), 'border-width': 6, 'border-style': 'double' } },
     // Panelde oynatma: geçen edge'ler ve varılan node'lar yeşil, oynatılan edge kesik çizgili,
     // kalınan edge ve beklenen node kırmızı (bkz. renderReplay).
     { selector: 'edge.replay-passed', style: { 'line-color': color('--graph-pass'), 'target-arrow-color': color('--graph-pass') } },
@@ -796,17 +797,40 @@ function replayAction({ changed, screenBefore, screenAfter, ...action }) {
 // Stratejiler: "Elle seç" kullanıcı graph'ta edge'lere tıklayarak koşuları kurar. Bir
 // planlayıcı stratejisi koşuları kendisi hesaplar: { id, text, plan(graph) } ve plan,
 // { runs, planner } döndüren bir Promise'tir.
+//
+// Başlangıç: koşular varsayılan olarak graph'ın başlangıcından başlar; "Başlangıç" listesinden
+// başka bir node seçilebilir (scenario.start; null = graph'ın başlangıcı). Böyle bir senaryo
+// yalnızca panelde oynatılır, runner reddeder (extension/scenario.js).
 const STRATEGIES = [{ id: 'manual', text: "Elle seç (graph'ta edge'lere tıklayın)" }];
 
 let scenario = emptyScenario();
 let scenarioRun = 0; // seçili koşu
 
 function emptyScenario() {
-  return { name: null, planner: { engine: 'manual' }, runs: [[]] };
+  return { name: null, planner: { engine: 'manual' }, start: null, runs: [[]] };
 }
 
+// Senaryonun graph'ı; start, senaryonun başlangıç node'u (seçilen node silindiyse graph'ın başlangıcı).
 function scenarioGraph() {
-  return { start: state.startNodeId, nodes: state.nodes, edges: state.edges };
+  const start = nodeById(scenario.start) ? scenario.start : state.startNodeId;
+  return { start, nodes: state.nodes, edges: state.edges };
+}
+
+// "Başlangıç" listesi: node'lar değişince yeniden kurulur. İlk seçenek graph'ın başlangıcı.
+let scenarioStartKey = '';
+
+function renderScenarioStart(graph, locked) {
+  const key = JSON.stringify([state.startNodeId, state.nodes.map((n) => [n.id, n.name])]);
+  if (key !== scenarioStartKey) {
+    scenarioStartKey = key;
+    const ordered = [...state.nodes].sort((a, b) => (b.id === state.startNodeId) - (a.id === state.startNodeId));
+    $('scenario-start').replaceChildren(...ordered.map((n) => Object.assign(document.createElement('option'), {
+      value: n.id, textContent: n.id === state.startNodeId ? `${n.name} (graph'ın başlangıcı)` : n.name,
+    })));
+  }
+  if (graph.start) $('scenario-start').value = graph.start;
+  $('scenario-start').disabled = locked || !state.nodes.length;
+  $('scenario-start-hint').hidden = !graph.start || graph.start === state.startNodeId;
 }
 
 // Elle yol, bölüm açıkken ve "Elle seç" stratejisindeyken kurulur: edge'e tıklamak onu koşuya ekler.
@@ -847,10 +871,11 @@ function renderScenario() {
   $('btn-scenario-load').disabled = locked;
   $('scenario-strategy').disabled = locked;
   $('btn-scenario-download').disabled = !filled.length || Boolean(problem);
+  renderScenarioStart(graph, locked);
   renderReplay();
 
   // Graph'ta önizleme: yalnızca bölüm açıkken
-  cy.elements().removeClass('faded run-edge run-next run-end replay-passed replay-running replay-failed');
+  cy.elements().removeClass('faded run-edge run-next run-end run-start replay-passed replay-running replay-failed');
   if (!$('scenario').open || !graph.start) return;
   cy.elements().addClass('faded');
   const orders = new Map();
@@ -859,6 +884,7 @@ function renderScenario() {
   const visited = [graph.start, ...run.map((id) => graph.edges.find((e) => e.id === id)?.target)];
   for (const id of visited) if (id) cy.getElementById(id).removeClass('faded');
   cy.getElementById(end).addClass('run-end');
+  cy.getElementById(graph.start).addClass('run-start');
   if (scenarioEditing() && !locked) for (const edge of next) cy.getElementById(edge.id).removeClass('faded').addClass('run-next');
   markReplay();
 }
@@ -879,6 +905,20 @@ function addScenarioEdge(id) {
 }
 
 $('scenario').ontoggle = renderScenario;
+
+// Başlangıç değişince mevcut koşular yeni başlangıçtan yürünemiyorsa temizlenir.
+$('scenario-start').onchange = () => {
+  const start = $('scenario-start').value;
+  scenario.start = start === state.startNodeId ? null : start;
+  if (scenario.runs.some((r) => r.length) && runProblem(scenarioGraph(), scenario.runs)) {
+    scenario = { ...emptyScenario(), start: scenario.start };
+    scenarioRun = 0;
+    showMessage({ notice: `Koşular "${nodeById(scenarioGraph().start)?.name}" node'undan yürünemediği için temizlendi.` });
+  } else {
+    showMessage(null);
+  }
+  renderScenario();
+};
 
 $('scenario-strategy').onchange = async () => {
   const strategy = STRATEGIES.find((s) => s.id === $('scenario-strategy').value);
@@ -913,23 +953,26 @@ $('btn-scenario-new-run').onclick = () => {
 };
 
 $('btn-scenario-clear').onclick = () => {
-  scenario = emptyScenario();
+  scenario = { ...emptyScenario(), start: scenario.start }; // başlangıç seçimi kalır
   scenarioRun = 0;
   renderScenario();
 };
 
 // Senaryo dosyası: model dosyasıyla aynı klasöre indirilmesi beklenir (runner model yolunu
-// senaryoya göre çözer). Elle kurulan senaryonun adı modelden gelir.
+// senaryoya göre çözer). Elle kurulan senaryonun adı modelden gelir. start yalnızca graph'ın
+// başlangıcı dışında bir node seçildiyse yazılır.
 $('btn-scenario-download').onclick = () => {
   const runs = scenario.runs.filter((r) => r.length);
+  const graph = scenarioGraph();
   const name = modelName();
   downloadJson(`${name}-senaryo.json`, {
     format: SCENARIO_FORMAT,
     name: scenario.name ?? `${name} · elle seçilen yol`,
     model: `${name}.json`,
+    ...(graph.start !== state.startNodeId && { start: graph.start }),
     planner: scenario.planner,
     runs,
-    coverage: coverageOf(scenarioGraph(), runs),
+    coverage: coverageOf(graph, runs),
   });
 };
 
@@ -943,9 +986,11 @@ $('scenario-file').onchange = async () => {
   try {
     const json = JSON.parse(await file.text());
     if (json.format !== SCENARIO_FORMAT) throw new Error('Bu bir senaryo dosyası değil.');
-    const problem = runProblem(scenarioGraph(), json.runs);
+    if (json.start && !nodeById(json.start)) throw new Error(`Senaryonun başlangıç node'u ("${json.start}") bu graph'ta yok.`);
+    const start = json.start && json.start !== state.startNodeId ? json.start : null;
+    const problem = runProblem({ ...scenarioGraph(), start: start ?? state.startNodeId }, json.runs);
     if (problem) throw new Error(`Senaryo bu graph'la uyuşmuyor: ${problem}`);
-    scenario = { name: json.name ?? file.name, planner: json.planner ?? { engine: 'manual' }, runs: json.runs.map((run) => [...run]) };
+    scenario = { name: json.name ?? file.name, planner: json.planner ?? { engine: 'manual' }, start, runs: json.runs.map((run) => [...run]) };
     scenarioRun = 0;
     showMessage({ notice: `"${scenario.name}" yüklendi: ${json.runs.length} koşu.` });
   } catch (error) {
@@ -959,8 +1004,8 @@ $('scenario-file').onchange = async () => {
 // PANELDE OYNATMA: seçili koşu bu tarayıcıda, açık sekmede (replay.js)
 // -----------------------------------------------------------------------------
 // Başlangıç sayfası kullanıcının sorumluluğudur: oynatma sayfaya kendisi gitmez. Önce ekran
-// koşunun ilk node'uyla (graph'ın başlangıcı) karşılaştırılır; farklıysa uyarı çıkar, kullanıcı
-// yine de oynatabilir. Oynatma sürerken background kaydı durdurur; bitince koşu geçtiyse kayıt
+// koşunun ilk node'uyla (senaryonun başlangıcı) karşılaştırılır; farklıysa uyarı çıkar,
+// kullanıcı yine de oynatabilir. Oynatma sürerken background kaydı durdurur; bitince koşu geçtiyse kayıt
 // vardığı node'dan sürer, geçmediyse şu anki node bilinmez (background.js > PANELDE OYNATMA).
 // Graph'ta ilerleme canlı görünür; kalınan adımda fark listesi ve beklenen ekranla görsel
 // karşılaştırma.
@@ -1037,7 +1082,7 @@ function mismatchLines(m, node) {
     ...(m.url !== m.expectedUrl ? [`URL şablonu: beklenen ${m.expectedUrl}, ekranda ${m.url}`] : []),
     ...m.diff.slice(0, LIMIT).map(({ key, expected, actual }) => `${key}: beklenen ${expected}, ekranda ${actual}`),
     ...(m.diff.length > LIMIT ? [`(+${m.diff.length - LIMIT} tür daha)`] : []),
-    ...(viewport ? [`Görünen alan: kayıtta ${viewportText(node.viewport)}, ekranda ${viewportText(m.screen.viewport)}`] : []),
+    ...(viewport ? [`Görünen alan: "${node.name}" ${viewportText(node.viewport)} boyutunda kaydedildi, ekran ${viewportText(m.screen.viewport)}`] : []),
   ];
 }
 
@@ -1083,27 +1128,108 @@ $('btn-replay').onclick = async () => {
   if (!tab || !edges.length) return;
   const missing = maskedKeys(edges).filter((key) => !replaySecrets[key]);
   if (missing.length) return showMessage({ error: `Koşuda maskeli (******) alanlar var. Oynatmadan önce değerlerini girin: ${missing.join(', ')}` });
+  showMessage(null);
+  checkReplay(tab, edges);
+};
+
+// Oynatmadan önceki kontroller: ekran senaryonun başlangıç node'u mu, görünen alan kayıttakiyle
+// aynı mı, bekleyen aksiyonlar silinecek mi. Sorun yoksa oynatma başlar (startIfClear); varsa
+// kart açılır. Görünen alan, başlangıç node'unun kaydedildiği andakinden farklıysa kartta
+// "Başlangıç node'unun boyutuna getir" çıkar (replay.js > fitViewport).
+async function checkReplay(tab, edges, { startIfClear = true } = {}) {
   const page = await chrome.tabs.sendMessage(tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
   if (!page) return showMessage({ error: 'Bu sekmeye erişilemedi. Sayfayı yenileyip (F5) tekrar deneyin. (chrome:// sayfaları desteklenmez.)' });
-
-  const start = nodeById(state.startNodeId);
+  const start = nodeById(scenarioGraph().start);
   const check = compareScreen(start, page, settings);
+  const viewportDiffers = Boolean(start.viewport) && viewportText(start.viewport) !== viewportText(page.viewport);
   const reasons = [
     ...(check.ok ? [] : mismatchLines(check, start)),
-    ...(check.ok && start.viewport && viewportText(start.viewport) !== viewportText(page.viewport)
-      ? [`Görünen alan farklı: kayıtta ${viewportText(start.viewport)}, şu an ${viewportText(page.viewport)}. Sonraki ekranlar tutmayabilir.`] : []),
+    ...(check.ok && viewportDiffers ? [`Görünen alan farklı: başlangıç node'u ("${start.name}") ${viewportText(start.viewport)} boyutunda kaydedildi, sekme şu an ${viewportText(page.viewport)}. State ekrana sığan elementlerden oluştuğu için sonraki ekranlar tutmayabilir.`] : []),
     ...(state.buffer.length ? [`"Bekleyen aksiyonlar"daki ${state.buffer.length} aksiyon silinecek: oynatma kaydı durdurur.`] : []),
   ];
-  showMessage(null);
-  if (!reasons.length) return runReplay(tab, edges);
-  replayStart = { tab, edges };
+  if (!reasons.length) {
+    closeReplayCheck();
+    return startIfClear ? runReplay(tab, edges) : showMessage({ notice: `Ekran "${start.name}" node'unun ekranı ve görünen alan kayıttakiyle aynı. "Koşuyu oynat"a basın.` });
+  }
+  replayStart = { tab, edges, viewport: viewportDiffers ? start.viewport : null, startName: start.name };
   $('replay-check-text').textContent = check.ok
     ? 'Oynatmadan önce:'
     : `Başlangıç node'ları aynı değil: bu sekme koşunun ilk node'unun ("${start.name}") ekranında değil. Koşu doğru sonuç vermeyecektir.`;
   $('replay-check-reasons').replaceChildren(...reasons.map((text) => Object.assign(document.createElement('li'), { textContent: text })));
+  $('btn-replay-fit').hidden = !viewportDiffers || Boolean(fitGuide); // yönlendirme sürerken buton bir şey değiştiremez
+  if (viewportDiffers) $('btn-replay-fit').textContent = `Başlangıç node'unun boyutuna getir (${viewportText(start.viewport)})`;
+  $('btn-replay-fit').classList.toggle('primary', viewportDiffers);
+  $('btn-replay-anyway').classList.toggle('primary', !viewportDiffers);
   $('replay-check').hidden = false;
   renderReplay();
+}
+
+// Sekmenin yakınlaştırması ve pencere boyutu başlangıç node'unun kaydedildiği andakine getirilir,
+// kontrol yeniden yapılır. Pencere büyüyemediği için görünen alan küçük kaldıysa yönlendirme başlar.
+$('btn-replay-fit').onclick = async () => {
+  const pending = replayStart;
+  if (!pending?.viewport) return;
+  $('btn-replay-fit').disabled = true;
+  try {
+    const { viewport: reached, short } = await fitViewport(pending.tab.id, pending.viewport);
+    await checkReplay(pending.tab, pending.edges, { startIfClear: false });
+    if (short && (short.width > 0 || short.height > 0)) {
+      fitGuide = { tab: pending.tab, edges: pending.edges, target: pending.viewport };
+      renderFitGuide(fitGuide, reached, await chrome.tabs.getZoom(pending.tab.id));
+    } else if (viewportText(reached) !== viewportText(pending.viewport)) {
+      showMessage({ error: `Görünen alan tam tutturulamadı: "${pending.startName}" ${viewportText(pending.viewport)} boyutunda kaydedildi, ulaşılan ${viewportText(reached)}.` });
+    }
+  } catch (error) {
+    showMessage({ error: `Görünen alan ayarlanamadı: ${error.message}` });
+  } finally {
+    $('btn-replay-fit').disabled = false;
+  }
 };
+
+// YÖNLENDİRME: pencere büyüyemediği için görünen alan küçük kaldı (pencere ekranı kaplıyor ya da
+// ekran yetmiyor). Genişlik çoğu zaman yan paneli daraltarak kazanılır; eklenti panelin genişliğini
+// değiştiremediği için kullanıcı sürükler. Panelin genişliği değiştikçe ('resize') sekmenin
+// görünen alanı yeniden ölçülür ve kalan miktar yazılır; tutunca kontrol yenilenir.
+let fitGuide = null; // { tab, edges, target }
+let fitGuideTimer = null;
+
+addEventListener('resize', () => {
+  if (!fitGuide) return;
+  clearTimeout(fitGuideTimer);
+  fitGuideTimer = setTimeout(updateFitGuide, 250);
+});
+
+async function updateFitGuide() {
+  const guide = fitGuide;
+  const page = guide && await chrome.tabs.sendMessage(guide.tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
+  if (!page || fitGuide !== guide) return;
+  if (viewportText(page.viewport) === viewportText(guide.target)) {
+    stopFitGuide();
+    return checkReplay(guide.tab, guide.edges, { startIfClear: false });
+  }
+  renderFitGuide(guide, page.viewport, await chrome.tabs.getZoom(guide.tab.id));
+}
+
+// Kalan miktar ekran pikseliyle (CSS pikseli × yakınlaştırma): kullanıcının sürüklediği birim.
+function renderFitGuide(guide, now, zoom) {
+  const width = Math.round((guide.target.width - now.width) * zoom);
+  const height = Math.round((guide.target.height - now.height) * zoom);
+  const steps = [
+    ...(width > 0 ? [`Yan paneli kenarından sürükleyerek yaklaşık ${width} piksel daraltın.`] : []),
+    ...(width < 0 ? [`${-width} piksel fazla daralttınız; yan paneli biraz genişletin.`] : []),
+    ...(height > 0 ? [`Yükseklik ${height} piksel eksik: yer imleri çubuğunu ya da altta açık DevTools'u kapatın ya da pencereyi daha büyük bir ekrana taşıyın.`] : []),
+    ...(height < 0 ? [`Yükseklik ${-height} piksel fazla.`] : []),
+  ];
+  $('replay-fit-guide').textContent = `Pencere bu ekranda daha fazla büyüyemiyor. ${steps.join(' ')} Şu an ${viewportText(now)}, hedef ${viewportText(guide.target)}.`;
+  $('replay-fit-guide').hidden = false;
+  $('btn-replay-fit').hidden = true;
+}
+
+function stopFitGuide() {
+  fitGuide = null;
+  clearTimeout(fitGuideTimer);
+  $('replay-fit-guide').hidden = true;
+}
 
 $('btn-replay-anyway').onclick = () => {
   const start = replayStart;
@@ -1115,6 +1241,7 @@ $('btn-replay-stop').onclick = () => replay?.stop();
 
 function closeReplayCheck() {
   replayStart = null;
+  stopFitGuide();
   $('replay-check').hidden = true;
   renderReplay();
 }

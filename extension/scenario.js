@@ -7,8 +7,13 @@
 // Senaryoyu panel üretir (önizleme, elle yol) ya da runner'ın planlayıcısı; runner oynatır
 // (runner/README.md). Bu dosya yalnızca tanımlar; panelde <script>, runner'da Node'da yüklenir.
 //
+// Başlangıç node'u varsayılan olarak graph'ın başlangıcıdır; senaryo başka bir node seçebilir
+// (dosyada start alanı). Böyle bir senaryo yalnızca panelde oynatılır: runner her koşuyu temiz
+// bir tarayıcıda başlattığı için graph'ın ortasındaki bir ekrana doğrudan gidemez.
+//
 // Graph biçimi: { start, nodes: [{ id, name }], edges: [{ id, name, source, target }] }
-// (panelde state, runner'da dışa aktarılan model bu biçime çevrilir).
+// (panelde state, runner'da dışa aktarılan model bu biçime çevrilir). start: senaryonun
+// başlangıç node'u.
 // =============================================================================
 
 const SCENARIO_FORMAT = 'graph-recorder-scenario/v1';

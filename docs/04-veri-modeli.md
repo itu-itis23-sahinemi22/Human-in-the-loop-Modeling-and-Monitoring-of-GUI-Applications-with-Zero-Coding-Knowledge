@@ -260,8 +260,9 @@ Paneldeki **Senaryo** bölümünün **Senaryo indir** butonu (ya da bir planlay�
 | `format` | Şema sürümü. |
 | `name` | Rapor başlığı. |
 | `model` | Modelin dosya adı, senaryo dosyasına göre (ikisi aynı klasörde durur). |
+| `start` | (İsteğe bağlı) Koşuların başladığı node'un id'si; yoksa graph'ın başlangıcı. Panelde "Başlangıç" listesinden seçilir. Graph'ın başlangıcı dışında bir node'dan başlayan senaryo yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda başlattığı için graph'ın ortasındaki bir ekrana doğrudan gidemez, böyle bir senaryoyu açık bir hatayla reddeder. |
 | `planner` | Senaryoyu ne üretti: `{ engine: "manual" }` (panelde elle), bir planlayıcının adı ve ayarları (ör. `{ engine: "graphwalker", generator, seed }`). Yalnızca bilgi içindir. |
-| `runs` | Koşular: her biri başlangıç node'undan başlayan edge id'leri dizisi; her edge bir öncekinin vardığı node'dan çıkar. Runner her koşuyu temiz bir oturumla baştan oynatır. Yol çıkmaz bir node'a varırsa koşu biter, kalan edge'ler yeni bir koşuyla kapsanır. |
+| `runs` | Koşular: her biri başlangıç node'undan (`start`) başlayan edge id'leri dizisi; her edge bir öncekinin vardığı node'dan çıkar. Runner her koşuyu temiz bir oturumla baştan oynatır. Yol çıkmaz bir node'a varırsa koşu biter, kalan edge'ler yeni bir koşuyla kapsanır. |
 | `coverage` | Koşuların geçtiği farklı edge ve node sayısı / toplam (`[kapsanan, toplam]`). Yalnızca bilgi içindir; runner yeniden hesaplar. |
 
 Senaryo edge id'leriyle modele bağlıdır: graph'ta edge silinir ya da yeniden kaydedilirse senaryo geçersiz olur; panel yüklerken, runner çalıştırmadan önce bunu söyler.

@@ -123,6 +123,79 @@ function compareScreen(node, screen, settings) {
   return { ok: Boolean(expected && actual) && url === node.urlKey && diff.length === 0, url, expectedUrl: node.urlKey, diff, screen };
 }
 
+// GÖRÜNEN ALANI KAYITTAKİNE GETİRMEK (oynatmadan önceki uyarı kartındaki buton). State ekrana
+// sığan elementlerden oluştuğu için oynatma kayıttaki boyutta yapılmalı. Taklit (DevTools'un
+// cihaz modu) yerine gerçek tarayıcı ayarlanır; ayar oynatmadan sonra da kalır, kayıt aynı
+// boyutta sürebilir:
+//   1. Piksel oranı = ekran ölçeği × yakınlaştırma: oran farklıysa sekmenin yakınlaştırması
+//      ayarlanır (Chrome bunu site başına saklar).
+//   2. Pencere boyutu ekranın bağımsız pikseli, görünen alan CSS pikselidir: fark yakınlaştırmayla
+//      çarpılıp pencereye eklenir. Yan panel ve kenarlıklar ölçüme dahil olduğu için birkaç
+//      denemede tutturulur. Pencere ekranın kullanılabilir alanına sığdırılır (Chrome ekranın
+//      dışına taşan pencereyi reddeder; panel aynı penceredeki ekranı görür).
+// Pencereye yalnızca işe yarayacaksa dokunulur: büyütülmüş ya da tam ekran pencere ekranı zaten
+// kaplar, daha da büyüyemez; normal pencere de ekrandan büyük olamaz. Görünen alanın büyümesi
+// gerekiyor ama pencere büyüyemiyorsa pencere olduğu gibi kalır ve eksik kalan miktar döner
+// (short, ekran pikseli): genişlik çoğu zaman yan paneli daraltarak kazanılır (eklenti panelin
+// genişliğini değiştiremez; kullanıcı sürükler). Sonuç başlangıçtakinden kötüyse pencere eski
+// haline döner.
+// Döner: { viewport: varılan görünen alan, short: { width, height } ya da null (tuttu) }.
+// Boyut ve yakınlaştırma değişimi kayıt sekmesindeyse aksiyon olarak kaydedilir (tarayıcı gerçekten değişti).
+async function fitViewport(tabId, target) {
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const measure = async () => (await chrome.tabs.sendMessage(tabId, { type: 'GET_FINGERPRINT' }, { frameId: 0 })).viewport;
+  const same = (v) => v.width === target.width && v.height === target.height;
+  const distance = (v) => Math.abs(v.width - target.width) + Math.abs(v.height - target.height);
+  let now = await measure();
+  if (Math.abs(now.devicePixelRatio - target.devicePixelRatio) > 0.001) {
+    const screenScale = now.devicePixelRatio / await chrome.tabs.getZoom(tabId);
+    await chrome.tabs.setZoom(tabId, target.devicePixelRatio / screenScale);
+    await wait(400);
+    now = await measure();
+  }
+  if (same(now)) return { viewport: now, short: null };
+
+  const { windowId } = await chrome.tabs.get(tabId);
+  const original = await chrome.windows.get(windowId);
+  const zoom = await chrome.tabs.getZoom(tabId);
+  const area = { left: screen.availLeft ?? 0, top: screen.availTop ?? 0, width: screen.availWidth, height: screen.availHeight };
+  const grow = { width: Math.round((target.width - now.width) * zoom), height: Math.round((target.height - now.height) * zoom) };
+  const filled = original.state !== 'normal'; // büyütülmüş ya da tam ekran: ekranı zaten kaplıyor
+  const short = {
+    width: Math.max(0, filled ? grow.width : original.width + grow.width - area.width),
+    height: Math.max(0, filled ? grow.height : original.height + grow.height - area.height),
+  };
+  if (short.width > 0 || short.height > 0) return { viewport: now, short };
+
+  const start = now;
+  if (filled) {
+    await chrome.windows.update(windowId, { state: 'normal' }); // büyütülmüş pencere boyutlandırılamaz
+    await wait(400);
+    now = await measure();
+  }
+  for (let attempt = 0; attempt < 4 && !same(now); attempt++) {
+    const win = await chrome.windows.get(windowId);
+    const width = Math.min(Math.round(win.width + (target.width - now.width) * zoom), area.width);
+    const height = Math.min(Math.round(win.height + (target.height - now.height) * zoom), area.height);
+    await chrome.windows.update(windowId, {
+      width, height,
+      left: Math.max(area.left, Math.min(win.left, area.left + area.width - width)),
+      top: Math.max(area.top, Math.min(win.top, area.top + area.height - height)),
+    });
+    await wait(400);
+    const before = now;
+    now = await measure();
+    if (now.width === before.width && now.height === before.height) break; // pencere daha fazla değişmiyor
+  }
+  if (!same(now) && distance(now) >= distance(start)) {
+    await chrome.windows.update(windowId, filled ? { state: original.state } : { left: original.left, top: original.top, width: original.width, height: original.height });
+    await wait(400);
+    now = await measure();
+  }
+  if (same(now)) return { viewport: now, short: null };
+  return { viewport: now, short: { width: Math.max(0, Math.round((target.width - now.width) * zoom)), height: Math.max(0, Math.round((target.height - now.height) * zoom)) } };
+}
+
 // Koşudaki maskeli (******) alanların anahtarları: oynatmadan önce kullanıcıya sorulur.
 function maskedKeys(edges) {
   const keys = edges.flatMap((e) => e.actions).filter((a) => a.type === 'input' && a.value === '******').map((a) => a.target?.key ?? a.selector);
