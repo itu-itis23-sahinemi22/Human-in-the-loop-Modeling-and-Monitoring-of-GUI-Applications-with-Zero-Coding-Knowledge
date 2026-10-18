@@ -63,6 +63,7 @@ Eklentinin tek "durum sahibi" (single source of truth).
 ### `sidepanel/`: Arayüz
 
 - `panel.html`: iskelet. Butonlar, onay kartı, graph alanı, detay kartı ve bekleyen aksiyonlar listesi. Sağ üstteki çark, panelin üstünde açılan **Ayarlar** penceresini (`<dialog>`) açar; kaydedilmemiş değişiklik uyarısı da ayrı bir `<dialog>`'dur.
+- `compare.js`: onay kartındaki görsel karşılaştırma: iki ekran görüntüsünün piksel farkı, farklı bölgeler, fark oranı ([03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma)).
 - `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular (iki liste ve "Beklemeler" bölümü: anahtar ve alt sınır) bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
 
@@ -186,7 +187,7 @@ Dikkat edilecek üç nokta:
 
 **Temel kural:** Şu anki node (`from`) varsa, hedef ister yeni ister mevcut node olsun, `from → hedef` edge'i **her zaman** çizilir. Kullanıcı onay kartında bir aday için **"Evet, bu node"** derse edge, şu anki node'dan o node'a çizilir. İkisi aynı node ise edge bir **self-loop** olur.
 
-**Birden fazla eşleşme:** Element kümesi birden fazla node ile birebir aynı olabilir (daha önce aynı küme için "yeni node" denmiş ya da Ayarlar'da bir türün işareti kaldırılmışsa). Onay kartı eşleşen **tüm** node'ları ekran görüntüleriyle seçenek olarak gösterir. Sıra: şu anki node önce, sonra oluşturulma sırası. Kullanıcı doğru olanı seçer ya da **"Hiçbiri, yeni node"** der. Karar beklerken bir aday silinirse listeden düşer.
+**Birden fazla eşleşme:** Element kümesi birden fazla node ile birebir aynı olabilir (daha önce aynı küme için "yeni node" denmiş ya da Ayarlar'da bir türün işareti kaldırılmışsa). Onay kartı eşleşen **tüm** node'ları ekran görüntüleriyle seçenek olarak gösterir; her adayın altında görsel fark oranı, **Karşılaştır** ile geniş karşılaştırma penceresi vardır ([03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma)). Sıra: şu anki node önce, sonra oluşturulma sırası. Kullanıcı doğru olanı seçer ya da **"Hiçbiri, yeni node"** der. Karar beklerken bir aday silinirse listeden düşer.
 
 **Eşleşme kuralı:** Mevcut bir node, ancak URL şablonu ve etkileşimli element kümesi (edge set: ekranda tıklanabilen, devre dışı olmayan elementler) sayfayla **birebir aynıysa** eşleşir. Tek bir element bile farklıysa, sayfa ne kadar benzer olursa olsun soru sorulmadan yeni node oluşur. Gerekçe: [03 > Neden birebir eşitlik?](03-state-eslestirme.md#neden-benzerlik-değil-birebir-eşitlik)
 

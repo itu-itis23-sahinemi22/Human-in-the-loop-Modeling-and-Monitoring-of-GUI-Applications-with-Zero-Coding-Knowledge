@@ -116,6 +116,20 @@ button[hidden] { display: none; }
   border-radius: 4px;
 }
 .shots figcaption { font-size: 11px; color: var(--muted); text-align: center; }
+.shots .diff-ratio { display: block; min-height: 1em; font-size: 11px; color: var(--muted); text-align: center; }
+
+/* Karşılaştırma penceresi (compare.js): panelin genişliğini kullanır */
+dialog.compare { width: min(96vw, 960px); }
+.segmented { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.segmented button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+#compare-view canvas, #compare-view img { display: block; width: 100%; border: 1px solid var(--border); border-radius: 4px; }
+#compare-view figure { margin: 0; }
+#compare-view figcaption, .curtain-labels { font-size: 11px; color: var(--muted); }
+.compare-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.curtain { position: relative; }
+.curtain .over { position: absolute; inset: 0; height: 100%; }
+.curtain-labels { display: flex; justify-content: space-between; margin-top: 2px; }
+#compare-view input[type="range"] { width: 100%; }
 
 .field { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
 .field input {

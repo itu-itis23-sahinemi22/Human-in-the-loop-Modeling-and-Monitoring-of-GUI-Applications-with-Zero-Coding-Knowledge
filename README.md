@@ -77,7 +77,7 @@ Demo için [saucedemo.com](https://www.saucedemo.com) uygundur: test otomasyonu 
 
 - **Edge set farklıysa her zaman yeni node.** Edge set, ekranda tıklanabilen etkileşimli elementlerin **türleri ve sayılarıdır** (ör. `button:Sil ×5`). Bir tür eklenmiş, çıkmış, değişmiş, `disabled` olmuş, kaydırma ile ekran dışına çıkmış ya da bir türün sayısı değişmişse (5 Sil yerine 4) soru sorulmaz. Sebebi: bir node'dan çıkan edge'ler o node'daki elementlere dayanır; farklı edge set'leri tek node saymak edge'lerin çakışmasına yol açar. Edge'ler de hedeflerini aynı düzeyde kaydeder ("ekrandaki 2. `button:Sil`"), böylece aynı state sayılan ekranlarda her hedef bulunur. Detay: [docs/03-state-eslestirme.md](docs/03-state-eslestirme.md#neden-benzerlik-değil-birebir-eşitlik)
 - **Kaydırma da bir aksiyondur.** State yalnızca ekranda görünen elementlerden oluşur; DOM'da olup ekran dışında kalanlar sayılmaz. Sayfayı kaydırıp "Node oluştur"a basarsanız: ekrandaki küme değiştiyse soru sorulmadan yeni node (`e_ScrollDown`), aynı kaldıysa "aynı state mi?" sorusu gelir. Detay: [docs/03 > Kaydırma ve state](docs/03-state-eslestirme.md#kaydırma-ve-state)
-- **"Evet, bu node"** cevabı yeni node oluşturmaz, **şu anki node'dan seçilen node'a bir edge çizer.** Sayfa birden fazla node ile birebir aynıysa onay kartı hepsini ekran görüntüleriyle listeler; doğru olanı seçersiniz ya da "Hiçbiri, yeni node" dersiniz.
+- **"Evet, bu node"** cevabı yeni node oluşturmaz, **şu anki node'dan seçilen node'a bir edge çizer.** Sayfa birden fazla node ile birebir aynıysa onay kartı hepsini ekran görüntüleriyle listeler; doğru olanı seçersiniz ya da "Hiçbiri, yeni node" dersiniz. Her adayın altında **görsel fark oranı** yazar; **Karşılaştır** şu anki sayfayla adayı geniş bir pencerede gösterir: farklı pikseller kırmızı, farklı bölgeler kutulu (Fark), sürgüyle üst üste (Perde) ya da yan yana. Detay: [docs/03 > Görsel karşılaştırma](docs/03-state-eslestirme.md#görsel-karşılaştırma)
 - **Şu anki node seçilirse** (kartta "(şu anki node)" etiketli olan) iki seçenek sunulur: **Kendine dönen edge olarak kaydet** (self-loop; sayfanın durumunu değiştirmeyen bir işlem için) ya da **Node oluşturma, aksiyonlara devam et** (hiçbir şey kaydedilmez, aksiyonlar "Bekleyen aksiyonlar"da kalır ve birikmeye devam eder).
 - **Bekleyen aksiyon yoksa node oluşturulmaz.** İlk node hariç, son node'dan beri hiç aksiyon kaydedilmediyse "Node oluştur" butonu kilitlidir, çünkü aksiyonsuz bir edge tekrar oynatılamaz. Ayarlar'da işareti kaldırılmış aksiyonlar sayılmaz.
 
@@ -123,6 +123,7 @@ bitirme_demo/
 │   │   ├── panel.html           ←   iskelet (butonlar, kartlar, graph alanı)
 │   │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
 │   │   ├── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
+│   │   ├── compare.js           ←   onay kartındaki görsel karşılaştırma (piksel farkı, bölgeler)
 │   │   └── theme.js             ←   tema seçimi (sayfa çizilmeden önce uygulanır)
 │   └── lib/
 │       └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)

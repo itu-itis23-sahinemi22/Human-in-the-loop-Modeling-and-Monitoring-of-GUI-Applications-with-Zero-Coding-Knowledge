@@ -18,6 +18,7 @@ Bu soru projenin akademik çekirdeğidir. Tamamen otomatik araçlar tam da bu no
 - [Küme aynıysa neden hâlâ soruluyor?](#küme-aynıysa-neden-hâlâ-soruluyor)
 - [Kaydırma ve state](#kaydırma-ve-state)
 - [Pencere boyutu ve state](#pencere-boyutu-ve-state)
+- [Görsel karşılaştırma](#görsel-karşılaştırma)
 - [Gerçek ölçümler (saucedemo.com)](#gerçek-ölçümler-saucedemocom)
 - [Bilinen zayıflıklar](#bilinen-zayıflıklar)
 - [Elenen alternatif yöntemler](#elenen-alternatif-yöntemler)
@@ -185,7 +186,7 @@ Aynı edge set, aynı state için **gerekli** ama **yeterli** değildir. Element
 - Aynı şablonda farklı veri: `/product/1` ile `/product/2` (bazı modellerde aynı, bazılarında farklı durum)
 - Etkileşimli olmayan içerikteki fark: bir uyarı metni, sepet sayacı, "boş liste" mesajı
 
-Bu farkı makine güvenilir şekilde ayıramaz; anlamı modeli kuran insan bilir. Onay kartı şu anki sayfanın ekran görüntüsünü ve eşleşen her node'un ekran görüntüsünü yan yana gösterir. Kullanıcı bir aday için **"Evet, bu node"** derse şu anki node'dan o node'a edge çizilir, **"Hayır / Hiçbiri, yeni node"** derse yeni node oluşur. Hiçbir cevap edge çakışması üretmez, çünkü kümeler zaten aynıdır. Karar hatırlanmaz: aynı küme bir daha yakalandığında soru yine sorulur.
+Bu farkı makine güvenilir şekilde ayıramaz; anlamı modeli kuran insan bilir. Onay kartı şu anki sayfanın ekran görüntüsünü ve eşleşen her node'un ekran görüntüsünü yan yana, her adayın altında görsel fark oranıyla gösterir; "Karşılaştır" farkı geniş bir pencerede gösterir ([Görsel karşılaştırma](#görsel-karşılaştırma)). Kullanıcı bir aday için **"Evet, bu node"** derse şu anki node'dan o node'a edge çizilir, **"Hayır / Hiçbiri, yeni node"** derse yeni node oluşur. Hiçbir cevap edge çakışması üretmez, çünkü kümeler zaten aynıdır. Karar hatırlanmaz: aynı küme bir daha yakalandığında soru yine sorulur.
 
 ---
 
@@ -244,6 +245,42 @@ Bilerek farklı boyutta test (responsive test) için olası yol: kayıtta ekran 
 
 ---
 
+## Görsel karşılaştırma
+
+Onay kartı açıldığında adayların edge set'i şu anki ekranla zaten birebir aynıdır; karar etkileşimli olmayan içeriğe bağlıdır (yukarıda). Kullanıcının nereye bakacağını görmesi için kart her adayın altında bir **görsel fark oranı** gösterir. **Karşılaştır** butonu geniş bir pencere açar:
+
+- **Fark:** şu anki ekran soluk, farklı pikseller kırmızı, farklı bölgeler turuncu kutulu.
+- **Perde:** iki görüntü üst üste; sürgüyle biri açılıp diğeri kapanır.
+- **Yan yana:** iki görüntü, ikisinde de kutular.
+
+Pencere görsele girmeyen farkları da yazar (adres, sayfa başlığı) ve aday değiştirilebilir. Karar oradan da verilebilir ("Evet, bu node").
+
+**Yöntem** (`sidepanel/compare.js`):
+
+1. **Küçültme.** İki ekran görüntüsü 480 piksel genişliğe küçültülür. Ekran görüntüleri JPEG'dir (kalite 40); küçültme sıkıştırma gürültüsünü ve kenar yumuşatmayı ortalar, hesap da hızlanır.
+2. **Piksel farkı.** Her piksel için iki rengin YIQ renk uzayındaki ağırlıklı farkı hesaplanır (pixelmatch'teki formül). Fark, en büyük olası farkın %10'unu (eşik 0,1) aşarsa piksel farklıdır. YIQ, gözün parlaklık farkına renk farkından daha duyarlı olmasını hesaba katar.
+3. **Bölgeler.** Görüntü 8×8 piksellik hücrelere bölünür. En az 6 farklı piksel içeren hücre farklıdır; birbirine değen (8 komşu) farklı hücreler tek bölge olur ve kutulanır. Tek tük farklı pikseller (gürültü) bölge oluşturmaz.
+4. **Oran.** Farklı bölgelerdeki farklı piksellerin tüm piksellere oranı. Sıfır değil ama %0,1'den küçükse "<%0,1" yazılır: küçük bir fark (tek rakam) "fark yok" gibi okunmasın.
+
+**Ölçüm** (yerel test sayfası: sepet sayacı ve büyük renkli afiş; link ve buton her sayfada aynı, yani edge set'ler aynı):
+
+| Şu anki ekran ↔ aday | Fark oranı | Bölge |
+|---|---|---|
+| Aynı görüntü | %0 | yok |
+| Yalnızca sayaç farklı ("Sepet (2)" ↔ "Sepet (1)") | <%0,1 (%0,012) | 1, rakamın üstünde |
+| Afiş rengi farklı (kırmızı ↔ mavi) | %28,9 | 1, afişin çevresinde |
+
+**Neden yalnızca birebir eşleşen adaylar arasında?** Görsel fark eşleştirme kuralının yerine geçemez ([Neden benzerlik değil, birebir eşitlik?](#neden-benzerlik-değil-birebir-eşitlik)). Farklı ürün resimleri, kaydırma ve animasyon yüzünden aynı state çok farklı görünebilir; tek bir butonun `disabled` olması gibi farklı bir state ise neredeyse aynı görünür. Burada fark yalnızca kümeleri zaten aynı adaylar arasında kullanıcıya nereye bakacağını gösterir. Otomatik seçim yapılmaz; oran adayları sıralamak için de kullanılmaz.
+
+**Sınırlar:**
+
+- Görünen alan ya da piksel oranı farklıysa aynı içerik farklı yerde durur; pencere bunu uyarır.
+- Kaydırma konumu farkı, animasyon, döngüyle değişen resim ya da reklam gürültü üretir.
+- Pixelmatch'in kenar yumuşatma tespiti uygulanmadı; yerine küçültme ve hücre eşiği kullanılıyor. Küçük puntolu ince bir metin farkı küçültmede kaybolabilir.
+- Ekran görüntüsü yalnızca görünen kısmı içerir; ekran dışındaki farklar görülmez.
+
+---
+
 ## Gerçek ölçümler (saucedemo.com)
 
 Eklenti, önceki (Jaccard) sürümüyle otomatik bir testle canlı saucedemo.com üzerinde çalıştırıldı. "Parmak izi boyutu" ve "Jaccard" sütunları o çalıştırmadan alınmıştır. "Yeni kural" sütunu aynı parmak izlerine birebir eşitlik kuralının uygulanmasıyla çıkarılmıştır (yeniden ölçülmedi): Jaccard < 1 demek kümelerin farklı olması demektir. Ölçümler ekran filtresi eklenmeden önce, **tüm sayfa** üzerinden yapıldı; şimdi parmak izi yalnızca ekrandaki elementleri içerdiği için uzun sayfalarda (ör. ürün listesi) boyutlar daha küçüktür ve sonuçlar kaydırma konumuna da bağlıdır.
@@ -294,7 +331,7 @@ Aşağıdakilerin ilk dördü bir **benzerlik ölçüsü** üretir. Benzerlik ne
 |---|---|
 | **Jaccard benzerliği + eşik** (önceki sürüm, eşik 0.6) | Basit ve açıklanabilirdi, ama "%92 benziyor, aynı mı?" sorusuna "Evet" demek farklı edge set'leri birleştiriyordu. Eşik değeri de keyfiydi. |
 | **DOM ağacı düzenleme mesafesi** (tree edit distance) | Hesaplaması pahalı (O(n³)). Sonucu kullanıcıya açıklamak zor. Tüm DOM'u karşılaştırdığı için veri farklarına çok duyarlı. |
-| **Görsel karşılaştırma** (ekran görüntüsü piksel farkı / perceptual hash) | Farklı ürün resimleri, kaydırma pozisyonu ve animasyonlar sonucu bozar. Ama birebir eşleşen adaylar arasında *yardımcı sinyal* olarak değerli (aşağıya bakın). |
+| **Görsel karşılaştırma** (ekran görüntüsü piksel farkı / perceptual hash) | Farklı ürün resimleri, kaydırma pozisyonu ve animasyonlar sonucu bozar. Ama birebir eşleşen adaylar arasında *yardımcı sinyal* olarak değerli: onay kartında öyle kullanılıyor ([Görsel karşılaştırma](#görsel-karşılaştırma)). |
 | **Makine öğrenmesi** (DOM embedding, sınıflandırıcı) | Eğitim verisi yok. Kararı açıklamak zor. Demo kapsamı için aşırı. |
 | **Sadece URL** | SPA'larda ve aynı URL'deki farklı durumlarda (menü, modal, hata) çalışmaz. |
 
@@ -304,6 +341,6 @@ Aşağıdakilerin ilk dördü bir **benzerlik ölçüsü** üretir. Benzerlik ne
 
 1. **Element anahtarı normalizasyonu.** Veriye bağlı ve dinamik id'leri ayıklayarak node sayısını azaltmak. Edge selector'ları da aynı kurala göre genelleştirilmeli, yoksa çakışma geri gelir. Kuralı bozmadan state patlamasını azaltmanın ana yolu budur.
 2. **Kullanıcı kararlarından öğrenmek.** Birebir eşleşmede verilen her "Evet / Hayır" cevabı **etiketli bir veri noktasıdır.** Bir sitede kullanıcı belirli bir URL şablonunda hep "Evet" diyorsa, o şablon için soru sorulmadan otomatik birleştirme yapılabilir.
-3. **Yardımcı sinyaller.** Görsel benzerlik (perceptual hash) ve sayfa başlığı (`h1`) yalnızca birebir eşleşen adaylar arasında, kullanıcıya gösterilen öneriyi güçlendirmek için kullanılabilir. Edge set kuralının yerine geçmez.
+3. **Yardımcı sinyaller.** Görsel fark onay kartında yapıldı ([Görsel karşılaştırma](#görsel-karşılaştırma)). Sayfa başlığı (`h1`) ya da görünen metin farkı gibi sinyaller de yalnızca birebir eşleşen adaylar arasında, kullanıcıya gösterilen öneriyi güçlendirmek için eklenebilir. Edge set kuralının yerine geçmez.
 4. **Erişilebilirlik ağacı (accessibility tree).** DOM yerine tarayıcının erişilebilirlik ağacını kullanmak, görsel olmayan "anlamsal" yapıyı daha iyi yakalayabilir.
 5. **Değerlendirme.** Birkaç örnek site üzerinde insanların elle çizdiği "doğru" graph'lar ile eklentinin ürettiği graph'lar karşılaştırılarak precision/recall ve node sayısı fazlalığı ölçülebilir.

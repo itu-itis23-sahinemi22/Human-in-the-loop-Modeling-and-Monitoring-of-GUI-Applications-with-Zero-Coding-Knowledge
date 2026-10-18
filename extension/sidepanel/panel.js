@@ -207,6 +207,8 @@ function renderConfirm() {
   $('confirm').hidden = !pending;
   if (!pending) {
     lastConfirmKey = '';
+    diffCache.clear();
+    if ($('compare-dialog').open) $('compare-dialog').close(); // soru başka yoldan cevaplandı
     return;
   }
   const candidates = pending.candidateIds.map(nodeById).filter(Boolean);
@@ -226,15 +228,148 @@ function renderConfirm() {
 
 function candidateFigure(node) {
   const figure = document.createElement('figure');
-  figure.innerHTML = '<img alt=""><figcaption></figcaption><button class="primary">Evet, bu node</button>';
+  figure.innerHTML = '<img alt=""><figcaption></figcaption><small class="diff-ratio"></small>'
+    + '<button class="primary">Evet, bu node</button><button class="compare">Karşılaştır</button>';
   figure.querySelector('img').src = node.screenshot;
   figure.querySelector('figcaption').textContent = node.name + (node.id === state.currentNodeId ? ' (şu anki node)' : '');
-  // Şu anki node seçilirse edge kendine döner; önce bunun mu yoksa hiç kaydetmemenin mi
-  // istendiği sorulur. Diğer adaylarda edge doğrudan o node'a çizilir.
-  figure.querySelector('button').onclick = () =>
-    node.id === state.currentNodeId ? openLoopDialog(node) : send({ type: 'RESOLVE', targetId: node.id });
+  figure.querySelector('.primary').onclick = () => chooseCandidate(node);
+  figure.querySelector('.compare').onclick = () => openCompareDialog(node.id);
+  visualDiff(node).then((result) => {
+    figure.querySelector('.diff-ratio').textContent = result ? `Görsel fark: ${percent(result.ratio)}` : '';
+  });
   return figure;
 }
+
+// Şu anki node seçilirse edge kendine döner; önce bunun mu yoksa hiç kaydetmemenin mi
+// istendiği sorulur. Diğer adaylarda edge doğrudan o node'a çizilir.
+function chooseCandidate(node) {
+  if (node.id === state.currentNodeId) openLoopDialog(node);
+  else send({ type: 'RESOLVE', targetId: node.id });
+}
+
+
+// -----------------------------------------------------------------------------
+// GÖRSEL KARŞILAŞTIRMA: şu anki sayfa ↔ aday node (compare.js)
+// -----------------------------------------------------------------------------
+// Adayların edge set'i şu anki sayfayla zaten aynıdır; kullanıcı etkileşimli olmayan farka
+// bakarak karar verir. Karttaki her adayın altında görsel fark oranı, "Karşılaştır" ile geniş
+// pencere: Fark (farklı pikseller ve bölgeler), Perde (sürgüyle iki görüntü), Yan yana.
+
+// Sonuçlar soru değişene kadar saklanır (kart her storage değişikliğinde yeniden çizilebilir).
+const diffCache = new Map();
+
+function visualDiff(node) {
+  const capture = state.pending?.capture;
+  if (!capture?.screenshot || !node.screenshot) return Promise.resolve(null);
+  const key = `${capture.url}|${capture.screenshot.length}|${node.id}`;
+  if (!diffCache.has(key)) diffCache.set(key, compareScreenshots(capture.screenshot, node.screenshot).catch(() => null));
+  return diffCache.get(key);
+}
+
+// "%2,3"; sıfır değil ama %0,1'den küçükse "<%0,1" (küçük bir fark "fark yok" gibi okunmasın)
+function percent(ratio) {
+  if (ratio > 0 && ratio < 0.001) return '<%0,1';
+  return `%${(ratio * 100).toFixed(1).replace('.', ',')}`;
+}
+
+let compareNodeId = null;
+let compareMode = 'diff';
+
+function openCompareDialog(nodeId) {
+  compareNodeId = nodeId;
+  renderCompare();
+  $('compare-dialog').showModal();
+}
+
+async function renderCompare() {
+  const pending = state.pending;
+  const node = nodeById(compareNodeId);
+  if (!pending || !node) return $('compare-dialog').close();
+  const candidates = pending.candidateIds.map(nodeById).filter(Boolean);
+  $('compare-candidates').replaceChildren(...candidates.map((candidate) => {
+    const button = document.createElement('button');
+    button.textContent = candidate.name;
+    button.classList.toggle('active', candidate.id === node.id);
+    button.onclick = () => { compareNodeId = candidate.id; renderCompare(); };
+    visualDiff(candidate).then((result) => { if (result) button.textContent = `${candidate.name} · ${percent(result.ratio)}`; });
+    return button;
+  }));
+  for (const button of $('compare-modes').querySelectorAll('button')) button.classList.toggle('active', button.dataset.mode === compareMode);
+  $('btn-compare-yes').textContent = node.id === state.currentNodeId ? 'Evet, bu node (şu anki node)' : 'Evet, bu node';
+
+  const [result, current, other] = await Promise.all([visualDiff(node), loadImage(pending.capture.screenshot), loadImage(node.screenshot)]);
+  if (compareNodeId !== node.id || state.pending !== pending) return; // bu arada başka aday seçildi
+  $('compare-info').textContent = result
+    ? `Görsel fark: ${percent(result.ratio)} · ${result.boxes.length ? `${result.boxes.length} farklı bölge` : 'farklı bölge yok'}`
+    : 'Görsel fark hesaplanamadı.';
+  $('compare-warnings').replaceChildren(...compareWarnings(pending.capture, node, result).map((text) =>
+    Object.assign(document.createElement('li'), { textContent: text })));
+  $('compare-view').replaceChildren(...compareView(current, other, node, result));
+}
+
+// Görsel farka girmeyen ama karar için önemli farklar ve karşılaştırmayı yanıltabilecek durumlar.
+function compareWarnings(capture, node, result) {
+  const warnings = [];
+  if (capture.url !== node.url) warnings.push(`Adres farklı: ${capture.url} ↔ ${node.url}`);
+  if (capture.title !== node.title) warnings.push(`Sayfa başlığı farklı: "${capture.title}" ↔ "${node.title}"`);
+  if (capture.viewport && node.viewport && viewportText(capture.viewport) !== viewportText(node.viewport)) {
+    warnings.push(`Görünen alanlar farklı (${viewportText(capture.viewport)} ↔ ${viewportText(node.viewport)}): aynı içerik farklı yerde durabilir, görsel fark yanıltıcı olabilir.`);
+  } else if (result && !result.sameSize) {
+    warnings.push('Ekran görüntülerinin boyutu farklı: görsel fark yanıltıcı olabilir.');
+  }
+  return warnings;
+}
+
+function compareView(current, other, node, result) {
+  if (compareMode === 'slider') {
+    const curtain = document.createElement('div');
+    curtain.className = 'curtain';
+    const under = Object.assign(document.createElement('img'), { src: other.src, alt: node.name });
+    const over = Object.assign(document.createElement('img'), { src: current.src, alt: 'Şu anki sayfa', className: 'over' });
+    const range = Object.assign(document.createElement('input'), { type: 'range', min: 0, max: 100, value: 50 });
+    range.setAttribute('aria-label', 'Perde');
+    const clip = () => { over.style.clipPath = `inset(0 ${100 - range.value}% 0 0)`; };
+    range.oninput = clip;
+    clip();
+    curtain.append(under, over);
+    const labels = document.createElement('div');
+    labels.className = 'curtain-labels';
+    labels.innerHTML = '<span>← Şu anki sayfa</span><span></span>';
+    labels.lastChild.textContent = `${node.name} →`;
+    return [curtain, range, labels];
+  }
+  if (!result) return [Object.assign(document.createElement('img'), { src: current.src, alt: '' })];
+  if (compareMode === 'side') {
+    const grid = document.createElement('div');
+    grid.className = 'compare-side';
+    for (const [img, caption] of [[current, 'Şu anki sayfa'], [other, node.name]]) {
+      const figure = document.createElement('figure');
+      const canvas = document.createElement('canvas');
+      drawWithBoxes(canvas, img, result);
+      figure.append(canvas, Object.assign(document.createElement('figcaption'), { textContent: caption }));
+      grid.append(figure);
+    }
+    return [grid];
+  }
+  const figure = document.createElement('figure');
+  const canvas = document.createElement('canvas');
+  drawDifference(canvas, current, result);
+  figure.append(canvas, Object.assign(document.createElement('figcaption'), {
+    textContent: `Şu anki sayfa, ${node.name} ile farkı: kırmızı farklı pikseller, turuncu kutu farklı bölgeler.`,
+  }));
+  return [figure];
+}
+
+for (const button of $('compare-modes').querySelectorAll('button')) {
+  button.onclick = () => { compareMode = button.dataset.mode; renderCompare(); };
+}
+$('btn-compare-yes').onclick = () => {
+  const node = nodeById(compareNodeId);
+  $('compare-dialog').close();
+  if (node) chooseCandidate(node);
+};
+$('btn-compare-close').onclick = () => $('compare-dialog').close();
+$('btn-compare-cancel').onclick = () => $('compare-dialog').close();
 
 function openLoopDialog(node) {
   const count = state.pending.actions.length;

@@ -38,7 +38,7 @@
 | 2 | Runner, ilk sürüm (iş 1) | 2 gün | Yapıldı |
 | 3 | Beklemeleri kaydet (iş 4) | 0,5–1 gün | Yapıldı |
 | 4 | Yeni sekmede devam (iş 5) | 1,5–2 gün | Yapıldı |
-| 5 | Karşılaştırma ekranı (iş 2) | 1 gün | |
+| 5 | Karşılaştırma ekranı (iş 2) | 1 gün | Yapıldı |
 | 6 | Senaryo planlama ve rapor (iş 1) | kalan süre | |
 
 - **Kayıt formatını değiştiren iş önce gelir.** Viewport'u kaydedilmemiş bir graph, testte doğru boyutta çalıştırılamaz. Bu yüzden Faz 1 en başta: bundan sonra kaydedilen her graph bu bilgiyi taşır.
@@ -231,7 +231,7 @@ Karşılandı ([05 > Test](05-gelistirme.md#test)). Ayrıca kayıt sekmeleri kap
 
 ## Faz 5: Karşılaştırma ekranı
 
-*İş 2.*
+*İş 2. Durum: yapıldı. Yöntem: [03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma).*
 
 ### Kapsam
 
@@ -251,7 +251,18 @@ Karşılandı ([05 > Test](05-gelistirme.md#test)). Ayrıca kayıt sekmeleri kap
 - **Sınırlar:** farklı ürün resimleri, animasyon ve kaydırma konumu farkı gürültü üretir. Bu yüzden görsel fark yalnızca **birebir eşleşen adaylar arasında** kullanılır ve eşleştirme kuralının yerine geçmez ([03 > Geliştirme fikirleri](03-state-eslestirme.md#geliştirme-fikirleri-tez-için), 3. madde).
 - Yöntem ve eşik, tez için 03'e "Görsel karşılaştırma" bölümü olarak yazılır.
 
+### Yapılanlar
+
+- [x] `sidepanel/compare.js`: küçültme, YIQ renk farkı, ızgarayla bölgeler, fark oranı
+- [x] Kartta her adayın altında görsel fark oranı ve "Karşılaştır"
+- [x] Karşılaştırma penceresi: Fark / Perde / Yan yana, aday seçimi, adres ve başlık farkı, görünen alan uyarısı, pencereden karar
+- [x] 03'e "Görsel karşılaştırma" bölümü (yöntem, eşikler, ölçüm, sınırlar); 01, 05, README
+
+Plandan bir sapma: kenar yumuşatma pikselleri pixelmatch'teki gibi tek tek tespit edilmiyor; ekran görüntüleri JPEG olduğu için asıl gürültü sıkıştırmadan geliyor ve küçültme ile hücre eşiği ikisini birlikte bastırıyor.
+
 ### Kabul kriteri
+
+Karşılandı ([05 > Test](05-gelistirme.md#test)): sayaç farkı <%0,1 ve tek kutu rakamın üstünde; afiş farkı %28,9.
 
 Sepette 1 ve 2 ürün olan, edge set'i aynı iki ekran (yalnızca sayaç farklı): fark kutusu sayaç bölgesini gösterir, fark oranı düşüktür. Tamamen farklı bir ürün resmi gösteren aday daha yüksek oran gösterir.
 
@@ -346,4 +357,15 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 | Popup ayrı penceredir | Yan panel pencere başınadır; soru ana pencerenin panelinde çıkar, kullanıcı görmeyebilir. | Popup penceresi açılınca bildirim (`chrome.notifications`) ya da rozet. |
 | Yalnızca aktif olunca sorulur | Arka planda açılan (Ctrl+tık) sekme, kullanıcı ona geçene kadar sorulmaz. | Açılışta bekleyen soru olarak tutmak. |
 | "Buradan devam et" sekme listesini sıfırlar | Kayıt kapanmış sekmelerden sonra sürerse önceki sekmeler kayıttan düşer. | Açık kalan kayıt sekmelerini korumak. |
+
+### Görsel karşılaştırma (Faz 5)
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| Kenar yumuşatma tek tek tespit edilmiyor | Küçük puntolu ince bir metin farkı küçültmede kaybolabilir ya da yumuşatma farkı bölge sanılabilir. | Pixelmatch'in kenar yumuşatma kontrolünü eklemek; ekran görüntüsünü daha yüksek kalitede saklamak (depolama bedeli). |
+| Kaydırma konumu farkı | Aynı içerik kaymış göründüğü için büyük bir fark çıkar. | Görüntüleri hizalayarak (dikey kaydırmayı bularak) karşılaştırmak. |
+| Animasyon, döngüyle değişen resim, reklam | Önemsiz bölgeler farklı görünür. | Kullanıcının bölgeyi "önemsiz" işaretlemesi; sitede o bölgeyi sonraki karşılaştırmalarda yok saymak. |
+| Yalnızca görünen kısım | Ekran dışındaki farklar görülmez. | Tam sayfa ekran görüntüsü (yalnızca karşılaştırma için). |
+| Fark metin olarak yok | Sayaç "1 ↔ 2" gibi farkı kullanıcı görselden okumak zorunda. | Node'a görünen metni de kaydedip metin farkını göstermek. |
+| Görsel fark runner'da kullanılmıyor | Doğrulama gizli durumu (sepet sayacı) görmüyor. | Doğrulamada yardımcı sinyal: node'un ekran görüntüsüyle fark büyükse uyarı. |
 

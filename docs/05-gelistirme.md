@@ -140,6 +140,7 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Ayarlar'da **Üzerine gelme (fare)** başta işaretsiz. İşaretlenince fareyle üzerine gelince açılan bir menü (CSS ya da JS) `Üzerine gelme (fare)  Hover ...` satırı bırakıyor; ekranı değiştirmeyen bir butonun üzerinden geçmek satır bırakmıyor. Fare dururken kendiliğinden gelen değişim hover değil bekleme oluyor.
 - [ ] `target=_blank` bir linke tıklayınca panelde "Kayıt sekmesinin açtığı bir sekmedesiniz" kartı çıkıyor. **Evet**: "Bekleyen aksiyonlar"da `Sekme  Open tab ...` satırı, kayıt yeni sekmede sürüyor. Sekmeyi kapatınca `Close tab` ve `Switch to tab` satırları geliyor, kayıt eski sekmede sürüyor.
 - [ ] Yeni bir sekmede başka bir siteye gidince kart çıkıyor; **Hayır** deyince o sekmedeki tıklamalar kaydedilmiyor ve o sekmeye tekrar geçince soru çıkmıyor. Orada "Node oluştur"a basınca soru yeniden çıkıyor.
+- [ ] Onay kartında her adayın altında "Görsel fark: %..." yazıyor. **Karşılaştır** pencereyi açıyor: Fark görünümünde değişen yer kırmızı ve kutulu; Perde'de sürgü iki görüntüyü açıp kapatıyor; Yan yana'da iki görüntü kutularla. Aday değiştirilebiliyor; pencereden "Evet, bu node" edge'i o adaya çiziyor. Adres farklıysa ve görünen alan farklıysa pencere yazıyor.
 - [ ] Sayfada (alan dışında) Escape'e basınca `Tuş  Press Escape` satırı çıkıyor; ok tuşunu basılı tutunca tek satır `Press ArrowDown ×N` oluyor. Alana yazılan harfler satır üretmiyor; alan değeri `Fill` olarak geliyor. Ctrl +, F5, Tab ve butonda Enter tuş olarak kaydedilmiyor.
 - [ ] Arama kutusuna yazıp ArrowDown ile öneri seçip Enter'a basınca sıra: `Fill`, `Press ArrowDown`, `Submit`.
 - [ ] Türkçe klavyede bir alana `@` yazmak (AltGr+Q) tuş olarak kaydedilmiyor.
@@ -247,6 +248,14 @@ Bu değişiklikten sonra önceki testler de tekrar koşuldu ve geçti: pencere b
 - Başka bir sekmede başka site, **Evet**: `tab(open, user), click`; o sitede node.
 - Kayıt sekmelerinin hepsi kapandıktan sonra yeni bir sekmede **Evet**: sekme şu anki node'un ekranında değilken reddedildi; sayfada aynı ekrana gelindikten sonra kayıt o sekmede sürdü.
 - Runner üç edge'i iki sekmede oynattı ve geçti (linkle açılan sekmeye geçiş, kapatıp dönüş, başka sitede yeni sekme).
+
+**Görsel karşılaştırma.** Yerel bir sepet sayfası: sayaç ("Sepet (n)", etkileşimli değil) ve büyük renkli bir afiş; link ve buton her sayfada aynı. Üç ziyaretle iki aday oluştu: yalnızca sayacı farklı olan ve yalnızca afişi farklı olan. 18 kontrolün hepsi geçti:
+
+- Kartta iki adayın altında görsel fark: afiş farkı %28,9, sayaç farkı <%0,1 (%0,012, tek bölge). Sayaç farkının kutusu sayfadaki rakamın konumunu içeriyor (CSS pikselinden karşılaştırma ölçeğine çevrilerek ölçüldü). Aynı görüntü %0, bölge yok.
+- Pencere: Fark görünümü (bir tuval), bilgi satırı, adres farkı uyarısı; Perde (üstteki görüntü ve sürgü), Yan yana (iki tuval); aday değiştirince oran değişti. Pencereden "Evet, bu node": edge seçilen adaya çizildi, pencere kapandı.
+- Pencere daraltılıp aynı sayfada tekrar sorulunca "Görünen alanlar farklı" uyarısı çıktı.
+
+İlk sürümde Fark görünümü 480 piksellik karşılaştırma ölçeğinde çiziliyordu ve büyütülünce bulanıktı; görüntü artık tam çözünürlükte çiziliyor, fark ve kutular büyütülüyor. Ardından pencere boyutu, bekleme, üzerine gelme ve sekme testleri tekrar koşuldu ve geçti.
 
 Ardından bekleme, üzerine gelme, pencere boyutu, yakınlaştırma ve saucedemo testleri tekrar koşuldu ve geçti.
 

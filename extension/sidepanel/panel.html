@@ -98,6 +98,31 @@
     <ol id="buffer" class="actions"></ol>
   </section>
 
+  <!-- KARŞILAŞTIRMA penceresi: onay kartındaki "Karşılaştır" açar. Şu anki sayfa, seçili aday
+       node ile görsel olarak karşılaştırılır (compare.js); karar buradan da verilebilir. -->
+  <dialog id="compare-dialog" class="compare" aria-labelledby="compare-title">
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="compare-title">Karşılaştır</h2>
+        <button id="btn-compare-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
+      </div>
+      <p class="hint">Adayların etkileşimli elementleri şu anki sayfayla zaten birebir aynı. Fark, etkileşimli olmayan içerikte olabilir (sayaç, uyarı metni, farklı ürün). Görsel fark oranı yalnızca yardımcıdır; karar sizindir.</p>
+      <div id="compare-candidates" class="segmented" role="group" aria-label="Aday node"></div>
+      <div id="compare-modes" class="segmented" role="group" aria-label="Görünüm">
+        <button data-mode="diff">Fark</button>
+        <button data-mode="slider">Perde</button>
+        <button data-mode="side">Yan yana</button>
+      </div>
+      <p id="compare-info" class="small"></p>
+      <ul id="compare-warnings" class="reasons"></ul>
+      <div id="compare-view"></div>
+      <div class="toolbar">
+        <button id="btn-compare-yes" class="primary">Evet, bu node</button>
+        <button id="btn-compare-cancel">Kapat</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- AYARLAR penceresi (sağ üstteki çark açar). Hangi aksiyon tipleri kaydedilsin, hangi
        etkileşimli türler state'e girsin. Listeleri panel.js, settings.js'ten doldurur.
        Değişiklik "Kaydet"e basılınca uygulanır. "Sıfırla" ayarları silmez. -->
@@ -202,6 +227,7 @@
   <!-- Manifest V3 uzaktan (CDN) script yüklemeyi yasaklar; kütüphane eklentinin içinde durur. -->
   <script src="../lib/cytoscape.min.js"></script>
   <script src="../settings.js"></script>
+  <script src="compare.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>
