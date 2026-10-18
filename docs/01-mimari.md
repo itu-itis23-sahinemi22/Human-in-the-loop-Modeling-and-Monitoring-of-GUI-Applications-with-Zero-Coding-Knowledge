@@ -63,6 +63,7 @@ Eklentinin tek "durum sahibi" (single source of truth).
 ### `sidepanel/`: Arayüz
 
 - `panel.html`: iskelet. Butonlar, onay kartı, graph alanı, detay kartı ve bekleyen aksiyonlar listesi. Sağ üstteki çark, panelin üstünde açılan **Ayarlar** penceresini (`<dialog>`) açar; kaydedilmemiş değişiklik uyarısı da ayrı bir `<dialog>`'dur.
+- **Senaryo** bölümü (`panel.js > SENARYO`): test yollarını (koşular) kurar ve graph üzerinde önizler: seçili koşunun edge'leri sıra numarasıyla vurgulu, vardığı node işaretli, diğerleri soluk. Elle yolda koşunun vardığı node'dan çıkan bir edge'e tıklanır (gidilebilecekler kesik çizgili); yol çıkmaz bir node'a varınca "Yeni koşu" baştan başlar. Senaryo panelin kendi durumudur (graph state'i değil); "Senaryo indir" ile dosyaya alınır, runner oynatır ([04 > Senaryo dosyası](04-veri-modeli.md#senaryo-dosyası)).
 - `compare.js`: onay kartındaki görsel karşılaştırma: iki ekran görüntüsünün piksel farkı, farklı bölgeler, fark oranı ([03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma)).
 - `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular (iki liste ve "Beklemeler" bölümü: anahtar ve alt sınır) bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
@@ -72,6 +73,10 @@ Eklentinin tek "durum sahibi" (single source of truth).
 Bir ekranın state'ini tanımlayan kod: etkileşimli elementler (`interactableElements()`, `isInteractable()`), türleri (`elementKey()`), sayılı küme (`countElements()`, `fingerprint()`), aksiyon hedefi (`targetOf()` ve tersi `targetElement()`), görünen alan (`currentViewport()`) ve sayfanın durulma süreleri. Olay dinlemez, mesaj göndermez; yalnızca tanımlar.
 
 Ayrı dosyadadır, çünkü kayıt ile test **aynı tanımı** kullanmalıdır. İki yerde yüklenir: eklentide content script olarak (`settings.js`'ten sonra, `content.js`'ten önce; aynı sayfadaki content script'ler ortak kapsamda çalıştığı için `content.js` bu fonksiyonları doğrudan kullanır) ve runner'da test edilen her sayfaya ([runner/README.md](../runner/README.md)). Böylece runner'ın "varılan ekran beklenen node mu?" kararı, kayıttaki "bu sayfa zaten bir node mu?" kararıyla aynı koddan gelir.
+
+### `scenario.js`: Senaryo
+
+Senaryonun biçimi (`SCENARIO_FORMAT`), koşuların graph'ta yürünebilirliği (`runProblem`) ve kapsama (`coverageOf`). Panel `<script>` ile, runner Node'da yükler; kapsama iki tarafta aynı hesaplanır.
 
 ### `settings.js`: Ortak tanımlar
 

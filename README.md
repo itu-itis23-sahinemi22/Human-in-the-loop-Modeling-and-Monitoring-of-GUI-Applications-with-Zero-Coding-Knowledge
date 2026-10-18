@@ -71,7 +71,8 @@ Demo için [saucedemo.com](https://www.saucedemo.com) uygundur: test otomasyonu 
 | 6 | **Continue Shopping**'e basın | **Node oluştur** | Panel sorar: *"Bu sayfanın etkileşimli elementleri mevcut v_Inventory_2 node'u ile birebir aynı. Aynı state mi?"* |
 | 7 | | `v_Inventory_2` altındaki **Evet, bu node** | `v_Cart → v_Inventory_2` edge'i oluşur. Graph'ta döngü kapanır. |
 | 8 | | **GraphWalker JSON** | Graph, GraphWalker JSON modeli olarak `SwagLabs.json` dosyasına iner. GraphWalker Studio'da açılır, GraphWalker CLI ile çalıştırılabilir. |
-| 9 | *(terminalde)* `node runner/run.js SwagLabs.json --path e_Login,e_AddToCart --secrets secrets.json` | | Runner yolu yeni bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranın beklenen node olduğunu doğrular. Yolu GraphWalker de üretebilir. Bkz. [runner/README.md](runner/README.md) |
+| 9 | | **Senaryo** bölümünü açıp graph'ta edge'lere tıklayarak bir yol kurun, **Senaryo indir** | Seçili koşu graph'ta vurgulanır; yol çıkmaz bir node'da biterse "Yeni koşu" baştan başlar. Senaryo, modelin yanına `SwagLabs-senaryo.json` olarak iner. |
+| 10 | *(terminalde)* `node runner/run.js SwagLabs-senaryo.json --secrets secrets.json` | | Runner her koşuyu yeni bir tarayıcıda temiz oturumla oynatır, her edge'den sonra varılan ekranın beklenen node olduğunu doğrular ve `report.html`, `report.json`, `junit.xml` yazar. Bkz. [runner/README.md](runner/README.md) |
 
 **Temel kurallar:**
 
@@ -119,6 +120,7 @@ bitirme_demo/
 │   ├── content.js               ← SENSÖR: her sayfaya enjekte edilir, aksiyonları yakalar
 │   ├── fingerprint.js           ← PARMAK İZİ: ekranın state'inin tanımı (content.js ve runner ortak kullanır)
 │   ├── settings.js              ← AYARLAR: aksiyon/element türü listeleri ve state karşılaştırması (her parça yükler)
+│   ├── scenario.js              ← SENARYO: test yollarının biçimi ve kapsama (panel ve runner ortak kullanır)
 │   ├── sidepanel/               ← ARAYÜZ: Chrome'un yan panelinde açılan sayfa
 │   │   ├── panel.html           ←   iskelet (butonlar, kartlar, graph alanı)
 │   │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
@@ -195,7 +197,8 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 - Şifre alanlarını maskeler (`******`).
 - Graph'ı **GraphWalker JSON modeli** olarak dışa aktarır. URL, parmak izi, ekran görüntüsü ve kaydedilen tarayıcı aksiyonları GraphWalker'ın `properties` alanlarında taşınır. GraphWalker CLI 4.3.3 ile doğrulandı (`check`, `offline`). Bkz. [docs/04 > Dışa aktarılan JSON](docs/04-veri-modeli.md#dışa-aktarılan-json)
 - Akış birden fazla sekmeye yayılabilir: site yeni sekme açtığında ya da kullanıcı başka bir sitenin sekmesine geçtiğinde panel "Bu sekmede devam edilsin mi?" diye sorar. "Evet" denirse kayıt orada sürer, "Hayır" denirse o sekme kaydı kirletmez. Bkz. [docs/01 > Kayıt hangi sekmede?](docs/01-mimari.md#kayıt-hangi-sekmede)
-- Modeldeki bir yolu (elle verilen ya da GraphWalker'ın ürettiği) **runner** ile gerçek bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranı, kayıttaki state tanımıyla doğrular. Kayıttaki görünen alan ve yakınlaştırma aynen kurulur; başarısız adımda fark ve ekran görüntüsü verir. Bkz. [runner/README.md](runner/README.md)
+- Panelde test senaryosu kurulur ve graph üzerinde önizlenir (bir ya da birden fazla koşu); senaryo dosyaya indirilir.
+- Senaryoyu (ya da GraphWalker'ın ürettiği bir yolu) **runner** ile gerçek bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranı, kayıttaki state tanımıyla doğrular. Her koşu temiz oturumla başlar; kayıttaki görünen alan ve yakınlaştırma aynen kurulur. Sonuç HTML (fark ve görsel fark dahil), JSON ve JUnit XML raporu olarak yazılır. Bkz. [runner/README.md](runner/README.md)
 
 **Yapmaz (bilinçli olarak kapsam dışı):**
 

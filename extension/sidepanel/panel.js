@@ -78,6 +78,15 @@ function graphStyle() {
     { selector: 'edge:loop', style: { 'loop-direction': '90deg', 'loop-sweep': '-50deg', 'control-point-step-size': 70 } },
     { selector: 'node:selected', style: { 'border-color': color('--primary'), 'border-width': 4 } },
     { selector: 'edge:selected', style: { 'line-color': color('--primary'), 'target-arrow-color': color('--primary'), width: 3 } },
+    // Senaryo önizlemesi: seçili koşunun edge'leri (sıra numarasıyla), vardığı node ve elle
+    // yolda oradan gidilebilecek edge'ler; diğer her şey soluk (bkz. renderScenario).
+    { selector: '.faded', style: { opacity: 0.25 } },
+    {
+      selector: 'edge.run-edge',
+      style: { width: 4, 'line-color': color('--graph-run'), 'target-arrow-color': color('--graph-run'), label: (e) => `${e.data('label')} · ${e.data('order')}` },
+    },
+    { selector: 'edge.run-next', style: { 'line-style': 'dashed', 'line-color': color('--graph-run'), 'target-arrow-color': color('--graph-run') } },
+    { selector: 'node.run-end', style: { 'border-color': color('--graph-run'), 'border-width': 4 } },
   ];
 }
 
@@ -112,6 +121,7 @@ document.addEventListener('themechange', () => {
 renderThemeButton();
 
 cy.on('tap', (event) => {
+  if (scenarioEditing() && event.target !== cy && event.target.isEdge()) return addScenarioEdge(event.target.id());
   selectedId = event.target === cy ? null : event.target.id(); // boşluğa tıklayınca seçimi kaldır
   renderDetails();
 });
@@ -158,6 +168,7 @@ function render() {
   renderTabPrompt();
   renderConfirm();
   renderGraph();
+  renderScenario();
   renderDetails();
   renderBuffer();
   renderUndo();
@@ -690,13 +701,22 @@ $('btn-reset').onclick = () => {
 
 $('btn-export').onclick = () => {
   const data = graphWalkerModel();
+  downloadJson(`${data.name}.json`, data);
+};
+
+function downloadJson(name, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `${data.name}.json`;
+  link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-};
+}
+
+// Dışa aktarılan modelin adı: başlangıç node'unun adı, "v_" öneki olmadan.
+function modelName() {
+  return nodeById(state.startNodeId)?.name.replace(/^v_/, '') || 'GraphRecorder';
+}
 
 // Graph'ı GraphWalker JSON model formatına çevirir (GraphWalker Studio'nun kaydettiği ve
 // CLI'ın okuduğu format). Kayda özel veriler GraphWalker'ın serbest "properties"
@@ -704,7 +724,7 @@ $('btn-export').onclick = () => {
 // modelin değişkenlerini güncelleyen JavaScript içindir, tarayıcı aksiyonu değil
 // (bkz. docs/04-veri-modeli.md > GraphWalker formatı).
 function graphWalkerModel() {
-  const name = nodeById(state.startNodeId)?.name.replace(/^v_/, '') || 'GraphRecorder';
+  const name = modelName();
   const position = (id) => cy.getElementById(id).position(); // Studio'da aynı yerleşim için
   return {
     name,
@@ -756,6 +776,171 @@ function graphWalkerModel() {
 function replayAction({ changed, screenBefore, screenAfter, ...action }) {
   return action;
 }
+
+
+// -----------------------------------------------------------------------------
+// SENARYO: test yolları (koşular); önizleme, elle yol, indirme / yükleme (scenario.js)
+// -----------------------------------------------------------------------------
+// Senaryo: başlangıç node'undan başlayan bir ya da birden fazla koşu. Runner her koşuyu temiz
+// bir oturumla baştan oynatır; yol çıkmaz bir node'a varırsa kalan edge'ler yeni koşuyla
+// kapsanır. Senaryo panelin kendi durumudur (graph state'i değil, storage'a yazılmaz): panel
+// kapanınca gider, "Senaryo indir" ile dosyaya alınır.
+//
+// Stratejiler: "Elle seç" kullanıcı graph'ta edge'lere tıklayarak koşuları kurar. Bir
+// planlayıcı stratejisi koşuları kendisi hesaplar: { id, text, plan(graph) } ve plan,
+// { runs, planner } döndüren bir Promise'tir.
+const STRATEGIES = [{ id: 'manual', text: "Elle seç (graph'ta edge'lere tıklayın)" }];
+
+let scenario = emptyScenario();
+let scenarioRun = 0; // seçili koşu
+
+function emptyScenario() {
+  return { name: null, planner: { engine: 'manual' }, runs: [[]] };
+}
+
+function scenarioGraph() {
+  return { start: state.startNodeId, nodes: state.nodes, edges: state.edges };
+}
+
+// Elle yol, bölüm açıkken ve "Elle seç" stratejisindeyken kurulur: edge'e tıklamak onu koşuya ekler.
+function scenarioEditing() {
+  return $('scenario').open && $('scenario-strategy').value === 'manual';
+}
+
+$('scenario-strategy').replaceChildren(...STRATEGIES.map(({ id, text }) => Object.assign(document.createElement('option'), { value: id, textContent: text })));
+
+function renderScenario() {
+  const graph = scenarioGraph();
+  const runs = scenario.runs;
+  const run = runs[scenarioRun] ?? [];
+  const filled = runs.filter((r) => r.length);
+  const coverage = coverageOf(graph, filled);
+  const problem = runProblem(graph, runs);
+  $('scenario-badge').textContent = filled.length ? `${coverage.edges[0]}/${coverage.edges[1]}` : '';
+  $('scenario-runs').replaceChildren(...runs.map((r, i) => {
+    const button = Object.assign(document.createElement('button'), { textContent: `Koşu ${i + 1} (${r.length})` });
+    button.classList.toggle('active', i === scenarioRun);
+    button.onclick = () => { scenarioRun = i; renderScenario(); };
+    return button;
+  }));
+  $('scenario-summary').textContent = problem
+    ? `Senaryo graph'la uyuşmuyor: ${problem}`
+    : `Kapsama: ${coverage.edges[0]}/${coverage.edges[1]} edge · ${coverage.nodes[0]}/${coverage.nodes[1]} node · ${filled.length} koşu`
+      + (scenario.name ? ` · ${scenario.name}` : '');
+  const end = runEnd(graph, run);
+  const next = problem ? [] : graph.edges.filter((e) => e.source === end);
+  $('scenario-hint').textContent = !scenarioEditing() ? ''
+    : !graph.start ? 'Önce graph kaydedin.'
+      : next.length ? `"${nodeById(end)?.name}" node'undan çıkan bir edge'e tıklayın (kesik çizgili).`
+        : `Koşu çıkmaz bir node'da (${nodeById(end)?.name}) bitti. Kalan edge'ler için "Yeni koşu".`;
+  $('btn-scenario-undo').disabled = !run.length && runs.length === 1;
+  $('btn-scenario-new-run').disabled = !run.length;
+  $('btn-scenario-clear').disabled = !filled.length;
+  $('btn-scenario-download').disabled = !filled.length || Boolean(problem);
+
+  // Graph'ta önizleme: yalnızca bölüm açıkken
+  cy.elements().removeClass('faded run-edge run-next run-end');
+  if (!$('scenario').open || !graph.start) return;
+  cy.elements().addClass('faded');
+  const orders = new Map();
+  run.forEach((id, i) => orders.set(id, [...(orders.get(id) ?? []), i + 1]));
+  for (const [id, order] of orders) cy.getElementById(id).removeClass('faded').addClass('run-edge').data('order', order.join(', '));
+  const visited = [graph.start, ...run.map((id) => graph.edges.find((e) => e.id === id)?.target)];
+  for (const id of visited) if (id) cy.getElementById(id).removeClass('faded');
+  cy.getElementById(end).addClass('run-end');
+  if (scenarioEditing()) for (const edge of next) cy.getElementById(edge.id).removeClass('faded').addClass('run-next');
+}
+
+function addScenarioEdge(id) {
+  const graph = scenarioGraph();
+  const run = scenario.runs[scenarioRun];
+  const edge = state.edges.find((e) => e.id === id);
+  const end = runEnd(graph, run);
+  if (edge.source !== end) {
+    return showMessage({ error: `"${edge.name}", koşunun vardığı "${nodeById(end)?.name}" node'undan çıkmıyor. Koşu orada bittiyse "Yeni koşu" ile baştan başlayın.` });
+  }
+  run.push(id);
+  scenario.planner = { engine: 'manual' };
+  scenario.name = null;
+  showMessage(null);
+  renderScenario();
+}
+
+$('scenario').ontoggle = renderScenario;
+
+$('scenario-strategy').onchange = async () => {
+  const strategy = STRATEGIES.find((s) => s.id === $('scenario-strategy').value);
+  if (strategy?.plan) {
+    try {
+      const { runs, planner } = await strategy.plan(scenarioGraph());
+      scenario = { name: `${modelName()} · ${strategy.text}`, planner, runs: runs.length ? runs : [[]] };
+      scenarioRun = 0;
+      showMessage(null);
+    } catch (error) {
+      showMessage({ error: error.message });
+    }
+  }
+  renderScenario();
+};
+
+$('btn-scenario-undo').onclick = () => {
+  const run = scenario.runs[scenarioRun];
+  if (run.length) run.pop();
+  else if (scenario.runs.length > 1) {
+    scenario.runs.splice(scenarioRun, 1);
+    scenarioRun = Math.max(0, scenarioRun - 1);
+  }
+  scenario.planner = { engine: 'manual' };
+  renderScenario();
+};
+
+$('btn-scenario-new-run').onclick = () => {
+  scenario.runs.push([]);
+  scenarioRun = scenario.runs.length - 1;
+  renderScenario();
+};
+
+$('btn-scenario-clear').onclick = () => {
+  scenario = emptyScenario();
+  scenarioRun = 0;
+  renderScenario();
+};
+
+// Senaryo dosyası: model dosyasıyla aynı klasöre indirilmesi beklenir (runner model yolunu
+// senaryoya göre çözer). Elle kurulan senaryonun adı modelden gelir.
+$('btn-scenario-download').onclick = () => {
+  const runs = scenario.runs.filter((r) => r.length);
+  const name = modelName();
+  downloadJson(`${name}-senaryo.json`, {
+    format: SCENARIO_FORMAT,
+    name: scenario.name ?? `${name} · elle seçilen yol`,
+    model: `${name}.json`,
+    planner: scenario.planner,
+    runs,
+    coverage: coverageOf(scenarioGraph(), runs),
+  });
+};
+
+// Bir senaryo dosyasını önizlemek için yükler (ör. komut satırında üretilmiş). Bu graph'la
+// yürünemiyorsa (edge silinmiş, başka model) reddedilir.
+$('btn-scenario-load').onclick = () => $('scenario-file').click();
+$('scenario-file').onchange = async () => {
+  const file = $('scenario-file').files[0];
+  $('scenario-file').value = '';
+  if (!file) return;
+  try {
+    const json = JSON.parse(await file.text());
+    if (json.format !== SCENARIO_FORMAT) throw new Error('Bu bir senaryo dosyası değil.');
+    const problem = runProblem(scenarioGraph(), json.runs);
+    if (problem) throw new Error(`Senaryo bu graph'la uyuşmuyor: ${problem}`);
+    scenario = { name: json.name ?? file.name, planner: json.planner ?? { engine: 'manual' }, runs: json.runs.map((run) => [...run]) };
+    scenarioRun = 0;
+    showMessage({ notice: `"${scenario.name}" yüklendi: ${json.runs.length} koşu.` });
+  } catch (error) {
+    showMessage({ error: `Senaryo yüklenemedi: ${error.message}` });
+  }
+  renderScenario();
+};
 
 
 // -----------------------------------------------------------------------------

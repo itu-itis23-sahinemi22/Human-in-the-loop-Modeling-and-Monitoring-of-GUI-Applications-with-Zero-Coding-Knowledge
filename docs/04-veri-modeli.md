@@ -11,6 +11,7 @@ Bu doküman eklentinin sakladığı ve dışa aktardığı verinin tam şemasın
 - [Bekleyen karar (pending)](#bekleyen-karar-pending)
 - [Ayarlar (settings)](#ayarlar-settings)
 - [Dışa aktarılan JSON](#dışa-aktarılan-json)
+- [Senaryo dosyası](#senaryo-dosyası)
 - [GraphWalker'a aktarım](#graphwalkera-aktarım)
 
 ---
@@ -238,6 +239,32 @@ Model kurulurken dikkat:
 - **Aynı isimli edge'ler:** GraphWalker aynı isimli her edge için test kodunda aynı metodu çağırır. Otomatik isim son aksiyondan geldiği için farklı aksiyonlu iki edge aynı ismi alabilir (ör. iki ayrı `e_Login`). Test kodu isme göre yazılacaksa bu edge'leri panelden farklı isimlerle yeniden adlandırın ya da tarayıcı aksiyonlarını o anki edge'in `properties.uiActions`'ından okuyun.
 
 ---
+
+## Senaryo dosyası
+
+Paneldeki **Senaryo** bölümünün **Senaryo indir** butonu (ya da bir planlayıcı) test yollarını ayrı bir dosyaya yazar; runner onu oynatır ([runner/README.md](../runner/README.md)). Biçim ve kapsama hesabı `extension/scenario.js`'tedir (panel ve runner ortak kullanır).
+
+```json
+{
+  "format": "graph-recorder-scenario/v1",
+  "name": "SwagLabs · elle seçilen yol",
+  "model": "SwagLabs.json",
+  "planner": { "engine": "manual" },
+  "runs": [["e13"], ["e3", "e5", "e7"]],
+  "coverage": { "edges": [4, 8], "nodes": [5, 6] }
+}
+```
+
+| Alan | Açıklama |
+|---|---|
+| `format` | Şema sürümü. |
+| `name` | Rapor başlığı. |
+| `model` | Modelin dosya adı, senaryo dosyasına göre (ikisi aynı klasörde durur). |
+| `planner` | Senaryoyu ne üretti: `{ engine: "manual" }` (panelde elle), bir planlayıcının adı ve ayarları (ör. `{ engine: "graphwalker", generator, seed }`). Yalnızca bilgi içindir. |
+| `runs` | Koşular: her biri başlangıç node'undan başlayan edge id'leri dizisi; her edge bir öncekinin vardığı node'dan çıkar. Runner her koşuyu temiz bir oturumla baştan oynatır. Yol çıkmaz bir node'a varırsa koşu biter, kalan edge'ler yeni bir koşuyla kapsanır. |
+| `coverage` | Koşuların geçtiği farklı edge ve node sayısı / toplam (`[kapsanan, toplam]`). Yalnızca bilgi içindir; runner yeniden hesaplar. |
+
+Senaryo edge id'leriyle modele bağlıdır: graph'ta edge silinir ya da yeniden kaydedilirse senaryo geçersiz olur; panel yüklerken, runner çalıştırmadan önce bunu söyler.
 
 ## GraphWalker'a aktarım
 

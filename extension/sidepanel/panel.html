@@ -77,6 +77,24 @@
   <!-- Graph çizimi (Cytoscape.js bu div'in içine çizer) -->
   <div id="graph"></div>
 
+  <!-- SENARYO: test yolları (koşular). Açıkken seçili koşu graph'ta vurgulanır; elle yol
+       edge'lere tıklayarak kurulur. İndirilen senaryoyu runner oynatır (scenario.js, panel.js). -->
+  <details id="scenario" class="card">
+    <summary>Senaryo <span id="scenario-badge" class="badge"></span></summary>
+    <label class="option">Strateji <select id="scenario-strategy"></select></label>
+    <div id="scenario-runs" class="segmented" role="group" aria-label="Koşu"></div>
+    <p id="scenario-summary" class="small"></p>
+    <p id="scenario-hint" class="hint"></p>
+    <div class="toolbar">
+      <button id="btn-scenario-undo">Son edge'i geri al</button>
+      <button id="btn-scenario-new-run">Yeni koşu</button>
+      <button id="btn-scenario-clear">Temizle</button>
+      <button id="btn-scenario-load">Yükle…</button>
+      <button id="btn-scenario-download" class="primary">Senaryo indir</button>
+    </div>
+    <input type="file" id="scenario-file" accept=".json,application/json" hidden>
+  </details>
+
   <!-- Graph'ta tıklanan node/edge'in detayları -->
   <section id="details" class="card" hidden>
     <h2 id="details-title"></h2>
@@ -227,6 +245,7 @@
   <!-- Manifest V3 uzaktan (CDN) script yüklemeyi yasaklar; kütüphane eklentinin içinde durur. -->
   <script src="../lib/cytoscape.min.js"></script>
   <script src="../settings.js"></script>
+  <script src="../scenario.js"></script>
   <script src="compare.js"></script>
   <script src="panel.js"></script>
 </body>

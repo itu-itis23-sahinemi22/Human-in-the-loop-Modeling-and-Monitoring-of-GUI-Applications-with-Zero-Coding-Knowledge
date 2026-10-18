@@ -39,7 +39,7 @@
 | 3 | Beklemeleri kaydet (iş 4) | 0,5–1 gün | Yapıldı |
 | 4 | Yeni sekmede devam (iş 5) | 1,5–2 gün | Yapıldı |
 | 5 | Karşılaştırma ekranı (iş 2) | 1 gün | Yapıldı |
-| 6 | Senaryo planlama ve rapor (iş 1) | kalan süre | |
+| 6 | Senaryo planlama ve rapor (iş 1) | kalan süre | Ortak kısım yapıldı; planlayıcılar branch'lerde |
 
 - **Kayıt formatını değiştiren iş önce gelir.** Viewport'u kaydedilmemiş bir graph, testte doğru boyutta çalıştırılamaz. Bu yüzden Faz 1 en başta: bundan sonra kaydedilen her graph bu bilgiyi taşır.
 - **Runner erken gelir.** Haftanın ana çıktısı ve en riskli işi odur. Tekrar oynatmanın gerçek sorunları erken görülür; bekleme ve sekme tasarımı varsayıma değil gözleme dayanır. Sonraki fazların her biri runner'da hemen uçtan uca denenir; yeni aksiyon tipleri runner'a yalnızca yeni bir durum olarak eklenir.
@@ -270,15 +270,124 @@ Sepette 1 ve 2 ürün olan, edge set'i aynı iki ekran (yalnızca sayaç farklı
 
 ## Faz 6: Senaryo planlama ve rapor
 
-*İş 1.*
+*İş 1. Durum: ortak kısım `main`'de yapıldı; planlayıcılar iki branch'te.*
 
-- **Yol üretimi:** GraphWalker generator'ları ile: `random(edge_coverage(100))`, `random(vertex_coverage(100))`, `a_star(reached_vertex(v_X))` (iki node arası en kısa yol), `quick_random(...)`. Yol `offline` ile önceden üretilir ve runner'a verilir; runner bu çıktıyı zaten okuyor (Faz 2). Kalan iş: generator seçimini ve yol üretimini tek komuta bağlamak.
-- **Senaryo dosyası:** `scenarios/*.json`: model, generator, üretilen yol, secrets referansı. Tekrar çalıştırılabilir.
-- **Çıkmaz node'lar:** yol orada biter. Her senaryo temiz bir oturumla (yeni tarayıcı bağlamı) başlar.
-- **Rapor:** JSON ve HTML: senaryo, adım adım edge, süre, geçti / kaldı, hata anındaki ekran görüntüsü ve fark (Faz 5'in görünümüyle). Sonra JUnit XML (CI için).
-- **İsteğe bağlı:** panelden generator seçip senaryo dosyası indirmek. Testi panelden doğrudan çalıştırmak kapsam dışıdır (native messaging ya da yerel bir sunucu gerekir).
+### Kararlar
 
----
+- **Yolu kim üretir:** iki yaklaşım iki ayrı branch'te denenir:
+  - `planner-graphwalker`: GraphWalker CLI kullanan planlayıcı
+  - `planner-panel`: panele gömülü, şimdilik basit bir planlayıcı
+- **Çıkmaz node:** koşu bölünür. Yol çıkmaz bir node'a varırsa koşu biter; kalan edge'ler yeni bir koşuyla, temiz oturumla baştan kapsanır.
+- **Rapor:** JSON, HTML ve JUnit XML'in üçü de üretilir.
+- **Panel:** senaryo seçme ve graph üzerinde önizleme.
+
+Ortak kısım iki branch'in yaklaşık yarısıdır; iki kez yazılmasın diye önce `main`'de yapıldı. Branch'ler `main`'den alır, yalnızca kendi planlayıcılarını ve panel bağlantısını ekler.
+
+### Ortak kısım (`main`)
+
+| Parça | Ne yapar |
+|---|---|
+| `extension/scenario.js` | Senaryo biçimi, koşuların graph'ta yürünebilirliği (`runProblem`), kapsama (`coverageOf`). Panel ve runner aynı dosyayı kullanır. |
+| `runner/run.js`, çoklu koşu | `node run.js senaryo.json`. Her koşu yeni bir tarayıcı bağlamında baştan başlar; kırılan koşunun kalan adımları "atlandı", sonraki koşu yine çalışır. Model ve `--path` ile tek yol da çalışır. |
+| `runner/lib/report.js` | `report.json`, tek dosya `report.html` (başarısız adımda edge set farkı, beklenen ve gerçek ekran, görsel fark: `compare.js`), `junit.xml` (her adım bir test). |
+| Panelde "Senaryo" bölümü | Seçili koşu graph'ta vurgulu (sıra numaraları, vardığı node, diğerleri soluk), koşu sekmeleri, kapsama özeti; elle yol (koşunun vardığı node'dan çıkan edge'e tıklanır, gidilebilecekler kesik çizgili), yeni koşu, geri al; "Senaryo indir", "Yükle…". Strateji listesi planlayıcılara açık (`panel.js > STRATEGIES`). |
+
+Senaryo dosyası (iki planlayıcı da aynısını üretir):
+
+```json
+{
+  "format": "graph-recorder-scenario/v1",
+  "name": "SwagLabs · tüm edge'ler",
+  "model": "SwagLabs.json",
+  "planner": { "engine": "graphwalker", "generator": "random(edge_coverage(100))", "seed": 42 },
+  "runs": [["e3", "e5", "e7", "e9"], ["e3", "e13"]],
+  "coverage": { "edges": [8, 8], "nodes": [6, 6] }
+}
+```
+
+Branch 2'de `planner` alanı `{ "engine": "panel", "strategy": "edges" }`; elle kurulan senaryoda `{ "engine": "manual" }`.
+
+#### Yapılanlar (ortak)
+
+- [x] `extension/scenario.js`, runner'da `lib/scenario.js` (senaryo dosyası ya da model + `--path`)
+- [x] Çoklu koşu: koşu başına yeni tarayıcı bağlamı, kırılınca kalan adımlar atlanır
+- [x] Raporlar: JSON, HTML (görsel fark dahil), JUnit
+- [x] Panelde Senaryo bölümü: önizleme, elle yol, indir, yükle
+- [x] Dokümanlar: runner/README, 01, 04, 05, README
+
+### Branch 1: `planner-graphwalker`
+
+```
+┌─────────────────── Chrome eklentisi ───────────────────┐
+│ panel.js ▸ Senaryo                                     │
+│   generator seç: random / quick_random / a_star,       │
+│   durma koşulu: edge_coverage, vertex_coverage,        │
+│   reached_vertex, length; tohum                        │
+│   önizleme · "Senaryo indir"                           │
+└──────┬─────────────────────────────────────▲───────────┘
+       │ POST /plan (localhost)              │ { runs, coverage }
+       │ { model, generator, seed }          │
+┌──────▼─────────────────── runner/ (Node) ──┴───────────┐
+│ serve.js   yerel planlama sunucusu                     │
+│ plan.js    aynı iş komut satırından:                   │
+│            plan.js model.json --generator ... --seed 42│
+│   └ lib/graphwalker.js                                 │
+│        java -jar graphwalker-cli.jar offline ──────────┼──▶ GraphWalker 4.3.3
+│        ◀── JSON satırları  ya da NoPathFoundException  │    (Java 17/21)
+│        çıkmaz node: yarım kalan yol 1. koşu olur;      │
+│        kalan her edge için a_star(reached_edge(e))     │
+│        ile baştan yeni koşu, hepsi kapsanana kadar     │
+│ run.js     senaryo.json ▸ koşu koşu oynat              │
+│ lib/report.js  JSON · HTML · JUnit                     │
+└────────────────────────────────────────────────────────┘
+```
+
+- Panel Java çalıştıramaz; önizleme için yerel sunucu gerekir (`node runner/serve.js`). Sunucu çalışmıyorsa panel bunu söyler ve aynı planı üretecek komutu gösterir; üretilen senaryo "Yükle…" ile önizlenir.
+- Kurulum: Node, Java 17/21 ve GraphWalker jar'ı (repoya girmez, 47 MB; yolu ayardan ya da ortam değişkeninden).
+- `--seed` ile aynı yol tekrar üretilir (denendi). Çıkmaz node'da GraphWalker `NoPathFoundException` verir (denendi): yakalanır, yarım yol ilk koşu olur.
+- `reached_edge` edge'i adıyla arar: aynı adlı edge'ler (iki `e_Resize`) karışabilir; planlayıcı uyarır.
+
+### Branch 2: `planner-panel`
+
+```
+┌──────────────────── Chrome eklentisi ──────────────────┐
+│ planner.js  (ortak dosya; settings.js gibi)            │◀── runner da aynı
+│   stratejiler: tüm edge'ler · tüm node'lar ·           │    dosyayı yükler
+│                bir node'a en kısa yol                  │
+│   tüm edge'ler: geçilmemiş en yakın edge'e BFS ile     │
+│   git; çıkmaz node'da koşu biter, yenisi baştan başlar │
+│                                                        │
+│ panel.js ▸ Senaryo                                     │
+│   strateji seç ▸ planner.js ▸ önizleme anında          │
+│   "Senaryo indir"                                      │
+└──────┬─────────────────────────────────────────────────┘
+       │ senaryo.json (+ model.json)
+┌──────▼─────────────────── runner/ (Node) ──────────────┐
+│ plan.js    aynı planner.js ile komut satırından        │
+│ run.js     senaryo.json ▸ koşu koşu oynat              │
+│ lib/report.js  JSON · HTML · JUnit                     │
+└────────────────────────────────────────────────────────┘
+```
+
+- Sunucu, Java ve jar gerekmez; önizleme anında, aynı graph her zaman aynı yolu verir.
+- "Şimdilik basit": üç strateji ve elle yol. GraphWalker'daki ağırlıklı rastgele yürüyüş, süre / uzunluk koşulları yok.
+
+### Kararlara göre fark
+
+| | Branch 1 (GraphWalker) | Branch 2 (panel) |
+|---|---|---|
+| Yolu kim üretir | GraphWalker CLI | `planner.js` |
+| Strateji dili | GraphWalker generator ve durma koşulları | 3 sabit strateji ve elle yol |
+| Çıkmaz node | Hatayı yakala, yarım yolu al, kalan edge'ler için yeni koşular | Algoritmanın doğal parçası |
+| Panel önizleme | Yerel sunucu çalışıyorsa | Her zaman, anında |
+| Tekrarlanabilirlik | `--seed` | Deterministik |
+| Kurulum | Node, Java 17/21, jar | Node |
+| Tez açısından | Standart araçla uyum | Algoritma bizim, açıklanabilir |
+
+### Kabul kriteri
+
+- Ortak: elle kurulan iki koşulu senaryo (biri çıkmaz node'da biter) indirilip runner'da oynatılır; üç rapor üretilir; bozuk bir modelde kırılan koşunun kalan adımı atlanır, sonraki koşu yine çalışır, HTML raporda fark ve görsel fark görünür. (Karşılandı: [05 > Test](05-gelistirme.md#test).)
+- Her branch: çıkmaz node'u olan bir modelde "tüm edge'ler" senaryosu %100 edge kapsamasına birden fazla koşuyla ulaşır; panelde önizlenir; runner'da geçer.
 
 ## Kapsam dışı
 
@@ -368,4 +477,14 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 | Yalnızca görünen kısım | Ekran dışındaki farklar görülmez. | Tam sayfa ekran görüntüsü (yalnızca karşılaştırma için). |
 | Fark metin olarak yok | Sayaç "1 ↔ 2" gibi farkı kullanıcı görselden okumak zorunda. | Node'a görünen metni de kaydedip metin farkını göstermek. |
 | Görsel fark runner'da kullanılmıyor | Doğrulama gizli durumu (sepet sayacı) görmüyor. | Doğrulamada yardımcı sinyal: node'un ekran görüntüsüyle fark büyükse uyarı. |
+
+### Senaryo ve rapor (Faz 6, ortak kısım)
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| Senaryo panelin bellekte tuttuğu durumdur | Panel kapanınca elle kurulan senaryo gider. | Senaryoyu da storage'da (background üzerinden) saklamak ya da birden fazla senaryoyu adlandırıp tutmak. |
+| Senaryo, edge id'leriyle modele bağlıdır | Graph'ta edge silinip yeniden kaydedilirse senaryo geçersiz olur (panel ve runner uyarır). | Edge'i kaynak, hedef ve aksiyon imzasıyla da eşleştirmek. |
+| Model ve senaryo ayrı dosyalar | Senaryo, modelin aynı klasörde ve aynı adla durmasını bekler. | Senaryoyu modelin içine (`properties.graphRecorder.scenarios`) gömmek. |
+| HTML rapor tek dosya, ekran görüntüleri gömülü | Çok adımlı ve çok hatalı raporlar büyür. | Yalnızca başarısız adımların görüntülerini gömmek (şu an öyle); başarılı adımlar için isteğe bağlı küçük resimler. |
+| Koşular sırayla çalışır | Uzun senaryolar yavaş. | Koşuları paralel tarayıcı bağlamlarında çalıştırmak (her koşu zaten bağımsız). |
 

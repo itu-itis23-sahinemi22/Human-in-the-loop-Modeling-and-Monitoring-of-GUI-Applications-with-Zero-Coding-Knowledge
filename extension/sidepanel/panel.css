@@ -22,6 +22,7 @@
   --graph-edge: #64748b;
   --graph-label-bg: #ffffff;
   --graph-current: #16a34a;
+  --graph-run: #d97706;
   color-scheme: light;
 }
 
@@ -45,6 +46,7 @@
   --graph-edge: #94a3b8;
   --graph-label-bg: #1e293b;
   --graph-current: #22c55e;
+  --graph-run: #f59e0b;
   color-scheme: dark;
 }
 
@@ -219,6 +221,15 @@ dialog.alert .choice .hint { margin: 4px 2px 0; }
   color: var(--text);
 }
 .option input:disabled { opacity: 0.5; }
+.option select {
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+#scenario summary { cursor: pointer; font-weight: 600; }
+#scenario[open] summary { margin-bottom: 6px; }
 
 .badge {
   display: inline-block;

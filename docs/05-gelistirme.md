@@ -141,6 +141,8 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] `target=_blank` bir linke tıklayınca panelde "Kayıt sekmesinin açtığı bir sekmedesiniz" kartı çıkıyor. **Evet**: "Bekleyen aksiyonlar"da `Sekme  Open tab ...` satırı, kayıt yeni sekmede sürüyor. Sekmeyi kapatınca `Close tab` ve `Switch to tab` satırları geliyor, kayıt eski sekmede sürüyor.
 - [ ] Yeni bir sekmede başka bir siteye gidince kart çıkıyor; **Hayır** deyince o sekmedeki tıklamalar kaydedilmiyor ve o sekmeye tekrar geçince soru çıkmıyor. Orada "Node oluştur"a basınca soru yeniden çıkıyor.
 - [ ] Onay kartında her adayın altında "Görsel fark: %..." yazıyor. **Karşılaştır** pencereyi açıyor: Fark görünümünde değişen yer kırmızı ve kutulu; Perde'de sürgü iki görüntüyü açıp kapatıyor; Yan yana'da iki görüntü kutularla. Aday değiştirilebiliyor; pencereden "Evet, bu node" edge'i o adaya çiziyor. Adres farklıysa ve görünen alan farklıysa pencere yazıyor.
+- [ ] **Senaryo** bölümü açılınca graph soluklaşıyor, başlangıçtan çıkan edge'ler kesik çizgili. Edge'e tıklayınca koşuya ekleniyor (sıra numarasıyla vurgulu); koşunun vardığı node'dan çıkmayan edge reddediliyor. Çıkmaz node'da ipucu "Yeni koşu" diyor. **Senaryo indir** dosyayı indiriyor; **Yükle…** geri yüklüyor. Bölüm kapanınca graph normale dönüyor.
+- [ ] İndirilen senaryo `node runner/run.js <Model>-senaryo.json` ile oynuyor; `runner/out/...` altında `report.html`, `report.json`, `junit.xml` oluşuyor.
 - [ ] Sayfada (alan dışında) Escape'e basınca `Tuş  Press Escape` satırı çıkıyor; ok tuşunu basılı tutunca tek satır `Press ArrowDown ×N` oluyor. Alana yazılan harfler satır üretmiyor; alan değeri `Fill` olarak geliyor. Ctrl +, F5, Tab ve butonda Enter tuş olarak kaydedilmiyor.
 - [ ] Arama kutusuna yazıp ArrowDown ile öneri seçip Enter'a basınca sıra: `Fill`, `Press ArrowDown`, `Submit`.
 - [ ] Türkçe klavyede bir alana `@` yazmak (AltGr+Q) tuş olarak kaydedilmiyor.
@@ -256,6 +258,15 @@ Bu değişiklikten sonra önceki testler de tekrar koşuldu ve geçti: pencere b
 - Pencere daraltılıp aynı sayfada tekrar sorulunca "Görünen alanlar farklı" uyarısı çıktı.
 
 İlk sürümde Fark görünümü 480 piksellik karşılaştırma ölçeğinde çiziliyordu ve büyütülünce bulanıktı; görüntü artık tam çözünürlükte çiziliyor, fark ve kutular büyütülüyor. Ardından pencere boyutu, bekleme, üzerine gelme ve sekme testleri tekrar koşuldu ve geçti.
+
+**Senaryo ve raporlar.** Çıkmaz node'u olan bir yerel site kaydedildi: ana sayfa → A → ana sayfa, ana sayfa → B (B'den çıkış yok). 23 kontrolün hepsi geçti:
+
+- Panelde Senaryo bölümü: başlangıçtan çıkan iki edge kesik çizgili; B'ye giden edge koşu 1 oldu ("1/3 edge · 2/3 node"), ipucu çıkmaz node'u söyledi, koşunun edge'i vurgulu ve vardığı node işaretli. Koşu B'de bitmişken A'ya giden edge reddedildi. "Yeni koşu" ile A ve geri: "3/3 edge · 3/3 node · 2 koşu", sekmeler "Koşu 1 (1) | Koşu 2 (2)", edge'de sıra numarası; geri al son edge'i sildi; bölüm kapanınca vurgular kalktı.
+- "Senaryo indir": `Ana-senaryo.json` (`model: "Ana.json"`, koşular `[[B], [A, geri]]`, kapsama 3/3); temizleyip "Yükle…" ile geri yüklendi.
+- Runner: iki koşu, 5/5 adım geçti; `report.json` (2 koşu, 5 adım), `junit.xml` (2 testsuite, 5 testcase, 0 hata), `report.html` "GEÇTİ".
+- Bozuk model (B'ye giden edge "ana sayfaya varır" dendi) ve ilk koşuya bir edge daha eklendi: ilk koşu kırıldı, kalan adımı atlandı, ikinci koşu yine geçti (4/6 adım, çıkış kodu 1). `junit.xml`: 1 hata, 1 atlandı, geçerli XML. `report.html` tarayıcıda açıldı: fark tablosu (3 tür), iki ekran görüntüsü ve görsel fark tuvali çizildi.
+
+İlk koşuda test, panelde edge'e "tıklamak" için `cy.getElementById(id).emit('tap')` sonucunu döndürdüğü için takıldı: Playwright cytoscape koleksiyonunu (döngüsel bir nesne) serileştirmeye çalışıyordu. Ürün kodunda değil test betiğindeydi; fonksiyon artık değer döndürmüyor.
 
 Ardından bekleme, üzerine gelme, pencere boyutu, yakınlaştırma ve saucedemo testleri tekrar koşuldu ve geçti.
 
