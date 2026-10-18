@@ -14,6 +14,7 @@
 - [Faz 6: Senaryo planlama ve rapor](#faz-6-senaryo-planlama-ve-rapor)
 - [Kapsam dışı](#kapsam-dışı)
 - [Riskler](#riskler)
+- [Bilinen zayıflıklar ve iyileştirme fikirleri](#bilinen-zayıflıklar-ve-iyileştirme-fikirleri)
 
 ---
 
@@ -169,6 +170,10 @@ Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılı
 - [x] Runner: `wait` oynatma
 - [x] Dokümanlar: 01, 04, 05, README, runner/README
 
+### Ek: fareyle üzerine gelme
+
+Beklemeleri test ederken çıkan soru: fareyi üzerine getirince açılan menü bekleme olarak görünüyordu. Ayarlar'a **Üzerine gelme (fare)** aksiyon tipi eklendi, varsayılan kapalı. CSS ile açılan menüde fare etkileşimli bir elementin üzerine gelince ekrana bakılır; JS ile açılan menüde değişim fare hareketinden en fazla 1 sn sonra başladıysa imlecin altındaki element tetikleyicidir. Yalnızca ekranı değiştiren üzerine gelme tutulur. Runner `hover()` ile oynatır. Tasarım: [01 > Fareyle üzerine gelme](01-mimari.md#fareyle-üzerine-gelme).
+
 ### Kabul kriteri
 
 Karşılandı ([05 > Test](05-gelistirme.md#test)): son tıklamadan 4 sn sonra kendiliğinden "Oturum sona erdi"ye geçen bir sayfada beklenince `e_Wait` edge'i oluştu (3,7 sn, "ekranı değiştirdi"); runner aynı yolu oynattı ve geçti.
@@ -272,3 +277,47 @@ Bu hafta yapılmayacaklar:
 | **Sürekli izleme maliyeti** (Faz 3) | Hareketli sayfalarda parmak izi çok sık alınır, kayıt yavaşlar. | Sıklık sınırı; yalnızca anahtar açıkken. |
 | **Otomasyon tespiti** | Bazı siteler otomasyonla açılan tarayıcıyı engeller. | Demo hedefi saucedemo. |
 | **Java sürümü** | GraphWalker 4.3.3, Java 25 ile çalışmaz. | Çözüldü: geliştirme makinesinde JDK 17 var. |
+
+---
+
+## Bilinen zayıflıklar ve iyileştirme fikirleri
+
+Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileştirmeler. Her madde ilgili kalıcı dokümanda da (01, 03, runner/README) anlatılır; burası toplu liste.
+
+### Görünen alan (Faz 1)
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| Farklı boyuttaki pencerede "Buradan devam et" | Boyut farkı kaydedilmez; test o edge'de tutmayabilir. | Kayıt farklı boyutlu bir pencerede sürerse edge'i bir `resize` ile başlatmak (Faz 4'le birlikte). |
+| Farklı ölçekli monitöre taşıma | `devicePixelRatio` yakınlaştırmasız değişir, kaydedilmez. | Background'ın yakınlaştırma olayıyla eşleştirip ayırt etmek. |
+| Bilerek farklı boyutta test yok | Responsive davranış test edilemez. | Ekran filtresiz ikinci parmak izi ve toleranslı doğrulama modu. |
+
+### Runner (Faz 2)
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| `select` ve `clipboard` oynatılmıyor | Bu aksiyonları içeren edge "desteklenmiyor" diye kalır. | Alanda `setSelectionRange`, sayfada `Range`; pano izni ve `Control+V`. |
+| Gizli durum görülmez | Sepet sayısı gibi etkileşimli olmayan farklar doğrulamaya girmez. | Node'a isteğe bağlı metin/değer kontrolleri; görsel fark (Faz 5) yardımcı sinyal olarak. |
+| Değerini yalnızca `change` ile işleyen alanlar | Edge'in son aksiyonuysa doğrulama işlenmemiş ekranı görebilir. | Bir sonraki aksiyon aynı alanda değilse `fill`'den sonra `change` göndermek. |
+| Temiz oturum | Kayıt giriş yapılmış sayfada başladıysa başlangıç tutmaz. | Playwright `storageState` ile oturumu dosyadan yüklemek. |
+| Sonuç yalnızca konsolda | Raporlanamaz, CI'a bağlanamaz. | JSON/HTML rapor, JUnit XML (Faz 6). |
+| Runner'ın otomatik testleri repoda yok | Test betikleri her oturumda yeniden yazılıyor. | `runner/test/` altında yerel test sayfalarıyla bir test paketi (eklentinin "bağımlılık yok" ilkesi runner'ı bağlamıyor). |
+| Hedef sırası kayabilir | Dinamik listelerde "türün n'incisi" başka elementi gösterebilir. | Selector ile hedefin aynı elementi gösterip göstermediğini kontrol edip uyarmak. |
+
+### Beklemeler (Faz 3)
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| Aksiyonsuz her değişim bekleme sayılır | Sürekli değişen sayfalarda (carousel, canlı akış) edge'ler ekranı değiştiren kısa beklemelerle dolar. | Belirli selector'ları izlemeden hariç tutmak; çok sık değişen sayfada uyarı. |
+| Bekleme insanın düşünme süresini içerir | Testler gereğinden yavaş olabilir. | Runner'da "ekranı değiştirmeyen beklemeleri atla" seçeneği. |
+| Arka plandaki sekme | Chrome arka plan sekmede zamanlayıcıları yavaşlatır; kullanıcı beklerken başka sekmeye geçerse değişim geç fark edilir, süre uzar. | Sekmeye dönüşte ekrana hemen bakmak; süreyi değişimin olduğu andan almak. |
+| İzleme maliyeti | Açıkken her DOM değişiminde (en fazla 3 sn'de bir) parmak izi alınır. | Değişen alt ağaç etkileşimli element içermiyorsa parmak izi almamak. |
+
+### Fareyle üzerine gelme (Faz 3 eki)
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| Değişimi fareye bağlamak tahmindir | Fare hareketinden hemen sonra kendiliğinden gelen değişim üzerine gelmeye mal edilebilir. | Değişen elementlerin tetikleyiciye yakınlığına (DOM'da ortak ata, ekranda yakın konum) bakmak. |
+| Tetikleyici en içteki element | Menünün dinleyicisi bir üst elementte olabilir. | Değişen alt ağacı içeren en yakın atayı tetikleyici seçmek. |
+| Etiket ve hedef üzerine gelindikten sonra alınır | Etiket açılan butonun yazısını içerebilir; hedefin sırası sonraki ekrana göredir. | Fare girişinde hedefi ve etiketi önceden hesaplamak (yalnızca etkileşimli elementlerde ucuz). |
+| CSS ile açılan, etkileşimli olmayan tetikleyici | Ekrana bakılmaz, yakalanmaz. | Fare bir süre durduğunda (ör. 300 ms) her elementte ekrana bakmak. |

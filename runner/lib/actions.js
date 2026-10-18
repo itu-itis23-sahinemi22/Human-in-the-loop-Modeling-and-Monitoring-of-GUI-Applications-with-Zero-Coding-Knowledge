@@ -12,6 +12,7 @@ export async function playAction(page, action, run) {
   switch (action.type) {
     case 'click': return (await elementOf(page, action, run)).click({ timeout: run.timeout });
     case 'contextmenu': return (await elementOf(page, action, run)).click({ button: 'right', timeout: run.timeout });
+    case 'hover': return (await elementOf(page, action, run)).hover({ timeout: run.timeout });
     case 'focus': return (await elementOf(page, action, run)).focus();
     case 'input': return fill(await elementOf(page, action, run), valueOf(action, run.secrets), run);
     case 'enter': return (await elementOf(page, action, run)).press('Enter', { timeout: run.timeout });

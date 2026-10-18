@@ -629,13 +629,19 @@ for (const { id, items } of CHECKLISTS) {
 $('settings-record-waits').onchange = renderSaveButton;
 $('settings-min-wait').oninput = renderSaveButton;
 
-// Taslak: kutuların o anki hali (listelerde işareti kaldırılanlar) ve bekleme seçenekleri.
-// Geçersiz alt sınır (boş, negatif) varsayılana döner.
+// İsteğe bağlı aksiyon tipleri (settings.js > ACTION_TYPES > optional): işaretlenenler saklanır.
+const OPTIONAL_ACTIONS = new Set(ACTION_TYPES.filter((a) => a.optional).map((a) => a.type));
+
+// Taslak: kutuların o anki hali ve bekleme seçenekleri. Listelerde işareti kaldırılanlar,
+// isteğe bağlı aksiyonlarda işaretlenenler saklanır. Geçersiz alt sınır (boş, negatif)
+// varsayılana döner.
 function draftSettings() {
   const minWait = Number($('settings-min-wait').value);
+  const boxes = (id) => [...$(id).querySelectorAll('input')];
   return {
-    ...Object.fromEntries(CHECKLISTS.map(({ id, key }) =>
-      [key, [...$(id).querySelectorAll('input:not(:checked)')].map((box) => box.value)])),
+    disabledActions: boxes('settings-actions').filter((b) => !b.checked && !OPTIONAL_ACTIONS.has(b.value)).map((b) => b.value),
+    enabledActions: boxes('settings-actions').filter((b) => b.checked && OPTIONAL_ACTIONS.has(b.value)).map((b) => b.value),
+    disabledInteractables: boxes('settings-interactables').filter((b) => !b.checked).map((b) => b.value),
     recordWaits: $('settings-record-waits').checked,
     minWaitSeconds: $('settings-min-wait').value !== '' && minWait >= 0 ? minWait : DEFAULT_SETTINGS.minWaitSeconds,
   };
@@ -644,15 +650,14 @@ function draftSettings() {
 function isDirty() {
   const draft = draftSettings();
   const same = (a, b) => [...a].sort().join('\n') === [...b].sort().join('\n');
-  return CHECKLISTS.some(({ key }) => !same(draft[key], settings[key]))
+  return ['disabledActions', 'enabledActions', 'disabledInteractables'].some((key) => !same(draft[key], settings[key]))
     || draft.recordWaits !== settings.recordWaits || draft.minWaitSeconds !== settings.minWaitSeconds;
 }
 
 // Kutuları kaydedilmiş ayarlara eşitler (taslağı atar).
 function loadDraft() {
-  for (const { id, key } of CHECKLISTS) {
-    for (const box of $(id).querySelectorAll('input')) box.checked = !settings[key].includes(box.value);
-  }
+  for (const box of $('settings-actions').querySelectorAll('input')) box.checked = isActionEnabled(settings, box.value);
+  for (const box of $('settings-interactables').querySelectorAll('input')) box.checked = !settings.disabledInteractables.includes(box.value);
   $('settings-record-waits').checked = settings.recordWaits;
   $('settings-min-wait').value = settings.minWaitSeconds;
   renderSaveButton();

@@ -13,6 +13,7 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - [Aksiyonlar nasıl yakalanıyor?](#aksiyonlar-nasıl-yakalanıyor)
 - [Edge düzenleme](#edge-düzenleme)
 - [Beklemeler](#beklemeler)
+- [Fareyle üzerine gelme](#fareyle-üzerine-gelme)
 - [Node birleştirme](#node-birleştirme)
 - [Geri al](#geri-al)
 - [Kayıt hangi sekmede?](#kayıt-hangi-sekmede)
@@ -57,7 +58,7 @@ Eklentinin tek "durum sahibi" (single source of truth).
 - Tarayıcı seviyesindeki gezinmeleri (adres çubuğu, geri/ileri, yenile) `chrome.webNavigation` ile kendisi yakalar.
 - "Node oluştur" isteğinde parmak izi ve ekran görüntüsü alır, element kümesi birebir aynı olan node'u arar, node ve edge ekler.
 - Her değişiklikten sonra state'in tamamını `chrome.storage.local`'a yazar.
-- Panelin Ayarlar penceresindeki seçimleri `settings` anahtarında saklar ve uygular: işaretsiz aksiyon tiplerini buffer'a almaz, işaretsiz element türlerini state karşılaştırmasına katmaz. "Beklemeleri kaydet" açıksa aksiyonlar arasındaki boşlukları ve ekranın kendiliğinden değişmesini bekleme olarak kaydeder (bkz. [Beklemeler](#beklemeler)).
+- Panelin Ayarlar penceresindeki seçimleri `settings` anahtarında saklar ve uygular: işaretsiz aksiyon tiplerini buffer'a almaz (isteğe bağlı tipler, ör. üzerine gelme, işaretlenmedikçe kapalıdır), işaretsiz element türlerini state karşılaştırmasına katmaz. "Beklemeleri kaydet" açıksa aksiyonlar arasındaki boşlukları ve ekranın kendiliğinden değişmesini bekleme olarak kaydeder (bkz. [Beklemeler](#beklemeler)).
 
 ### `sidepanel/`: Arayüz
 
@@ -109,9 +110,9 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 
 | Mesaj | Gönderen → Alan | İçerik | Ne yapar |
 |---|---|---|---|
-| `ACTION` | content → background | `{ action, screen, viewport, typingSince?, replaces? }` | Aksiyonu buffer'a ekler; gerekiyorsa önüne bir bekleme koyar ([Beklemeler](#beklemeler)). `typingSince`: aksiyondan önce yazmaya başlanan an; önceki bekleme o anda biter. Cevap `{ monitor }`: bu sekme ekranı aksiyonsuz da izlesin mi. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `viewport`, gönderildiği andaki sayfa boyutudur; açık bir yakınlaştırma aksiyonu bununla kapanırsa varılan boyut olarak saklanır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
-| `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; yoksa ve ekran değiştiyse, beklemeler kaydediliyorsa ekranı değiştiren bir bekleme ekler. Ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. Cevap `{ monitor }` (ACTION'daki gibi). |
-| `MONITOR` | background → content | `{ on }` | Kayıt sekmesine ekranı aksiyonsuz da izleyip izlemeyeceğini bildirir: ayar değişince, kayıt bir sekmeye bağlanınca. Yeni yüklenen sayfa bunu ilk ACTION / SCREEN cevabından öğrenir. |
+| `ACTION` | content → background | `{ action, screen, viewport, typingSince?, replaces? }` | Aksiyonu buffer'a ekler; gerekiyorsa önüne bir bekleme koyar ([Beklemeler](#beklemeler)). `typingSince`: aksiyondan önce yazmaya başlanan an; önceki bekleme o anda biter. Cevap `{ monitor, hover }`: bu sekme ekranı aksiyonsuz da izlesin mi, fareyle üzerine gelmeyi kaydetsin mi. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `viewport`, gönderildiği andaki sayfa boyutudur; açık bir yakınlaştırma aksiyonu bununla kapanırsa varılan boyut olarak saklanır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
+| `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; yoksa ve ekran değiştiyse, beklemeler kaydediliyorsa ekranı değiştiren bir bekleme ekler. Ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. Cevap `{ monitor, hover }` (ACTION'daki gibi). |
+| `MONITOR` | background → content | `{ monitor, hover }` | Kayıt sekmesine ekranı aksiyonsuz da izleyip izlemeyeceğini ve fareyle üzerine gelmeyi kaydedip kaydetmeyeceğini bildirir: ayar değişince, kayıt bir sekmeye bağlanınca. Yeni yüklenen sayfa bunu ilk ACTION / SCREEN cevabından öğrenir. |
 | `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements, viewport }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. `viewport`, kümenin alındığı görünen alandır: `{ width, height, devicePixelRatio }`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
 | `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
@@ -225,6 +226,7 @@ Durumların tamamı (`from` = şu anki node):
 | `keydown` (komut tuşları) | `key` | Metin harf harf kaydedilmez; alanın değeri `input` ile kaydedilir. Kaydedilenler: alan dışında her tuş (Escape, oklar, Delete, `/`, `c`...; butonda/linkte Enter ve Space hariç, onları tarayıcı `click` olarak üretir), alanda Escape, tek satırlı alanda ArrowUp/Down (öneri seçmek) ve Ctrl/Alt/Cmd kısayolları (imleç ve Ctrl+C/V/Z gibi düzenleme tuşları hariç). Hiç kaydedilmeyenler: Tab, tek başına Ctrl/Shift, kopyala/kes/yapıştır (`clipboard` kaydeder), tarayıcının kısayolları (Ctrl +/-, F5, Alt+←, Ctrl+F, F12...; `content.js > BROWSER_SHORTCUTS`). AltGr ile yazılan karakterler (`@`) kısayol sayılmaz. Tuştan önce alandaki değer kaydedilir: "Fill Search → Press ArrowDown". Aynı tuşa sayfa durulmadan tekrar basılırsa tek aksiyon olur (`Press ArrowDown ×3`). |
 | `keydown` (tarayıcıda varsayılan işi olan tuşlar) | `key`, `select` ya da hiçbiri | Shift+oklar/Home/End ve Ctrl+A metin seçer; alan dışında Space, PageUp/Down, Home/End ve oklar sayfayı kaydırır. Bu tuşların ne yaptığı olay bitince bilinir; karar 100 ms sonra verilir: sayfa olayı engellediyse tuşu sayfa kullanmıştır (`key`, ör. galeride ok tuşu); seçim değiştiyse `select` (alan dışında Ctrl+A tüm sayfa metni saklanmasın diye `key`); sayfa kaydıysa hiçbiri (kaydırma `scroll` olarak gelir); hiçbiri olmadıysa `key`. Bu arada başka bir aksiyon gelirse önce tuşun kararı verilir. |
 | `scrollend` (sayfa ya da kaydırılabilir kutu) | `scroll` | `scroll` olayı kaydırma boyunca onlarca kez gelir; `scrollend` hareket bitince bir kez gelir. Vardığı konum (`x`, `y`) kaydedilir. Sayfanın kendi yaptığı kaydırmalar da kaydedilir (tarayıcı bunları kullanıcınınkinden ayırmaz); konum mutlak olduğu için tekrar oynatmada zararsızdır. |
+| `mouseover` + ekran değişimi (Ayarlar'da işaretliyse) | `hover` | Fareyi üzerine getirince ekran değiştiyse kaydedilir; değişmediyse kayda girmez. Varsayılan kapalı. Bkz. [Fareyle üzerine gelme](#fareyle-üzerine-gelme) |
 | `resize` (pencere) | `resize` | Pencereyi sürüklemek, yan paneli ya da DevTools'u açmak, tam ekrana geçmek sayfanın görünen alanını değiştirir; ekrana sığan elementler, yani state de değişebilir. Varılan boyut (`viewport`, CSS piksel) kaydedilir. Olay sürükleme boyunca her karede gelir: ilk olay hemen gönderilir, sonrakiler birleşir; background açık aksiyonu günceller, sürükleme tek aksiyon olur. Yakınlaştırma da bu olayı tetikler ama `devicePixelRatio`'yu da değiştirdiği için ayrılır; onu background `zoom` olarak kaydeder (aşağıda). |
 
 content.js tüm aksiyonları yakalar ve gönderir. Ayarlar'da işaretli olmayan tipleri `background.js > addAction()` buffer'a eklemez; tarayıcı seviyesindeki gezinmeler de (aşağıda) aynı süzgeçten geçer.
@@ -305,9 +307,34 @@ Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılı
 
 **İzleme** (`content.js > setMonitoring`): yalnızca anahtar açıkken ve kayıt sekmesinde çalışır. DOM değişince sayfanın durulması beklenir (300 ms DOM değişmez, en fazla 3 sn) ve ekran (edge set) değiştiyse `SCREEN` gönderilir; değişmediyse gönderilmez. Sürekli değişen bir sayfada parmak izi en fazla 3 sn'de bir alınır. Hangi sekmenin izleyeceğini background söyler (`MONITOR` ya da `ACTION` / `SCREEN` cevabı).
 
-**Sınır:** aksiyonsuz her değişim bekleme sayılır. Kaydedilmeyen hareketlerin etkisi de buna dahildir: fareyi üzerine getirince (hover) açılan bir menü, bekleme olarak görünür.
+**Sınır:** aksiyonsuz her değişim bekleme sayılır; kaydedilmeyen hareketlerin etkisi de. Fareyi üzerine getirince açılan bir menü, Ayarlar'da **Üzerine gelme** kapalıyken bekleme olarak görünür; açıkken `hover` aksiyonu olur (aşağıda). Sürekli değişen sayfalarda (carousel, canlı akış) her değişim ekranı değiştiren bir bekleme üretebilir.
 
 **Tekrar oynatma:** runner bekleme süresi kadar bekler. Ekranı değiştiren bekleme biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar.
+
+---
+
+## Fareyle üzerine gelme
+
+Bazı menüler ve kartlar fare üzerine gelince açılır: tıklama yoktur ama ekrana yeni etkileşimli elementler gelir, yani state değişir. Ayarlar'daki **Üzerine gelme (fare)** işaretliyse bu bir `hover` aksiyonu olarak kaydedilir. Diğer aksiyon tiplerinin aksine **varsayılan kapalıdır** (`settings.js > ACTION_TYPES > optional`): fare sayfada sürekli dolaşır ve değişimi fareye bağlamak bir tahmindir; kullanıcı bilerek açmalıdır.
+
+**Nasıl yakalanır** (`content.js > FAREYLE ÜZERİNE GELME`): iki tür menü var.
+
+- **CSS ile açılan menü** (`.menu:hover .alt { display: block }`) DOM'u değiştirmez; olay dinleyerek görülemez. Fare etkileşimli bir elementin üzerine gelince sayfanın durulması beklenir ve ekrana bakılır.
+- **JavaScript ile açılan menü** (`mouseenter`) DOM'u değiştirir. Değişim fare hareketinden en fazla 1 sn sonra başladıysa imlecin altındaki element tetikleyici sayılır. Fare 1 sn'dir kıpırdamıyorsa değişim kendiliğindendir (zaman aşımı gibi); bekleme olarak kalır.
+
+Ekran (edge set) değiştiyse ve fare hâlâ tetikleyicinin üzerindeyse `hover` gönderilir. Background, Tab odağındaki gibi yalnızca state'i değiştiren üzerine gelmeyi tutar; fareyi bir butonun üzerinden geçirmek kayda girmez. Tarayıcı, sayfa düzeni değişince imleç yerinde dururken de fare olayı üretir; konum değişmediyse hareket sayılmaz. Açıkken kayıt sekmesinin ekranı izlenir (Beklemeler'deki gibi).
+
+**Fareyi hızla tıklanacak elemente götürmek:** fare bir menüden çıkıp hemen tıklarsa menünün kapanması ayrı bir aksiyon olmaz, tıklamanın öncesine katılır. Tekrar oynatırken de araç tıklamak için fareyi oraya götürür, aynı şey olur.
+
+**Tekrar oynatma:** runner elementin ortasına fareyi getirir (`hover()`); CSS `:hover` da `mouseenter` de çalışır.
+
+**Sınırlar** (tahmine dayalı olduğu için):
+
+- Değişim fare hareketinden hemen sonra kendiliğinden olursa (aynı anda gelen bir bildirim gibi) üzerine gelmeye mal edilebilir.
+- JS menüsünde tetikleyici, imlecin altındaki en içteki elementtir (ör. kartın içindeki bir yazı); menünün asıl dinleyicisi onun bir üstü olabilir. Tekrar oynatırken farenin aynı noktaya gelmesi çoğu zaman yeter.
+- Etiket ve hedef üzerine gelindikten sonraki ekrandan alınır: kartın etiketi açılan butonun yazısını da içerebilir (`Hover Kart Satın al`).
+- CSS ile açılan ama etkileşimli olmayan bir element (ör. düz bir `li`) üzerine gelince ekrana bakılmaz; böyle menüler yakalanmaz.
+- Her etkileşimli elementin üzerine gelişte (sayfa durulmuyorsa) parmak izi alınır; çok elementli sayfalarda fare hareketi biraz maliyetlidir.
 
 ---
 

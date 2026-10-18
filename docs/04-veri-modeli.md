@@ -91,6 +91,7 @@ Tipler:
 | `key` | content.js | `key` (`string`): Playwright biçiminde tuş (`"Escape"`, `"Control+Enter"`, `"/"`); `count` (`number`): art arda kaç kez basıldığı | `"Press Escape"`, `"Press ArrowDown ×3"` | `selector` varsa `press(selector, key)`, `null` ise `keyboard.press(key)`; `count` kez |
 | `select` | content.js | `text` (`string`): seçilen metin; metin alanında `start`, `end` (`number`): seçim aralığı. `selector` seçimi içeren element ya da alan | `"Select \"Merhaba dunya\""` | Alanda `setSelectionRange(start, end)`; sayfada `selector` içinde `text`'i bulup `Range` ile seçmek |
 | `contextmenu` | content.js | `blocked` (`boolean`): sayfa tarayıcının menüsünü engelledi, kendi menüsünü açtı | `"Right click Dosya.pdf"` | `click(selector, { button: "right" })` |
+| `hover` | content.js | `target` yalnızca etkileşimli bir elementteyse | `"Hover Ürünler"` | `hover(selector)`. Yalnızca state'i değiştiren ve Ayarlar'da işaretliyse (varsayılan kapalı) kaydedilir ([01 > Fareyle üzerine gelme](01-mimari.md#fareyle-üzerine-gelme)). |
 | `focus` | content.js | | `"Focus İçeriğe atla"` | `focus(selector)`. Yalnızca state'i değiştiren odaklar kaydedilir. |
 | `clipboard` | content.js | `operation`: `"copy"`, `"cut"` ya da `"paste"`; `text` (`string`): kopyalanan / yapıştırılan metin (şifre alanında `"******"`); `blocked` (`boolean`): sayfa işlemi engelledi ya da panoya kendi içeriğini koydu | `"Copy \"Merhaba\""`, `"Paste (boş)"` | Kopyala/kes: `press("Control+C")` / `"Control+X"`; yapıştır: panoya `text` yazılır, `press("Control+V")`. `blocked` testin beklediği sonuçtur. |
 | `scroll` | content.js | `x`, `y` (`number`): kaydırmanın vardığı konum (px) | `"Scroll down"`, `"Scroll up"` | `selector` varsa o kutuda, `null` ise sayfada `scrollTo(x, y)` |
@@ -127,12 +128,13 @@ Panelin **Ayarlar** bölümündeki seçim, `chrome.storage.local` içinde state'
 
 | Alan | Tip | Açıklama |
 |---|---|---|
+| `enabledActions` | `string[]` | İşaretlenmiş **isteğe bağlı** aksiyon tipleri (ör. `["hover"]`). İsteğe bağlı tipler (`ACTION_TYPES > optional`) varsayılan kapalıdır; yalnızca burada listelenince kaydedilir. |
 | `disabledActions` | `string[]` | İşareti kaldırılmış aksiyon tipleri (ör. `["scroll"]`). Bu tipteki aksiyonlar buffer'a eklenmez. |
 | `disabledInteractables` | `string[]` | İşareti kaldırılmış etkileşimli element türleri (ör. `["a", "label"]`). Bu türlerin anahtarları state karşılaştırmasına girmez. |
 | `recordWaits` | `boolean` | "Beklemeleri kaydet": aksiyonlar arasındaki boşluklar ve ekranın kendiliğinden değişmesi `wait` aksiyonu olarak kaydedilir; kayıt sekmesinin ekranı sürekli izlenir. Varsayılan `false`. |
 | `minWaitSeconds` | `number` | Ekranı değiştirmeyen bir beklemenin kaydedilmesi için en kısa süre (saniye). Varsayılan `1`. Ekranı değiştiren bekleme her zaman kaydedilir. |
 
-İşaretli olanlar değil işareti **kaldırılanlar** saklanır: listelere ileride eklenen yeni bir tip kendiliğinden işaretli gelir.
+İsteğe bağlı tipler dışında işaretli olanlar değil işareti **kaldırılanlar** saklanır: listelere ileride eklenen yeni bir tip kendiliğinden işaretli gelir.
 
 ---
 

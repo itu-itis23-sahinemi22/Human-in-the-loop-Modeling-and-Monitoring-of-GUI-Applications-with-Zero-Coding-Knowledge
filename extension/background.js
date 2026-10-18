@@ -138,7 +138,7 @@ async function addAction(state, tabId, action, { screen = null, replaces = null,
   if (open) observeScreen(state, screen, settings, viewport);
   else waitBefore(state, settings, action, screen, typingSince);
   // Ayarlarda işaretli olmayan tipteki aksiyon "Bekleyen aksiyonlar"a eklenmez.
-  if (!settings.disabledActions.includes(action.type)) state.buffer.push(action);
+  if (isActionEnabled(settings, action.type)) state.buffer.push(action);
   state.idleSince = null; // aksiyon yapıldı: boşluk, etkisi durulunca yeniden başlar
   return save(state);
 }
@@ -153,18 +153,23 @@ async function onScreen(state, tabId, screen, viewport, url) {
   return save(state);
 }
 
-// ACTION ve SCREEN'in cevabı: bu sekme ekranı aksiyonsuz da izlesin mi? Yalnızca kayıt
-// sekmesi ve "Beklemeleri kaydet" açıkken (bkz. content.js > setMonitoring). Yeni yüklenen
-// sayfa bunu ilk bildiriminin cevabından öğrenir.
+// ACTION ve SCREEN'in cevabı: bu sekme ekranı aksiyonsuz da izlesin mi (monitor), fareyle
+// üzerine gelmeyi kaydetsin mi (hover)? Yalnızca kayıt sekmesi. İzleme "Beklemeleri kaydet"
+// ya da "Üzerine gelme" açıkken gerekir: JS ile açılan menü DOM'u fare hareketinden sonra
+// değiştirir (bkz. content.js > setWatch). Yeni yüklenen sayfa bunu ilk bildiriminin cevabından öğrenir.
 async function monitorFor(state, tabId) {
-  const settings = await getSettings();
-  return { monitor: settings.recordWaits && state.tabId !== null && tabId === state.tabId };
+  return watchOf(await getSettings(), state.tabId !== null && tabId === state.tabId);
+}
+
+function watchOf(settings, recording) {
+  const hover = recording && isActionEnabled(settings, 'hover');
+  return { monitor: recording && (settings.recordWaits || hover), hover };
 }
 
 // Ayar değişince ya da kayıt bir sekmeye bağlanınca o sekmeye hemen bildirilir.
 function notifyMonitor(state, settings) {
   if (state.tabId === null) return;
-  chrome.tabs.sendMessage(state.tabId, { type: 'MONITOR', on: settings.recordWaits }).catch(() => { });
+  chrome.tabs.sendMessage(state.tabId, { type: 'MONITOR', ...watchOf(settings, true) }).catch(() => { });
 }
 
 
@@ -199,8 +204,9 @@ function observeScreen(state, screen, settings, viewport = null) {
     const after = stateCounts(screen, settings);
     open.changed = before && after ? !sameCounts(before, after) : null;
     if (open.type === 'zoom' && viewport) open.viewport = viewport;
-    // Tab ile odak yalnızca state'i değiştirdiyse aksiyondur; formda alandan alana geçmek gürültüdür.
-    if (open.type === 'focus' && open.changed === false) state.buffer.pop();
+    // Tab ile odak ve fareyle üzerine gelme yalnızca state'i değiştirdiyse aksiyondur; formda
+    // alandan alana geçmek, fareyi bir butonun üzerinden geçirmek gürültüdür.
+    if ((open.type === 'focus' || open.type === 'hover') && open.changed === false) state.buffer.pop();
     state.idleSince = Date.now(); // aksiyonun etkisi duruldu: boşluk başlar
   }
   state.screen = screen;
@@ -214,7 +220,7 @@ function observeScreen(state, screen, settings, viewport = null) {
 // bankacılığında oturum zaman aşımı kullanıcıyı çıkışa atar. Anahtar açıkken aksiyonlar
 // arasındaki süre 'wait' aksiyonu olarak kaydedilir. Bekleme sayfaya dokunmaz ama ekranı
 // değiştirebilir; bunu görmek için kayıt sekmesinin ekranı aksiyonsuz da izlenir
-// (content.js > setMonitoring). Bekleme elle eklenmez, kaydedilir: gözlenmiş bir aksiyondur.
+// (content.js > setWatch). Bekleme elle eklenmez, kaydedilir: gözlenmiş bir aksiyondur.
 //
 // state.idleSince: ekranın son aksiyondan (ya da node'dan) sonra durulduğu an. Aksiyon
 // yapılınca null olur, etkisi durulunca (observeScreen) yeniden başlar.
@@ -240,14 +246,20 @@ function observeIdle(state, settings, screen, now, url) {
 }
 
 // Aksiyondan önceki boşluk. Aksiyonun ekranı (yapıldığı an) öncekinden farklıysa izlemenin
-// henüz bildirmediği bir değişim vardır: o da bekleme olur. Yazmada aksiyonun ekranı
+// henüz bildirmediği bir değişim vardır. Boşluk alt sınırdan uzunsa bu, ekranı değiştiren bir
+// beklemedir; kısaysa değişim aksiyona yaklaşırken olmuştur (ör. fare tıklanacak butona
+// giderken bir menüden çıktı) ve aksiyonun öncesine katılır. Yazmada aksiyonun ekranı
 // yazılanın sonrasıdır, karşılaştırılmaz; bekleme yazmaya başlanan anda biter.
 function waitBefore(state, settings, action, screen, typingSince) {
   const end = typingSince ?? action.time;
-  if (screen && action.type !== 'input') observeIdle(state, settings, screen, end, action.url);
+  const long = state.idleSince !== null && end - state.idleSince >= settings.minWaitSeconds * 1000;
+  if (screen && action.type !== 'input' && !typingSince) {
+    if (long) observeIdle(state, settings, screen, end, action.url);
+    else state.screen = screen;
+  }
   const previous = state.buffer.at(-1);
   const between = previous && previous.type !== 'wait'; // iki aksiyonun arası
-  if (settings.recordWaits && between && state.idleSince !== null && end - state.idleSince >= settings.minWaitSeconds * 1000) {
+  if (settings.recordWaits && between && long) {
     state.buffer.push(waitAction(state.idleSince, end, action.url, false));
   }
 }

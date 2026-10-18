@@ -491,12 +491,12 @@ function send(action, screen, extra = {}) {
   reportScreenWhenSettled();
 }
 
-// Background ACTION ve SCREEN'e, bu sekmenin ekranı aksiyonsuz da izleyip izlemeyeceğiyle
-// cevap verir ({ monitor }; bkz. setMonitoring).
+// Background ACTION ve SCREEN'e, bu sekmenin ekranı aksiyonsuz da izleyip izlemeyeceği ve
+// fareyle üzerine gelmeyi kaydedip kaydetmeyeceğiyle cevap verir ({ monitor, hover }; bkz. setWatch).
 function message(msg) {
   try {
     chrome.runtime.sendMessage(msg).then((response) => {
-      if (response && 'monitor' in response) setMonitoring(response.monitor);
+      if (response && 'monitor' in response) setWatch(response);
     }, () => { });
   } catch {
     // Eklenti yeniden yüklendiyse bu eski script'in bağlantısı kopar. Sayfa yenilenince düzelir.
@@ -517,7 +517,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     finishPendingResize(); // bitmemiş boyut değişimi de
     sendResponse(fingerprint());
   }
-  if (message.type === 'MONITOR') setMonitoring(message.on);
+  if (message.type === 'MONITOR') setWatch(message);
 });
 
 
@@ -540,6 +540,8 @@ const settleObserver = new MutationObserver(restartQuietTimer);
 let typingSince = null;  // yazmaya başlanan an; yazma aksiyonu gönderilene kadar (bkz. onBeforeInput)
 let watchOnly = false;   // bekleyen bildirim yalnızca izlemeden geldi, aksiyon yok (bkz. onWatchedChange)
 let lastReported = null; // en son bildirilen ekran (JSON)
+let hoverTrigger = null; // bekleyen bildirimdeki değişimi başlatmış olabilecek, farenin üzerindeki element
+let pointer = { x: -1, y: -1, time: 0 }; // farenin son konumu ve hareket ettiği an (bkz. onMouseMove)
 
 addEventListener('popstate', reportScreenWhenSettled);
 addEventListener('resize', onResize); // pencere boyutu ya da yakınlaştırma (bkz. onResize)
@@ -562,6 +564,7 @@ function onBeforeInput(event) {
 
 function reportScreenWhenSettled() {
   watchOnly = false;
+  hoverTrigger = null;
   stopSettle();
   settleTimers = { quiet: setTimeout(reportScreen, SETTLE_QUIET_MS), max: setTimeout(reportScreen, SETTLE_MAX_MS) };
   settleObserver.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
@@ -581,37 +584,92 @@ function stopSettle() {
   settleObserver.disconnect();
 }
 
-// Yalnızca izlemeden gelen bildirim (watchOnly) ekran değişmediyse gönderilmez.
+// Yalnızca izlemeden gelen bildirim (watchOnly) ekran değişmediyse gönderilmez. Değiştiyse ve
+// fare hâlâ değişimi başlatan elementin üzerindeyse değişim bir 'hover' aksiyonudur.
 function reportScreen() {
   stopSettle();
   const screen = countElements(interactableElements());
   const key = JSON.stringify(screen);
   if (watchOnly && key === lastReported) return;
+  if (watchOnly && hoverTrigger?.isConnected && hoverTrigger.matches(':hover')) return sendHover(hoverTrigger);
   lastReported = key;
   message({ type: 'SCREEN', screen, viewport: currentViewport() });
 }
 
-// EKRANI İZLEMEK (Ayarlar > Beklemeleri kaydet): açıkken kayıt sekmesinde ekran aksiyonsuz da
-// izlenir. DOM değişince sayfanın durulması beklenir; ekran (edge set) değiştiyse bildirilir.
-// Background böylece bir beklemenin ekranı değiştirip değiştirmediğini bilir (ör. oturum zaman
-// aşımı; bkz. background.js > BEKLEMELER). Hangi sekmenin kayıt sekmesi olduğunu ve ayarı
-// background bildirir: MONITOR mesajı ya da ACTION / SCREEN'in cevabı. Sürekli değişen sayfada
-// parmak izi en fazla SETTLE_MAX_MS'de bir alınır.
+// EKRANI İZLEMEK (Ayarlar > Beklemeleri kaydet ya da Üzerine gelme): açıkken kayıt sekmesinde
+// ekran aksiyonsuz da izlenir. DOM değişince sayfanın durulması beklenir; ekran (edge set)
+// değiştiyse bildirilir. Background böylece bir beklemenin ekranı değiştirip değiştirmediğini
+// bilir (ör. oturum zaman aşımı; bkz. background.js > BEKLEMELER). Hangi sekmenin kayıt sekmesi
+// olduğunu ve ayarı background bildirir: MONITOR mesajı ya da ACTION / SCREEN'in cevabı. Sürekli
+// değişen sayfada parmak izi en fazla SETTLE_MAX_MS'de bir alınır.
 const watchObserver = new MutationObserver(onWatchedChange);
 let monitoring = false;
+let hoverRecording = false; // Ayarlar > Üzerine gelme (fare)
 
-function setMonitoring(on) {
-  if (on === monitoring) return;
-  monitoring = on;
-  if (on) watchObserver.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+function setWatch({ monitor, hover }) {
+  hoverRecording = Boolean(hover);
+  if (monitor === monitoring) return;
+  monitoring = monitor;
+  if (monitor) watchObserver.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
   else watchObserver.disconnect();
 }
 
 // Durulma zaten bekleniyorsa (aksiyondan sonra) ya da kullanıcı yazıyorsa bir şey yapılmaz.
+// Fare az önce hareket ettiyse değişimi o başlatmış olabilir (JS ile açılan menü): imlecin
+// altındaki element olası tetikleyicidir. Fare kıpırdamazken gelen değişim kendiliğindendir.
 function onWatchedChange() {
   if (settleTimers || typingSince !== null) return;
   reportScreenWhenSettled();
   watchOnly = true;
+  if (hoverRecording && Date.now() - pointer.time < HOVER_WINDOW_MS) hoverTarget(document.elementFromPoint(pointer.x, pointer.y));
+}
+
+// FAREYLE ÜZERİNE GELME (Ayarlar > Üzerine gelme, varsayılan kapalı): bazı menüler ve kartlar
+// fare üzerine gelince açılır; tıklama yoktur ama ekrana yeni elementler gelir. İki yol var:
+//   - CSS :hover ile açılan menü DOM'u değiştirmez, izleme onu göremez. Fare etkileşimli bir
+//     elementin üzerine gelince sayfanın durulması beklenir ve ekrana bakılır (onMouseOver).
+//   - JavaScript ile açılan menü DOM'u değiştirir; değişim fare hareketinden en fazla
+//     HOVER_WINDOW_MS sonra başladıysa imlecin altındaki element tetikleyicidir (onWatchedChange).
+// Ekran değiştiyse ve fare hâlâ o elementin üzerindeyse 'hover' aksiyonu gönderilir (reportScreen).
+// Background, Tab odağındaki gibi yalnızca state'i değiştiren üzerine gelmeyi tutar.
+const HOVER_WINDOW_MS = 1000;
+document.addEventListener('mousemove', notePointer, true);
+document.addEventListener('mouseout', notePointer, true);
+document.addEventListener('mouseover', onMouseOver, true);
+
+// Farenin konumu. Tarayıcı elementten çıkma / girme olaylarını (mouseout, mouseleave,
+// mouseover, mouseenter) mousemove'dan ÖNCE gönderir; sayfanın mouseenter'da açtığı menü
+// izlemeye mousemove'dan önce düşer. Bu yüzden konum sınır olaylarında da güncellenir (capture,
+// sayfanın kodundan önce). Sayfa düzeni değişince tarayıcı imleç yerinde dururken de fare olayı
+// üretir; konum değişmediyse hareket sayılmaz (kendiliğinden değişim fareye mal edilmesin).
+function notePointer(event) {
+  if (!event.isTrusted || (event.clientX === pointer.x && event.clientY === pointer.y)) return;
+  pointer = { x: event.clientX, y: event.clientY, time: Date.now() };
+}
+
+function onMouseOver(event) {
+  notePointer(event);
+  if (!hoverRecording || !event.isTrusted || settleTimers || typingSince !== null) return;
+  const el = event.target.closest(INTERACTIVE);
+  if (!el) return;
+  reportScreenWhenSettled();
+  watchOnly = true;
+  hoverTarget(el);
+}
+
+function hoverTarget(el) {
+  hoverTrigger = el && el !== document.body && el !== document.documentElement ? el : null;
+}
+
+// Aksiyonun ekranı (öncesi), son bildirilen ekrandır. Ekranın kendisi sonra, sayfa durulunca
+// bildirilir; background aksiyonu onunla kapatır.
+function sendHover(el) {
+  const before = lastReported && JSON.parse(lastReported);
+  send({
+    type: 'hover', selector: cssSelector(el),
+    label: 'Hover ' + ((isFormField(el) ? fieldName(el) : visibleText(el)) || el.tagName.toLowerCase()),
+    ...(el.matches(INTERACTIVE) && { target: targetOf(el) }),
+  }, before);
 }
 
 

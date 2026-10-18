@@ -15,6 +15,7 @@
 
 // Kaydedilebilen aksiyon tipleri. Ayarlarda işaretli olmayan tipteki aksiyonlar
 // "Bekleyen aksiyonlar" listesine eklenmez. `text`, panelde görünen addır.
+// `optional`: varsayılan kapalıdır; Ayarlar'da işaretlenince kaydedilir (bkz. isActionEnabled).
 const ACTION_TYPES = [
   { type: 'click', text: 'Tıkla' },
   { type: 'input', text: 'Yaz' },
@@ -24,6 +25,7 @@ const ACTION_TYPES = [
   { type: 'clipboard', text: 'Kopyala/Kes/Yapıştır' },
   { type: 'contextmenu', text: 'Sağ tık menüsü' },
   { type: 'focus', text: 'Odak (Tab)' },
+  { type: 'hover', text: 'Üzerine gelme (fare)', optional: true },
   { type: 'scroll', text: 'Kaydır' },
   { type: 'zoom', text: 'Yakınlaştır/Uzaklaştır' },
   { type: 'resize', text: 'Pencere boyutu' },
@@ -51,11 +53,19 @@ const INTERACTABLE_TYPES = [
 ];
 
 // Varsayılan: her şey işaretli. İşareti KALDIRILANLAR listelenir; böylece listelere
-// ileride eklenen yeni bir tip kendiliğinden işaretli gelir.
+// ileride eklenen yeni bir tip kendiliğinden işaretli gelir. İsteğe bağlı aksiyon tipleri
+// (optional) bunun tersidir: İŞARETLENENLER enabledActions'ta listelenir.
 // Beklemeler (docs/01 > Beklemeler): recordWaits açıkken aksiyonlar arasındaki en az
 // minWaitSeconds saniyelik boşluklar 'wait' aksiyonu olarak kaydedilir ve kayıt sekmesinin
 // ekranı sürekli izlenir. Varsayılan kapalı: izleme her sayfada maliyetlidir.
-const DEFAULT_SETTINGS = { disabledActions: [], disabledInteractables: [], recordWaits: false, minWaitSeconds: 1 };
+const DEFAULT_SETTINGS = { disabledActions: [], enabledActions: [], disabledInteractables: [], recordWaits: false, minWaitSeconds: 1 };
+
+// Bu tipteki aksiyonlar kaydediliyor mu? İsteğe bağlı tipler işaretlenince, diğerleri işareti
+// kaldırılmadıkça kaydedilir.
+function isActionEnabled(settings, type) {
+  const optional = ACTION_TYPES.find((a) => a.type === type)?.optional;
+  return optional ? settings.enabledActions.includes(type) : !settings.disabledActions.includes(type);
+}
 
 
 // -----------------------------------------------------------------------------

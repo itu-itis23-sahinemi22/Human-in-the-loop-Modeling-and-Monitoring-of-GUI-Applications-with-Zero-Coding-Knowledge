@@ -86,7 +86,7 @@ Node sayısı fazla geliyorsa kuralı değil, parmak izini değiştirin: `finger
      send({ type: 'dblclick', selector: cssSelector(el), label: 'DoubleClick ' + visibleText(el) });
    }, true);
    ```
-2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'dblclick', text: 'Çift tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir.
+2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'dblclick', text: 'Çift tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir. Tip varsayılan kapalı olacaksa (gürültülü ya da tahmine dayalıysa, üzerine gelme gibi) `optional: true` ekleyin; o zaman yalnızca işaretlenince kaydedilir (`enabledActions`).
 3. **`runner/lib/actions.js > playAction()`:** tekrar oynatma karşılığını ekleyin (ör. `element.dblclick()`). Eklenmezse runner bu aksiyonda adımı "desteklenmiyor" diye başarısız sayar.
 4. **`docs/04-veri-modeli.md`** ve **`runner/README.md`:** aksiyon tipleri tablolarına yeni satırı ekleyin.
 
@@ -137,6 +137,7 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Ayarlar'da **Beklemeler**: alt sınır başta 1 ve pasif; **Beklemeleri kaydet** işaretlenince aktif. Kaydedince durum satırında "Beklemeler kaydediliyor (en az 1,0 sn)" yazıyor; alt sınır boş bırakılırsa 1'e dönüyor.
 - [ ] Beklemeler açıkken iki tıklama arasında 2 sn beklemek `Bekle  Wait → 2,0 sn` satırı bırakıyor; 1 sn'den kısa boşluk bırakmıyor. Node oluşturduktan sonra ilk aksiyondan önceki bekleme kaydedilmiyor. Bir alana yazarken beliren buton bekleme sayılmıyor.
 - [ ] Belli bir süre sonra kendiliğinden değişen bir sayfada (oturum zaman aşımı) hiçbir şey yapmadan beklemek, ekran değişince `Bekle` satırı bırakıyor; "Node oluştur" `e_Wait` edge'ini oluşturuyor ve aksiyonun yanında "ekranı değiştirdi" yazıyor. Anahtar kapalıyken bekleme satırı hiç çıkmıyor.
+- [ ] Ayarlar'da **Üzerine gelme (fare)** başta işaretsiz. İşaretlenince fareyle üzerine gelince açılan bir menü (CSS ya da JS) `Üzerine gelme (fare)  Hover ...` satırı bırakıyor; ekranı değiştirmeyen bir butonun üzerinden geçmek satır bırakmıyor. Fare dururken kendiliğinden gelen değişim hover değil bekleme oluyor.
 - [ ] Sayfada (alan dışında) Escape'e basınca `Tuş  Press Escape` satırı çıkıyor; ok tuşunu basılı tutunca tek satır `Press ArrowDown ×N` oluyor. Alana yazılan harfler satır üretmiyor; alan değeri `Fill` olarak geliyor. Ctrl +, F5, Tab ve butonda Enter tuş olarak kaydedilmiyor.
 - [ ] Arama kutusuna yazıp ArrowDown ile öneri seçip Enter'a basınca sıra: `Fill`, `Press ArrowDown`, `Submit`.
 - [ ] Türkçe klavyede bir alana `@` yazmak (AltGr+Q) tuş olarak kaydedilmiyor.
@@ -226,6 +227,15 @@ Parmak izi kodu `fingerprint.js`'e taşındıktan sonra aynı test (iki ek kontr
 - Runner aynı modelin üç edge'ini (zaman aşımı dahil) geçti.
 
 Bu değişiklikten sonra önceki testler de tekrar koşuldu ve geçti: pencere boyutu (20/20), yakınlaştırma tekrarı (4/4, iki model), saucedemo kayıt ve runner (8/8).
+
+**Fareyle üzerine gelme.** Yerel bir test sayfasında: CSS `:hover` ile açılan bir menü ("Ürünler" → "Bir"), `mouseenter` ile "Satın al" butonu çıkan bir kart (etkileşimli olmayan tetikleyici), etkisiz bir buton ve tıklamadan 2 sn sonra kendiliğinden buton ekleyen bir zamanlayıcı. 13 kontrolün hepsi geçti:
+
+- Ayarlar: "Üzerine gelme" listede ve varsayılan işaretsiz, diğer tipler işaretli; işaretleyince `enabledActions: ["hover"]` kaydedildi, pencere tekrar açılınca işaretli.
+- Etkisiz butonun üzerine gelmek kayda girmedi. CSS menü `hover(#products)` (hedef `a:products #1`, ekranı değiştirdi) ve ardından alt menüye tıklama: edge `e_Bir`. JS kartı `hover(#card)`.
+- Fare dururken gelen değişim `hover` değil bekleme oldu; tıklamaya giderken karttan çıkmanın etkisi ayrı bir aksiyon olmadı, tıklamanın öncesine katıldı.
+- Ayar kapalıyken üzerine gelme kaydedilmedi. Runner üç edge'i (hover'lar dahil) geçti.
+
+İlk koşuda JS kartı bekleme olarak kaydedildi: tarayıcı `mouseover` / `mouseenter`'ı `mousemove`'dan önce gönderdiği için fare konumu kartın menüsü açıldığında henüz güncellenmemişti. Konum artık sınır olaylarında da (`mouseout`, `mouseover`) güncelleniyor. Ardından bekleme, pencere boyutu, yakınlaştırma ve saucedemo testleri tekrar koşuldu ve geçti.
 
 **Sayılı küme (multiset) ölçümleri.** Mock testlerde: aynı butondan 5 ile 4 olan ekran soru sorulmadan ayrı node; aynı sayılar (sıra farklı) aday; aynı anahtarın farklı tür grupları toplanıyor; Ayarlar filtresi tür bazında uygulanıyor; önceki sürümün biçimiyle kaydedilmiş node çökme yapmadan aday dışı kalıyor. Gerçek Chrome'da 20 satırlık kaydırılabilir listeyle ve canlı saucedemo.com'da ölçüm sonuçları: [03 > Edge hedefi](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi).
 

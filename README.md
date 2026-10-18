@@ -93,7 +93,7 @@ Panelde diğer işlemler:
 - **Geri al** (araç çubuğu) ya da **Ctrl+Z:** son silmeyi geri alır: node (bağlı edge'leriyle birlikte), edge ya da edge'den silinen aksiyon eski yerine döner. Son 20 silme saklanır. Butonun üzerine gelince neyin geri alınacağı yazar. Ctrl+Z için panele odaklanmış olmak gerekir; isim alanında yazarken Ctrl+Z metni geri alır.
 - **Sıfırla:** graph'ı temizler (ayarlar kalır). Yanlışlıkla basılmasın diye iki kez tıklamak gerekir. Sıfırlama geri alınamaz.
 - **Ayarlar** (sağ üstteki çark simgesi, panelin üstünde açılan pencere): iki checklist ve beklemeler. Değişiklikler **Kaydet**'e basınca uygulanır; Kaydet yalnızca bir değişiklik varken aktiftir. Kaydetmeden kapatmaya çalışırsanız (✕, Esc ya da pencere dışına tıklama) "Kaydet ve çık / Kaydetmeden çık / Geri dön" uyarısı çıkar.
-  - *Kaydedilecek aksiyonlar:* işaretsiz tipteki aksiyonlar (ör. Kaydır) "Bekleyen aksiyonlar"a eklenmez.
+  - *Kaydedilecek aksiyonlar:* işaretsiz tipteki aksiyonlar (ör. Kaydır) "Bekleyen aksiyonlar"a eklenmez. **Üzerine gelme (fare)** varsayılan kapalıdır: işaretlenirse fareyi üzerine getirince açılan menüler (ekranı değiştirdiyse) `hover` aksiyonu olarak kaydedilir. Detay: [docs/01 > Fareyle üzerine gelme](docs/01-mimari.md#fareyle-üzerine-gelme)
   - *Beklemeler:* **Beklemeleri kaydet** açıkken iki aksiyon arasındaki, **alt sınırdan** (varsayılan 1 sn) uzun boşluklar "Bekle" aksiyonu olarak kaydedilir. Kayıt sekmesinin ekranı sürekli izlenir: ekran beklerken kendiliğinden değişirse (ör. internet bankacılığında oturum zaman aşımı) bekleme "ekranı değiştirdi" işaretini alır; böylece hiçbir tıklamayla ulaşılamayan bu durum da graph'a girer (`e_Wait`). Varsayılan kapalı. Detay: [docs/01 > Beklemeler](docs/01-mimari.md#beklemeler)
   - *State'e dahil edilecek etkileşimli elementler:* işaretsiz türdeki elementler (ör. Link) state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut node'lar o anki seçime göre karşılaştırılır. Detay: [docs/03 > Ayarlar](docs/03-state-eslestirme.md#ayarlar-hangi-türler-statee-girer)
 
@@ -199,7 +199,7 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 
 - iframe içi ve Shadow DOM içi aksiyonlar
 - Birden fazla sekmeye yayılan akışlar (kayıt ve runner tek sekmeye bağlıdır)
-- Sürükle-bırak, hover menüler, klavye kısayolları
+- Sürükle-bırak. (Fareyle üzerine gelince açılan menüler Ayarlar'dan isteğe bağlı olarak kaydedilir.)
 - GraphWalker için test kodu (Java) üretmek. Kayıt runner ile tekrar oynatılır ama kod üretilmez, bkz. [docs/05-gelistirme.md](docs/05-gelistirme.md#yol-haritası).
 - JSON'u geri içe aktarma
 

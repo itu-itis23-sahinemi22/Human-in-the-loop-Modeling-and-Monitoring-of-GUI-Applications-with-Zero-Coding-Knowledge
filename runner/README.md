@@ -135,6 +135,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `enter` | `press('Enter')` |
 | `key` | `press(key)`, `count` kez. Hedef yoksa (odakta element yoktu) `keyboard.press(key)`. |
 | `contextmenu` | `click({ button: 'right' })` |
+| `hover` | `hover()`: fare elementin ortasına gelir |
 | `focus` | `focus()` |
 | `scroll` | `scrollTo(x, y)`, sayfada ya da kaydırılan kutuda; sayfa yumuşak kaydırma kullansa da konuma hemen varılır |
 | `navigate` | `goto(url)` |
