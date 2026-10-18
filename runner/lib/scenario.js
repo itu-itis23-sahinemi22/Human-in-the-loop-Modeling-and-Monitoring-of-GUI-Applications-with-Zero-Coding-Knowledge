@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import vm from 'node:vm';
-import { loadModel, readPath, resolvePath } from './model.js';
+import { loadModel, readJson, readPath, resolvePath } from './model.js';
 
 const file = new URL('../../extension/scenario.js', import.meta.url);
 
@@ -22,7 +22,7 @@ export const { SCENARIO_FORMAT, coverageOf } = vm.runInNewContext(
 
 // Senaryodaki model yolu senaryo dosyasına göredir (ikisi genelde aynı klasörde iner).
 export function loadInput(path, pathOption) {
-  const json = JSON.parse(readFileSync(path, 'utf8'));
+  const json = readJson(path);
   if (json.format === SCENARIO_FORMAT) {
     if (pathOption) throw new Error('Senaryo dosyası verildiğinde --path kullanılmaz: yollar senaryonun içinde.');
     const model = loadModel(resolve(dirname(path), json.model));

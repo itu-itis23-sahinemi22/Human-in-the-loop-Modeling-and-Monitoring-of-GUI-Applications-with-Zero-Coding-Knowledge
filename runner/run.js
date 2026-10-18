@@ -10,12 +10,13 @@
 // Kullanım ve tasarım: runner/README.md
 // =============================================================================
 
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 import { playAction } from './lib/actions.js';
+import { readJson } from './lib/model.js';
 import { verifyState } from './lib/oracle.js';
 import { INIT_SCRIPT, setViewport, settle } from './lib/page.js';
 import { writeReports } from './lib/report.js';
@@ -61,7 +62,7 @@ async function main() {
   const { model, scenario } = loadInput(positionals[0], options.path);
   const settings = {
     timeout: Number(options.timeout ?? 10000),
-    secrets: options.secrets ? JSON.parse(readFileSync(options.secrets, 'utf8')) : {},
+    secrets: options.secrets ? readJson(options.secrets) : {},
     viewport: model.start.viewport ?? DEFAULT_VIEWPORT,
   };
   const startedAt = new Date();

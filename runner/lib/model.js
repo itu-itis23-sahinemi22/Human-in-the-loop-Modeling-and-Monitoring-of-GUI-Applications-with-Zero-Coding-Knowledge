@@ -12,8 +12,23 @@ import { DEFAULT_SETTINGS, stateCounts } from './state.js';
 // v3 ve öncesi: sayısız küme; doğrulama kayıttaki tanımla yapılamaz.
 const FORMATS = ['graph-recorder/v4', 'graph-recorder/v5'];
 
+// Kullanıcının verdiği dosyalar (model, senaryo, secrets, yol). Windows PowerShell 5.1
+// (Set-Content -Encoding utf8, Out-File) dosyanın başına BOM koyar; JSON.parse onu kabul etmez.
+export function readText(file) {
+  return readFileSync(file, 'utf8').replace(/^﻿/, '');
+}
+
+export function readJson(file) {
+  try {
+    return JSON.parse(readText(file));
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(`${file}: geçerli JSON değil (${error.message}).`);
+    throw error;
+  }
+}
+
 export function loadModel(file) {
-  const json = JSON.parse(readFileSync(file, 'utf8'));
+  const json = readJson(file);
   const model = json.models?.[0];
   if (!model) throw new Error(`${file}: GraphWalker modeli değil (models yok).`);
   const format = model.properties?.graphRecorder?.format;
@@ -38,7 +53,7 @@ export function loadModel(file) {
 // o, yoksa currentElementName kullanılır).
 export function readPath(value) {
   if (!existsSync(value)) return value.split(',').map((item) => item.trim()).filter(Boolean);
-  const text = readFileSync(value, 'utf8').trim();
+  const text = readText(value).trim();
   if (text.startsWith('[')) return JSON.parse(text);
   return text.split(/\r?\n/).filter((line) => line.trim().startsWith('{')).map((line) => {
     const step = JSON.parse(line);
