@@ -193,12 +193,12 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 - Node ve edge'leri GraphWalker geleneğine uygun isimlendirir (`v_Inventory`, `e_Login`).
 - Şifre alanlarını maskeler (`******`).
 - Graph'ı **GraphWalker JSON modeli** olarak dışa aktarır. URL, parmak izi, ekran görüntüsü ve kaydedilen tarayıcı aksiyonları GraphWalker'ın `properties` alanlarında taşınır. GraphWalker CLI 4.3.3 ile doğrulandı (`check`, `offline`). Bkz. [docs/04 > Dışa aktarılan JSON](docs/04-veri-modeli.md#dışa-aktarılan-json)
+- Akış birden fazla sekmeye yayılabilir: site yeni sekme açtığında ya da kullanıcı başka bir sitenin sekmesine geçtiğinde panel "Bu sekmede devam edilsin mi?" diye sorar. "Evet" denirse kayıt orada sürer, "Hayır" denirse o sekme kaydı kirletmez. Bkz. [docs/01 > Kayıt hangi sekmede?](docs/01-mimari.md#kayıt-hangi-sekmede)
 - Modeldeki bir yolu (elle verilen ya da GraphWalker'ın ürettiği) **runner** ile gerçek bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranı, kayıttaki state tanımıyla doğrular. Kayıttaki görünen alan ve yakınlaştırma aynen kurulur; başarısız adımda fark ve ekran görüntüsü verir. Bkz. [runner/README.md](runner/README.md)
 
 **Yapmaz (bilinçli olarak kapsam dışı):**
 
 - iframe içi ve Shadow DOM içi aksiyonlar
-- Birden fazla sekmeye yayılan akışlar (kayıt ve runner tek sekmeye bağlıdır)
 - Sürükle-bırak. (Fareyle üzerine gelince açılan menüler Ayarlar'dan isteğe bağlı olarak kaydedilir.)
 - GraphWalker için test kodu (Java) üretmek. Kayıt runner ile tekrar oynatılır ama kod üretilmez, bkz. [docs/05-gelistirme.md](docs/05-gelistirme.md#yol-haritası).
 - JSON'u geri içe aktarma

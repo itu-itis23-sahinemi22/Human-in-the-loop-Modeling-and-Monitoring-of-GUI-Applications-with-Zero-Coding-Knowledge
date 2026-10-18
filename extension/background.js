@@ -25,7 +25,11 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(consol
 
 function emptyState() {
   return {
-    tabId: null,          // Kaydın yapıldığı sekme. İlk "Node oluştur"da belirlenir.
+    tabId: null,          // Kaydın sürdüğü (aktif) sekme. İlk "Node oluştur"da belirlenir.
+    tabs: [],             // Kayda katılan sekmeler { id, url } (bkz. SEKMELER)
+    declinedTabs: [],     // "Bu sekmede devam edilsin mi?" sorusuna "Hayır" denen sekmeler
+    pageOpenedTabs: [],   // Kayıt sekmelerinin açtığı sekmeler (link, popup)
+    tabPrompt: null,      // Bekleyen soru: kayda katılmamış bir sekme aktif oldu
     nextId: 1,            // n1, e2, n3... şeklinde id üretmek için sayaç
     startNodeId: null,    // İlk oluşturulan node (graph'ın başlangıcı)
     currentNodeId: null,  // Kullanıcının şu an bulunduğu node. Yeni edge buradan çıkar.
@@ -34,6 +38,7 @@ function emptyState() {
     buffer: [],           // Son node'dan beri yapılan, henüz edge'e dönüşmemiş aksiyonlar
     screen: null,         // Hemen önceki state: en son görülen ekranın edge set'i (bkz. observeScreen)
     idleSince: null,      // Ekranın son aksiyondan sonra durulduğu an; o andan beri aksiyon yok (bkz. BEKLEMELER)
+    viewport: null,       // Kayıt sekmesinin son bilinen görünen alanı (bkz. enterTab)
     pending: null,        // Aynı element kümeli node bulunduğunda kullanıcının onayını bekleyen karar
     undo: [],             // Edge'lerden silinen aksiyonlar ("Geri al" için; en yenisi sonda)
   };
@@ -93,6 +98,7 @@ async function handle(message, sender) {
     case 'CREATE_NODE': return createNode(state, message.tabId, message.windowId);
     case 'RESOLVE':     return resolvePending(state, message.targetId);
     case 'CANCEL_PENDING': return cancelPending(state);
+    case 'RESOLVE_TAB': return inTabQueue(() => resolveTab(state, message.follow));
     case 'RENAME':      return rename(state, message.id, message.name);
     case 'DELETE':      return remove(state, message.id);
     case 'SET_CURRENT': return setCurrent(state, message.id, message.tabId);
@@ -117,10 +123,17 @@ async function handle(message, sender) {
 // tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp).
 // viewport: aksiyonun gönderildiği andaki sayfa boyutu (content.js gönderir; bkz. observeScreen).
 // typingSince: yazma aksiyonunda yazmaya başlanan an (bkz. waitBefore).
-async function addAction(state, tabId, action, { screen = null, replaces = null, viewport = null, typingSince = null } = {}) {
+async function addAction(state, tabId, action, options = {}) {
   const settings = await getSettings();
   // Kayıt başlamadıysa ya da aksiyon başka bir sekmeden geldiyse yok say.
   if (state.tabId === null || tabId !== state.tabId) return;
+  return pushAction(state, settings, action, options);
+}
+
+// Aksiyonu buffer'a ekler (sekme kontrolünden sonra; sekme aksiyonlarını background kendisi ekler).
+function pushAction(state, settings, action, { screen = null, replaces = null, viewport = null, typingSince = null } = {}) {
+  if (viewport) state.viewport = viewport;
+  noteTabUrl(state, action.url);
   if (replaces && state.buffer.at(-1)?.time === replaces) state.buffer.pop();
   // Aynı tuşa sayfa durulmadan yeniden basıldıysa (basılı tutma dahil) tek aksiyondur.
   const open = openAction(state);
@@ -148,6 +161,8 @@ async function addAction(state, tabId, action, { screen = null, replaces = null,
 async function onScreen(state, tabId, screen, viewport, url) {
   if (state.tabId === null || tabId !== state.tabId) return;
   const settings = await getSettings();
+  if (viewport) state.viewport = viewport;
+  noteTabUrl(state, url);
   if (openAction(state)) observeScreen(state, screen, settings, viewport);
   else observeIdle(state, settings, screen, Date.now(), url);
   return save(state);
@@ -166,8 +181,12 @@ function watchOf(settings, recording) {
   return { monitor: recording && (settings.recordWaits || hover), hover };
 }
 
-// Ayar değişince ya da kayıt bir sekmeye bağlanınca o sekmeye hemen bildirilir.
-function notifyMonitor(state, settings) {
+// Ayar değişince ya da kayıt bir sekmeye bağlanınca o sekmeye hemen bildirilir; kayıt başka
+// sekmeye geçtiyse önceki sekme izlemeyi bırakır.
+function notifyMonitor(state, settings, previousTabId = null) {
+  if (previousTabId !== null && previousTabId !== state.tabId) {
+    chrome.tabs.sendMessage(previousTabId, { type: 'MONITOR', ...watchOf(settings, false) }).catch(() => { });
+  }
   if (state.tabId === null) return;
   chrome.tabs.sendMessage(state.tabId, { type: 'MONITOR', ...watchOf(settings, true) }).catch(() => { });
 }
@@ -327,14 +346,180 @@ function zoomLabel(from, to) {
   return to > from ? 'Zoom in' : 'Zoom out';
 }
 
-// Kayıt sekmesi kapatılırsa aksiyon kaydı durur. Kayıt, bir node seçilip "Buradan devam
-// et"e basılan sekmede sürer (bkz. setCurrent).
-chrome.tabs.onRemoved.addListener(async (tabId) => {
+
+// -----------------------------------------------------------------------------
+// SEKMELER: kayıt birden fazla sekmeye yayılabilir
+// -----------------------------------------------------------------------------
+// Akış bir sekmede başlar ama başka sekmede sürebilir: site yeni sekme ya da pencere açar
+// (target=_blank, ödeme / OAuth penceresi) ya da kullanıcı başka bir sitenin sekmesine geçer
+// (e-postadaki doğrulama linki). Kayda katılmamış bir sekme aktif olunca panel sorar
+// (state.tabPrompt): "Evet" -> kayıt o sekmede sürer; "Hayır" -> sekme hatırlanır, bir daha
+// sorulmaz, kayıt eski sekmede kalır ve o sekmedeki aksiyonlar yok sayılır. Kullanıcı kayıt
+// sekmesine dönünce kayıt kaldığı yerden sürer.
+//   state.tabs           : kayda katılan sekmeler { id, url } (url: son bilinen adres)
+//   state.tabId          : bunlardan aktif olanı; aksiyonlar yalnızca ondan kabul edilir
+//   state.declinedTabs   : "Hayır" denen sekmeler
+//   state.pageOpenedTabs : kayıt sekmelerinin açtığı sekmeler: açılış önceki aksiyonun sonucudur
+// Sekme geçişleri 'tab' aksiyonudur: open (sayfa açtı / kullanıcı açtı), switch, close. Kayda
+// katılmış sekmeler arası geçiş sorulmaz. Tekrar oynatırken sekme adresiyle (URL şablonu)
+// bulunur: Chrome'un sekme id'si tekrar oynatmada aynı kalmaz, yol da kayıttaki sırayla
+// yürümeyebilir (bkz. runner/lib/actions.js).
+// Olaylar sırayla işlenir: kapanan sekmenin ve yerine aktif olan sekmenin olayları birlikte gelir.
+let tabQueue = Promise.resolve();
+
+function inTabQueue(fn) {
+  const run = tabQueue.then(fn);
+  tabQueue = run.catch(console.error);
+  return run;
+}
+
+chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => inTabQueue(() => onTabOpenedByPage(details)));
+chrome.tabs.onActivated.addListener(({ tabId }) => inTabQueue(() => onTabActivated(tabId)));
+chrome.tabs.onUpdated.addListener((tabId, change) => inTabQueue(() => onTabUpdated(tabId, change)));
+chrome.tabs.onRemoved.addListener((tabId, info) => inTabQueue(() => onTabRemoved(tabId, info)));
+
+// Sekmenin aktif olduğu olay bundan önce gelebilir; bekleyen soru varsa o da güncellenir.
+async function onTabOpenedByPage({ sourceTabId, tabId }) {
   const state = await getState();
-  if (state.tabId !== tabId) return;
-  state.tabId = null;
-  save(state);
-});
+  if (!state.tabs.some((t) => t.id === sourceTabId)) return;
+  state.pageOpenedTabs.push(tabId);
+  if (state.tabPrompt?.tabId === tabId) state.tabPrompt.openedByPage = true;
+  return save(state);
+}
+
+async function onTabActivated(tabId) {
+  const state = await getState();
+  if (state.nodes.length === 0) return;
+  if (tabId === state.tabId) return clearTabPrompt(state); // kayıt sekmesine dönüldü
+  if (state.tabs.some((t) => t.id === tabId)) return enterTab(state, tabId, 'switch');
+  if (state.declinedTabs.includes(tabId)) return clearTabPrompt(state);
+  return askForTab(state, tabId);
+}
+
+// Soru: kayda katılmamış sekme. Eklentinin kendi sayfaları (panel bir sekmede açıldıysa) sorulmaz.
+async function askForTab(state, tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || tab.url?.startsWith(chrome.runtime.getURL(''))) return;
+  state.tabPrompt = { tabId, url: tab.url ?? '', title: tab.title ?? '', openedByPage: state.pageOpenedTabs.includes(tabId) };
+  return save(state);
+}
+
+function clearTabPrompt(state) {
+  if (!state.tabPrompt) return;
+  state.tabPrompt = null;
+  return save(state);
+}
+
+// Soru beklerken kullanıcı o sekmede adres yazabilir (Ctrl+T ile açılan boş sekme): kart güncellenir.
+async function onTabUpdated(tabId, change) {
+  const state = await getState();
+  if (state.tabPrompt?.tabId !== tabId || !(change.url || change.title)) return;
+  if (change.url) state.tabPrompt.url = change.url;
+  if (change.title) state.tabPrompt.title = change.title;
+  return save(state);
+}
+
+// Kayda katılmış bir sekme kapanırsa ve kayıtta başka sekme kaldıysa kapanış bir aksiyondur.
+// Aktif sekme kapandıysa Chrome'un aktif yaptığı sekmeye geçilir (kayda katılmışsa). Kayıtta
+// sekme kalmadıysa kayıt durur: başka bir sekmede "Evet" ya da "Buradan devam et" ile sürer.
+async function onTabRemoved(tabId, { windowId }) {
+  const state = await getState();
+  if (state.tabPrompt?.tabId === tabId) state.tabPrompt = null;
+  state.declinedTabs = state.declinedTabs.filter((t) => t !== tabId);
+  state.pageOpenedTabs = state.pageOpenedTabs.filter((t) => t !== tabId);
+  const closed = state.tabs.find((t) => t.id === tabId);
+  if (!closed) return save(state);
+  state.tabs = state.tabs.filter((t) => t.id !== tabId);
+  const active = tabId === state.tabId;
+  if (active) state.tabId = null;
+  if (state.tabs.length) {
+    pushAction(state, await getSettings(), tabAction('close', closed, { active }));
+    const [now] = active ? await chrome.tabs.query({ active: true, windowId }) : [];
+    if (now && state.tabs.some((t) => t.id === now.id)) return enterTab(state, now.id, 'switch');
+  }
+  return save(state);
+}
+
+// Panelin cevabı. "Evet": kayıt bu sekmede sürer. Kayıt sekmesi kapanmışsa sekme şu anki
+// node'un ekranında olmalıdır (bkz. resumeInTab).
+async function resolveTab(state, follow) {
+  const prompt = state.tabPrompt;
+  if (!prompt) return;
+  state.tabPrompt = null;
+  if (!follow) {
+    state.declinedTabs.push(prompt.tabId);
+    return save(state);
+  }
+  if (state.tabId === null) return resumeInTab(state, prompt.tabId);
+  return enterTab(state, prompt.tabId, 'open', { by: prompt.openedByPage ? 'page' : 'user' });
+}
+
+// Kayıt bu sekmede sürer: sekme geçişi aksiyon olarak eklenir; sekmenin ekranı geçişin sonrası
+// olur. Sekmenin görünen alanı öncekinden farklıysa (başka pencere) ardından bir 'resize'
+// eklenir: tekrar oynatırken o sekme de aynı boyutta olsun.
+async function enterTab(state, tabId, operation, extra = {}) {
+  const settings = await getSettings();
+  const tab = await chrome.tabs.get(tabId);
+  const previous = state.tabId;
+  pushAction(state, settings, tabAction(operation, tab, extra));
+  state.tabId = tabId;
+  if (!state.tabs.some((t) => t.id === tabId)) state.tabs.push({ id: tabId, url: tab.url, title: tab.title });
+  const page = await chrome.tabs.sendMessage(tabId, { type: 'GET_FINGERPRINT' }).catch(() => null);
+  if (page) {
+    const resized = state.viewport && !sameViewport(state.viewport, page.viewport);
+    observeScreen(state, page.elements, settings, page.viewport);
+    if (resized) {
+      pushAction(state, settings, { type: 'resize', selector: null, viewport: page.viewport, label: 'Resize', url: page.url, time: Date.now() });
+      observeScreen(state, page.elements, settings);
+    }
+    state.viewport = page.viewport;
+  }
+  notifyMonitor(state, settings, previous);
+  return save(state);
+}
+
+// Kayıt sekmesi kapanmıştı: kayıt yalnızca bu sekme şu anki node'un ekranındaysa sürer (URL
+// şablonu ve edge set'i aynı); değilse sonraki edge'ler kayıttaki ekranlarla tutmazdı.
+async function resumeInTab(state, tabId) {
+  const settings = await getSettings();
+  const node = state.nodes.find((n) => n.id === state.currentNodeId);
+  const page = await chrome.tabs.sendMessage(tabId, { type: 'GET_FINGERPRINT' }).catch(() => null);
+  const same = node && page && urlKey(page.url) === node.urlKey
+    && sameCounts(stateCounts(node.elements, settings), stateCounts(page.elements, settings));
+  if (!same) {
+    await save(state);
+    return { notice: `Bu sekme şu anki node'un${node ? ` (${node.name})` : ''} ekranında değil. O ekrana gidip tekrar deneyin ya da graph'ta bir node seçip "Buradan devam et"e basın.` };
+  }
+  Object.assign(state, { tabId, tabs: [{ id: tabId, url: page.url, title: page.title }], buffer: [], screen: page.elements, viewport: page.viewport, idleSince: Date.now() });
+  notifyMonitor(state, settings);
+  await save(state);
+  return { notice: `Kayıt bu sekmede sürüyor (${node.name}).` };
+}
+
+// tab: { url, title } (Chrome sekmesi ya da state.tabs girdisi)
+function tabAction(operation, tab, extra = {}) {
+  const verb = { open: 'Open tab', switch: 'Switch to tab', close: 'Close tab' }[operation];
+  return { type: 'tab', operation, url: tab.url, ...extra, selector: null, label: `${verb} ${pageName(tab)}`.trim(), time: Date.now() };
+}
+
+// Sekmenin kısa adı: adresin son anlamlı parçası, yoksa sayfa başlığı, o da yoksa alan adı.
+function pageName({ url, title }) {
+  try {
+    return lastPathSegment(url) || title || new URL(url).hostname;
+  } catch {
+    return title ?? '';
+  }
+}
+
+function sameViewport(a, b) {
+  return a.width === b.width && a.height === b.height && a.devicePixelRatio === b.devicePixelRatio;
+}
+
+// Aktif kayıt sekmesinin son bilinen adresi (kapanırken ya da geçişte bilinsin).
+function noteTabUrl(state, url) {
+  const tab = state.tabs.find((t) => t.id === state.tabId);
+  if (tab && url) tab.url = url;
+}
 
 
 // -----------------------------------------------------------------------------
@@ -352,8 +537,13 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 async function createNode(state, tabId, windowId) {
   if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
-  if (state.tabId !== null && state.tabId !== tabId) {
-    throw new Error('Kayıt başka bir sekmede sürüyor. O sekmeye dönün ya da "Sıfırla"ya basın.');
+  // Kayda katılmamış bir sekme: "bu sekmede devam edilsin mi?" sorusu (yeniden) sorulur. Daha
+  // önce "Hayır" denmiş olabilir; "Node oluştur"a basan kullanıcı fikrini değiştirmiştir.
+  if (state.nodes.length > 0 && tabId !== state.tabId) {
+    if (state.tabs.some((t) => t.id === tabId)) throw new Error('Kayıt başka bir sekmede sürüyor. O sekmeye dönün.');
+    state.declinedTabs = state.declinedTabs.filter((t) => t !== tabId);
+    await askForTab(state, tabId);
+    return { notice: 'Farklı bir sekmedesiniz. Grafa bu sekmede devam etmek için paneldeki soruyu cevaplayın.' };
   }
   // Aksiyonsuz bir edge tekrar oynatılamaz. Bu yüzden ilk node dışında, son node'dan beri
   // hiç aksiyon kaydedilmediyse node oluşturulmaz. (Panel bu durumda butonu zaten kilitler.)
@@ -387,7 +577,9 @@ async function createNode(state, tabId, windowId) {
   state.buffer = [];
   state.screen = page.elements;
   state.idleSince = Date.now(); // node'un ekranında boşluk başlar
+  state.viewport = page.viewport;
   state.tabId = tabId;
+  if (!state.tabs.length) state.tabs = [{ id: tabId, url: page.url, title: page.title }];
   notifyMonitor(state, settings);
 
   if (matches.length) {
@@ -649,7 +841,7 @@ async function mergeNodes(state, keepId, removeId) {
 
 // Aynı kaynak, hedef ve aksiyon dizisine sahip edge'lerden fazla olanların sayısı.
 function countDuplicateEdges(edges) {
-  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.viewport, a.ms, a.key, a.count, a.text, a.operation])]);
+  const signature = (e) => JSON.stringify([e.source, e.target, e.actions.map((a) => [a.type, a.target ?? a.selector, a.value, a.x, a.y, a.zoom, a.viewport, a.ms, a.key, a.count, a.text, a.operation, a.type === 'tab' && a.url, a.by, a.active])]);
   const seen = new Set();
   let duplicates = 0;
   for (const e of edges) {
@@ -671,7 +863,11 @@ async function setCurrent(state, id, tabId) {
   state.buffer = [];
   state.screen = node.elements; // kullanıcı bu node'un ekranında: sıradaki aksiyonun öncesi
   state.idleSince = Date.now();
-  state.tabId ??= tabId ?? null;
+  // Kayıt sekmesi kapanmışsa kayıt butona basılan sekmede sürer.
+  if (state.tabId === null) {
+    state.tabId = tabId ?? null;
+    state.tabs = state.tabId === null ? [] : [{ id: state.tabId, url: '' }];
+  }
   notifyMonitor(state, await getSettings());
   return save(state);
 }

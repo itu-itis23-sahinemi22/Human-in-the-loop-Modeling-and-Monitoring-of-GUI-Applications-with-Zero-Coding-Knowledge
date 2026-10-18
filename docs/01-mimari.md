@@ -55,7 +55,7 @@ Ziyaret edilen **her** sayfaya Chrome tarafından otomatik olarak eklenir (`mani
 Eklentinin tek "durum sahibi" (single source of truth).
 
 - Content script'ten gelen aksiyonları `buffer` dizisinde biriktirir.
-- Tarayıcı seviyesindeki gezinmeleri (adres çubuğu, geri/ileri, yenile) `chrome.webNavigation` ile kendisi yakalar.
+- Tarayıcı seviyesindeki gezinmeleri (adres çubuğu, geri/ileri, yenile) `chrome.webNavigation` ile, sekme geçişlerini (`chrome.tabs`) kendisi yakalar; kayda katılmamış bir sekme aktif olunca "bu sekmede devam edilsin mi?" diye sorar ([Kayıt hangi sekmede?](#kayıt-hangi-sekmede)).
 - "Node oluştur" isteğinde parmak izi ve ekran görüntüsü alır, element kümesi birebir aynı olan node'u arar, node ve edge ekler.
 - Her değişiklikten sonra state'in tamamını `chrome.storage.local`'a yazar.
 - Panelin Ayarlar penceresindeki seçimleri `settings` anahtarında saklar ve uygular: işaretsiz aksiyon tiplerini buffer'a almaz (isteğe bağlı tipler, ör. üzerine gelme, işaretlenmedikçe kapalıdır), işaretsiz element türlerini state karşılaştırmasına katmaz. "Beklemeleri kaydet" açıksa aksiyonlar arasındaki boşlukları ve ekranın kendiliğinden değişmesini bekleme olarak kaydeder (bkz. [Beklemeler](#beklemeler)).
@@ -122,6 +122,7 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `CANCEL_PENDING` | panel → background | (boş) | Şu anki node seçilip "Node oluşturma, aksiyonlara devam et" denince: bekleyen karar atılır, kesilen aksiyonlar buffer'a geri döner (karar beklerken yapılanların önüne). |
 | `RENAME` | panel → background | `{ id, name }` | Node veya edge ismini değiştirir. |
 | `DELETE` | panel → background | `{ id }` | Node'u (ve bağlı edge'leri) ya da edge'i siler. |
+| `RESOLVE_TAB` | panel → background | `{ follow }` | "Bu sekmede devam edilsin mi?" sorusunun cevabı. `true`: kayıt bu sekmede sürer (`tab` aksiyonu); kayıt sekmesi kapanmışsa yalnızca sekme şu anki node'un ekranındaysa. `false`: sekme hatırlanır, bir daha sorulmaz. Bkz. [Kayıt hangi sekmede?](#kayıt-hangi-sekmede) |
 | `SET_CURRENT` | panel → background | `{ id, tabId }` | "Buradan devam et": şu anki node'u değiştirir, buffer'ı temizler. Kayıt sekmesi kapandıysa kaydı `tabId` sekmesine bağlar. |
 | `RESET` | panel → background | (boş) | Graph'ı sıfırlar. Ayarlara dokunmaz. |
 | `SET_SETTINGS` | panel → background | `{ settings }` | Ayarlar'daki seçimi kaydeder (`settings` anahtarı). |
@@ -371,9 +372,20 @@ Silme sonrası panel *"v_X silindi. Geri almak için Geri al ya da Ctrl+Z."* der
 
 ## Kayıt hangi sekmede?
 
-- Kayıt, **ilk "Node oluştur"un yapıldığı sekmeye** bağlanır (`state.tabId`). Diğer sekmelerdeki aksiyonlar yok sayılır. Kullanıcı arada başka bir sekmede bir şey araştırırsa graph kirlenmez.
-- Başka bir sekmede "Node oluştur"a basılırsa hata verilir: *"Kayıt başka bir sekmede sürüyor."*
-- Kayıt sekmesi **kapatılırsa** `tabId` boşaltılır ve aksiyon kaydı durur. Bekleyen aksiyon olmadan node oluşturulamadığı için devam etmenin yolu şudur: yeni sekmede bilinen bir duruma gidin, graph'ta o node'u seçin ve **Buradan devam et**'e basın. Kayıt o sekmede sürer. Panelin durum satırı bu durumu hatırlatır.
+Kayıt **ilk "Node oluştur"un yapıldığı sekmede** başlar. Akış başka sekmelere de yayılabilir: site yeni bir sekme ya da pencere açar (`target=_blank` link, ödeme / OAuth penceresi) ya da kullanıcı başka bir sitenin sekmesine geçer (kayıt olduktan sonra e-postadaki doğrulama linki). Aksiyonlar her an yalnızca **aktif kayıt sekmesinden** (`state.tabId`) kabul edilir; kayda katılan sekmeler `state.tabs`'ta tutulur (`background.js > SEKMELER`).
+
+**Kayda katılmamış bir sekme aktif olunca** panel sorar: *"Farklı bir sekmedesiniz. Grafa bu sekmede devam edilsin mi?"* (sekmeyi kayıt sekmesi açtıysa: *"Kayıt sekmesinin açtığı bir sekmedesiniz..."*). Soru background'da bekleyen bir karardır (`state.tabPrompt`); panel onu kart olarak çizer, cevap `RESOLVE_TAB` mesajıyla döner.
+
+- **Evet:** kayıt bu sekmede sürer. Edge'e bir `tab` aksiyonu (`open`) eklenir ve sekmenin ekranı bu aksiyonun sonrası olur. Sekmeyi kayıt sekmesi açtıysa (`webNavigation.onCreatedNavigationTarget`) açılış önceki aksiyonun (tıklamanın) sonucudur (`by: "page"`); kullanıcı açtıysa "yeni sekme aç ve bu adrese git" demektir (`by: "user"`). Yeni sekmenin görünen alanı öncekinden farklıysa (başka pencere) ardından bir `resize` eklenir.
+- **Hayır:** sekme hatırlanır (`state.declinedTabs`), o sekmeye her geçişte soru tekrar çıkmaz. Kayıt eski sekmede kalır, bu sekmedeki aksiyonlar yok sayılır: kullanıcı arada başka bir sekmede bir şey araştırırsa graph kirlenmez. Kayıt sekmesine dönünce kayıt kaldığı yerden sürer.
+- Soruyu cevaplamadan kayıt sekmesine dönülürse soru kalkar; o sekmeye tekrar geçince yeniden sorulur.
+- "Hayır" denen bir sekmede **Node oluştur**'a basılırsa soru yeniden sorulur: kullanıcı fikrini değiştirmiştir.
+
+**Kayda katılmış sekmeler arası geçiş sorulmaz**, `tab` aksiyonu (`switch`) olarak eklenir. Kayda katılmış bir sekme kapanırsa ve kayıtta başka sekme kaldıysa kapanış da bir aksiyondur (`close`); aktif sekme kapandıysa Chrome'un öne getirdiği sekmeye (kayda katılmışsa) geçilir.
+
+**Tekrar oynatırken** sekme sıra numarasıyla değil adresiyle (URL şablonu) bulunur. GraphWalker'ın yolu edge'leri kayıttaki sırayla yürümeyebilir; aynı sekmeyi açan bir edge iki kez geçilirse sıra numaraları kayardı ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)).
+
+**Kayıt sekmelerinin hepsi kapanırsa** aksiyon kaydı durur. Başka bir sekmede soruya "Evet" denince kayıt, o sekme **şu anki node'un ekranındaysa** (URL şablonu ve edge set'i aynı) sürer; değilse sonraki edge'ler kayıttaki ekranlarla tutmayacağı için reddedilir. Diğer yol: graph'ta bir node seçip **Buradan devam et**. Panelin durum satırı bu durumu hatırlatır.
 
 ---
 

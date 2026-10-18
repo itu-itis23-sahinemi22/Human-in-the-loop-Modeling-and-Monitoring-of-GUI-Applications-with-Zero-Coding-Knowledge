@@ -30,6 +30,11 @@ Tüm veri `chrome.storage.local` içinde **`state`** anahtarı altında, tek bir
 | `buffer` | `Action[]` | Son node'dan beri yapılan, henüz bir edge'e dönüşmemiş aksiyonlar. Panelde "Bekleyen aksiyonlar" listesi. |
 | `pending` | `Pending \| null` | Element kümesi birebir aynı bir node bulunduğunda kullanıcının cevabını bekleyen karar |
 | `screen` | `{ key, types, count }[] \| null` | Hemen önceki state: en son görülen ekranın edge set'i (node `elements` ile aynı biçim). Sıradaki aksiyonun öncesidir; aksiyonun `changed` işareti bununla bulunur. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
+| `tabs` | `{ id, url, title }[]` | Kayda katılan sekmeler (Chrome sekme id'si, son bilinen adres ve başlık). `tabId` bunlardan aktif olanıdır. Bkz. [01 > Kayıt hangi sekmede?](01-mimari.md#kayıt-hangi-sekmede) |
+| `declinedTabs` | `number[]` | "Bu sekmede devam edilsin mi?" sorusuna "Hayır" denen sekmeler; bir daha sorulmaz. |
+| `pageOpenedTabs` | `number[]` | Kayıt sekmelerinin açtığı sekmeler (link, popup). Kayda katılırlarsa açılış önceki aksiyonun sonucudur. |
+| `tabPrompt` | `{ tabId, url, title, openedByPage } \| null` | Bekleyen soru: kayda katılmamış bir sekme aktif oldu. |
+| `viewport` | `{ width, height, devicePixelRatio } \| null` | Aktif kayıt sekmesinin son bilinen görünen alanı; sekme değişince fark varsa `resize` eklenir. |
 | `idleSince` | `number \| null` | Ekranın son aksiyondan (ya da node'dan) sonra durulduğu an (ms). O andan beri aksiyon yok; beklemeler bununla ölçülür. Aksiyon yapılınca `null` olur. Bkz. [01 > Beklemeler](01-mimari.md#beklemeler) |
 | `undo` | `Silme[]` | Geri al yığını, en yenisi sonda, en fazla 20. Her kayıt silineni ve eski yerini tutar: `{ kind: 'node', node, index, edges: [{ edge, index }], startNodeId, currentNodeId }`, `{ kind: 'edge', edge, index }`, `{ kind: 'action', edgeId, index, action }` ya da `{ kind: 'merge', keepId, node, index, edges: [{ id, source, target }], startNodeId, currentNodeId }` (birleştirmede taşınan edge'lerin eski uçları). Bkz. [01 > Geri al](01-mimari.md#geri-al) |
 
@@ -100,6 +105,7 @@ Tipler:
 | `navigate` | background.js | | `"GoTo cart"` | `goto(url)` |
 | `history` | background.js | | `"Back"` | `goBack()` ya da `goto(url)` |
 | `reload` | background.js | | `"Reload"` | `reload()` |
+| `tab` | background.js | `operation`: `"open"`, `"switch"` ya da `"close"`; `url`: sekmenin adresi (açılan, geçilen ya da kapanan). `open`'da `by`: `"page"` (kayıt sekmesi açtı, önceki aksiyonun sonucu) ya da `"user"` (kullanıcı açtı). `close`'da `active`: kapanan aktif sekme miydi. | `"Open tab docs"`, `"Switch to tab Mağaza"` | `page`: önceki aksiyonun açtığı sayfaya geç (`context.waitForEvent('page')`); `user`: yeni sayfa aç, `url`'e git. `switch` / `close`: adresi (URL şablonu) tutan sekme. |
 | `wait` | background.js | `ms` (`number`): beklemenin süresi. `time` beklemenin başladığı andır. `changed` işaretini kayıt anında alır: `true` ekran beklerken kendiliğinden değişti (ör. oturum zaman aşımı), `false` değişmedi. Yalnızca Ayarlar'da "Beklemeleri kaydet" açıkken kaydedilir ([01 > Beklemeler](01-mimari.md#beklemeler)). | `"Wait"` | `waitForTimeout(ms)` |
 
 Şifre alanlarında `value` her zaman `"******"` olarak saklanır.

@@ -79,28 +79,20 @@ async function main() {
       deviceScaleFactor: viewport.devicePixelRatio,
     });
     await context.addInitScript({ content: INIT_SCRIPT });
-    const page = await context.newPage();
-    const cdp = await context.newCDPSession(page);
     const warnings = [];
-    const run = {
-      timeout, secrets, viewport,
-      async setViewport(next) {
-        run.viewport = next;
-        await setViewport(cdp, next);
-      },
-      warn: (text) => warnings.push(text),
-    };
+    const run = createRun(context, { timeout, secrets, viewport, warn: (text) => warnings.push(text) });
+    await run.track(await context.newPage());
     const fail = async (name) => {
       mkdirSync(out, { recursive: true });
       const file = join(out, `${new Date().toISOString().replace(/[:.]/g, '-')}-${name}.png`);
-      await page.screenshot({ path: file });
+      await run.page.screenshot({ path: file });
       console.log(`    Ekran görüntüsü: ${file}`);
     };
 
     // Başlangıç: kayıttaki ilk ekran
     let stepStarted = Date.now();
-    await page.goto(model.start.url);
-    let result = await verifyState(page, model.start, model.settings, { timeout });
+    await run.page.goto(model.start.url);
+    let result = await verifyState(run.page, model.start, model.settings, { timeout });
     printStep(result.ok, model.start.name, 'başlangıç', Date.now() - stepStarted);
     if (!result.ok) {
       printMismatch(result, model.start);
@@ -113,7 +105,7 @@ async function main() {
       const name = `${edge.name} → ${target.name}`;
       stepStarted = Date.now();
       warnings.length = 0;
-      const broken = await playEdge(page, edge, run);
+      const broken = await playEdge(edge, run);
       if (broken) {
         printStep(false, name, `${edge.actions.length} aksiyon`, Date.now() - stepStarted);
         printWarnings(warnings);
@@ -121,7 +113,7 @@ async function main() {
         await fail(edge.name);
         return summary(false, passed, steps, started);
       }
-      result = await verifyState(page, target, model.settings, { timeout });
+      result = await verifyState(run.page, target, model.settings, { timeout });
       printStep(result.ok, name, `${edge.actions.length} aksiyon`, Date.now() - stepStarted);
       printWarnings(warnings);
       if (!result.ok) {
@@ -137,14 +129,48 @@ async function main() {
   }
 }
 
+// Çalıştırmanın durumu: açık sayfalar (sekmeler) ve aktif olanı. Kayıt birden fazla sekmeye
+// yayılabilir ('tab' aksiyonları, bkz. lib/actions.js). pages en son kullanılan sonda olacak
+// şekilde tutulur. Görünen alan sayfa başınadır (DevTools protokolü oturumu da): yeni sayfa,
+// aktif sayfanın görünen alanıyla açılır.
+function createRun(context, options) {
+  const sessions = new Map(); // sayfa -> { cdp, viewport }
+  const run = {
+    ...options, context, pages: [], page: null,
+    async track(page) {
+      sessions.set(page, { cdp: await context.newCDPSession(page), viewport: run.viewport });
+      await setViewport(sessions.get(page).cdp, run.viewport);
+      run.pages.push(page);
+      run.page ??= page;
+    },
+    async activate(page) {
+      run.pages = [...run.pages.filter((p) => p !== page), page];
+      run.page = page;
+      run.viewport = sessions.get(page).viewport;
+      await page.bringToFront();
+    },
+    forget(page) {
+      run.pages = run.pages.filter((p) => p !== page);
+      sessions.delete(page);
+    },
+    async setViewport(next) {
+      run.viewport = next;
+      sessions.get(run.page).viewport = next;
+      await setViewport(sessions.get(run.page).cdp, next);
+    },
+  };
+  return run;
+}
+
 // Edge'in aksiyonlarını sırayla oynatır; her aksiyondan sonra sayfanın durulması beklenir
-// (kayıtta her aksiyon, öncekinin etkisi durulduktan sonraki ekranda yapılmıştı).
+// (kayıtta her aksiyon, öncekinin etkisi durulduktan sonraki ekranda yapılmıştı). Aksiyon
+// aktif sekmeyi değiştirebilir; her aksiyon o anki aktif sayfada oynatılır.
 // Oynatılamayan ilk aksiyonu döner, hepsi oynatıldıysa null.
-async function playEdge(page, edge, run) {
+async function playEdge(edge, run) {
   for (const [index, action] of edge.actions.entries()) {
     try {
-      await playAction(page, action, run);
-      await settle(page);
+      await playAction(run.page, action, run);
+      await settle(run.page);
     } catch (error) {
       return { index, action, error };
     }

@@ -29,6 +29,7 @@ const ACTION_TYPES = [
   { type: 'scroll', text: 'Kaydır' },
   { type: 'zoom', text: 'Yakınlaştır/Uzaklaştır' },
   { type: 'resize', text: 'Pencere boyutu' },
+  { type: 'tab', text: 'Sekme' },
   { type: 'navigate', text: 'Git' },
   { type: 'history', text: 'Geri/İleri' },
   { type: 'reload', text: 'Yenile' },
@@ -129,6 +130,11 @@ function normalizeState(state) {
   state.pending ??= null;
   state.screen ??= null;
   state.idleSince ??= null;
+  state.viewport ??= null;
+  state.tabs ??= state.tabId != null ? [{ id: state.tabId, url: '' }] : [];
+  state.declinedTabs ??= [];
+  state.pageOpenedTabs ??= [];
+  state.tabPrompt ??= null;
   const pending = state.pending;
   if (pending && !Array.isArray(pending.candidateIds)) {
     pending.candidateIds = pending.candidateId ? [pending.candidateId] : [];

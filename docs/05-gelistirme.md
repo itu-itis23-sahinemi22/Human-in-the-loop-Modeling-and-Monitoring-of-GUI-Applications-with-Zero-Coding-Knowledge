@@ -56,7 +56,7 @@ Eklentinin üç parçası üç ayrı ortamda çalıştığı için (bkz. [01-mim
 |---|---|---|
 | *"Bu sayfaya erişilemedi. Sayfayı yenileyip tekrar deneyin."* | Sayfa eklenti yüklenmeden (ya da yenilenmeden) önce açılmıştı, content script yok. | Sayfayı F5 ile yenileyin. |
 | Aynı hata, `chrome://` ya da Chrome Web Store sayfasında | Chrome, eklentilerin bu sayfalara kod eklemesine izin vermez. | Normal bir web sitesinde çalışın. |
-| *"Kayıt başka bir sekmede sürüyor."* | Kayıt ilk node'un oluşturulduğu sekmeye bağlıdır. | O sekmeye dönün ya da **Sıfırla**'ya basın. |
+| Panelde *"Farklı bir sekmedesiniz. Grafa bu sekmede devam edilsin mi?"* | Kayda katılmamış bir sekme aktif oldu (ya da orada "Node oluştur"a basıldı). | Akış bu sekmede sürüyorsa **Evet**; yalnızca bakıyorsanız **Hayır** (sekme bir daha sorulmaz, aksiyonları kaydedilmez). |
 | "Bekleyen aksiyonlar" listesi dolmuyor | (1) Henüz hiç node oluşturulmadı (kayıt başlamadı). (2) Başka sekmedesiniz. (3) Eklenti yenilendi ama sayfa yenilenmedi. (4) Aksiyon bir iframe içinde. (5) O aksiyon tipinin Ayarlar'da işareti kaldırılmış. (6) Kayıt sekmesi kapatıldı. | Sırasıyla kontrol edin. (6) için: bir node seçip **Buradan devam et**'e basın. |
 | "Node oluştur" butonu kilitli | Son node'dan beri bekleyen aksiyon yok (ilk node hariç node oluşturmak için en az bir aksiyon gerekir) ya da bekleyen bir "aynı node mu?" sorusu var. | Sayfada bir aksiyon yapın ya da soruyu cevaplayın. |
 | Tıklamalar sayfaya hiç ulaşmıyor (eklentiyle ilgisiz) | Chrome'un "şifre ihlali" ya da "şifreyi kaydet" diyaloğu açık. | Diyaloğu kapatın. |
@@ -138,6 +138,8 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 - [ ] Beklemeler açıkken iki tıklama arasında 2 sn beklemek `Bekle  Wait → 2,0 sn` satırı bırakıyor; 1 sn'den kısa boşluk bırakmıyor. Node oluşturduktan sonra ilk aksiyondan önceki bekleme kaydedilmiyor. Bir alana yazarken beliren buton bekleme sayılmıyor.
 - [ ] Belli bir süre sonra kendiliğinden değişen bir sayfada (oturum zaman aşımı) hiçbir şey yapmadan beklemek, ekran değişince `Bekle` satırı bırakıyor; "Node oluştur" `e_Wait` edge'ini oluşturuyor ve aksiyonun yanında "ekranı değiştirdi" yazıyor. Anahtar kapalıyken bekleme satırı hiç çıkmıyor.
 - [ ] Ayarlar'da **Üzerine gelme (fare)** başta işaretsiz. İşaretlenince fareyle üzerine gelince açılan bir menü (CSS ya da JS) `Üzerine gelme (fare)  Hover ...` satırı bırakıyor; ekranı değiştirmeyen bir butonun üzerinden geçmek satır bırakmıyor. Fare dururken kendiliğinden gelen değişim hover değil bekleme oluyor.
+- [ ] `target=_blank` bir linke tıklayınca panelde "Kayıt sekmesinin açtığı bir sekmedesiniz" kartı çıkıyor. **Evet**: "Bekleyen aksiyonlar"da `Sekme  Open tab ...` satırı, kayıt yeni sekmede sürüyor. Sekmeyi kapatınca `Close tab` ve `Switch to tab` satırları geliyor, kayıt eski sekmede sürüyor.
+- [ ] Yeni bir sekmede başka bir siteye gidince kart çıkıyor; **Hayır** deyince o sekmedeki tıklamalar kaydedilmiyor ve o sekmeye tekrar geçince soru çıkmıyor. Orada "Node oluştur"a basınca soru yeniden çıkıyor.
 - [ ] Sayfada (alan dışında) Escape'e basınca `Tuş  Press Escape` satırı çıkıyor; ok tuşunu basılı tutunca tek satır `Press ArrowDown ×N` oluyor. Alana yazılan harfler satır üretmiyor; alan değeri `Fill` olarak geliyor. Ctrl +, F5, Tab ve butonda Enter tuş olarak kaydedilmiyor.
 - [ ] Arama kutusuna yazıp ArrowDown ile öneri seçip Enter'a basınca sıra: `Fill`, `Press ArrowDown`, `Submit`.
 - [ ] Türkçe klavyede bir alana `@` yazmak (AltGr+Q) tuş olarak kaydedilmiyor.
@@ -236,6 +238,17 @@ Bu değişiklikten sonra önceki testler de tekrar koşuldu ve geçti: pencere b
 - Ayar kapalıyken üzerine gelme kaydedilmedi. Runner üç edge'i (hover'lar dahil) geçti.
 
 İlk koşuda JS kartı bekleme olarak kaydedildi: tarayıcı `mouseover` / `mouseenter`'ı `mousemove`'dan önce gönderdiği için fare konumu kartın menüsü açıldığında henüz güncellenmemişti. Konum artık sınır olaylarında da (`mouseout`, `mouseover`) güncelleniyor. Ardından bekleme, pencere boyutu, yakınlaştırma ve saucedemo testleri tekrar koşuldu ve geçti.
+
+**Sekmeler.** İki yerel sunucuyla (iki ayrı origin: "başka site") bir mağaza (`target=_blank` linkle "Dokümanlar" sekmesini açar) ve bir posta sayfası ("Doğrula"). Eklenti Chromium'da, panel ayrı bir sekmede gerçek `chrome.*` API'leriyle çalıştı; sekmeler gerçekten açılıp kapatıldı. 21 kontrolün hepsi ilk koşuda geçti:
+
+- Linkle açılan sekme: kart "Kayıt sekmesinin açtığı..." metniyle çıktı (`openedByPage: true`). **Evet**: kayıt yeni sekmede, aksiyonlar `click, tab(open, page)`, sekme aksiyonu "ekranı değiştirdi"; node ve `e_OpenTabDocs` edge'i.
+- Yeni sekmede tıklayıp sekmeyi kapatmak: `click, tab(close, aktif), tab(switch)`; kayıt eski sekmede sürdü, oradaki ekran ilk node ile aynı state olarak önerildi.
+- Kullanıcının açtığı başka site: kart (`openedByPage: false`). **Hayır**: sekme hatırlandı, oradaki tıklama kaydedilmedi; kayıt sekmesine dönüp tekrar gelince soru çıkmadı. Orada "Node oluştur": soru yeniden çıktı.
+- Başka bir sekmede başka site, **Evet**: `tab(open, user), click`; o sitede node.
+- Kayıt sekmelerinin hepsi kapandıktan sonra yeni bir sekmede **Evet**: sekme şu anki node'un ekranında değilken reddedildi; sayfada aynı ekrana gelindikten sonra kayıt o sekmede sürdü.
+- Runner üç edge'i iki sekmede oynattı ve geçti (linkle açılan sekmeye geçiş, kapatıp dönüş, başka sitede yeni sekme).
+
+Ardından bekleme, üzerine gelme, pencere boyutu, yakınlaştırma ve saucedemo testleri tekrar koşuldu ve geçti.
 
 **Sayılı küme (multiset) ölçümleri.** Mock testlerde: aynı butondan 5 ile 4 olan ekran soru sorulmadan ayrı node; aynı sayılar (sıra farklı) aday; aynı anahtarın farklı tür grupları toplanıyor; Ayarlar filtresi tür bazında uygulanıyor; önceki sürümün biçimiyle kaydedilmiş node çökme yapmadan aday dışı kalıyor. Gerçek Chrome'da 20 satırlık kaydırılabilir listeyle ve canlı saucedemo.com'da ölçüm sonuçları: [03 > Edge hedefi](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi).
 

@@ -63,6 +63,17 @@
     </div>
   </section>
 
+  <!-- Kayda katılmamış bir sekme aktif oldu: kayıt bu sekmede sürsün mü? (background.js > SEKMELER)
+       "Hayır" denen sekme bir daha sorulmaz; kayıt eski sekmede kalır. -->
+  <section id="tab-prompt" class="card highlight" hidden>
+    <p id="tab-prompt-text"></p>
+    <p id="tab-prompt-url" class="muted small"></p>
+    <div class="toolbar">
+      <button id="btn-tab-follow" class="primary">Evet, bu sekmede devam et</button>
+      <button id="btn-tab-decline">Hayır</button>
+    </div>
+  </section>
+
   <!-- Graph çizimi (Cytoscape.js bu div'in içine çizer) -->
   <div id="graph"></div>
 

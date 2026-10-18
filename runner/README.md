@@ -143,6 +143,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `reload` | `reload()` |
 | `resize` | Görünen alan `viewport` boyutuna ayarlanır |
 | `zoom` | Görünen alan varılan boyuta ve piksel oranına ayarlanır. Eski kayıtlarda varılan boyut yoktur; yakınlaştırma oranlarından hesaplanır. |
+| `tab` | `open`: önceki aksiyonun açtığı sayfaya geçilir (`by: page`; sayfa henüz yoksa beklenir) ya da yeni sayfa açılıp adrese gidilir (`by: user`). `switch`: adresi (URL şablonu) tutan, en son kullanılan sekmeye geçilir. `close`: o sekme kapanır; aktif sekme kapandıysa en son kullanılan sekme öne gelir. Yeni sekme aktif sekmenin görünen alanıyla açılır. |
 | `wait` | `ms` kadar beklenir. Ekranı değiştiren bekleme (oturum zaman aşımı) biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar. |
 | `select`, `clipboard` | Henüz oynatılmıyor; adım "desteklenmiyor" diye başarısız olur |
 
@@ -151,7 +152,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 ## Sınırlar
 
 - **Gizli durum.** Aynı edge set, aynı durum için gereklidir ama yeterli değildir. Doğrulama etkileşimli olmayan farkları (sepetteki ürün sayısı, uyarı metni) görmez ([docs/03 > Küme aynıysa neden hâlâ soruluyor?](../docs/03-state-eslestirme.md#küme-aynıysa-neden-hâlâ-soruluyor)).
-- **Tek sekme.** Yeni sekme ya da popup açan akışlar henüz desteklenmiyor.
+- **Sekmeyi adresiyle bulmak.** Aynı adreste (URL şablonu) birden fazla açık sekme varsa en son kullanılan seçilir; kayıtta başka biri kastedilmiş olabilir.
 - **Temiz oturum.** Her çalıştırma boş bir tarayıcı bağlamında başlar. Kayıt giriş yapılmış bir sayfada başladıysa başlangıç doğrulaması başarısız olur; kaydı giriş sayfasından başlatın.
 - **Değerini yalnızca `change` olayıyla işleyen alanlar.** `fill()` `input` olaylarını üretir; `change` ise odak alandan çıkınca gelir. Edge'in son aksiyonu böyle bir alandaysa doğrulama, değer işlenmeden önceki ekranı görebilir.
 - **Gecikmeli gezinmeler.** Sayfanın zamanlayıcıyla yaptığı yönlendirmeler doğrulamadaki tekrar denemeyle yakalanır; daha uzun sürüyorsa `--timeout` artırılır.

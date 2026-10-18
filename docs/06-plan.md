@@ -37,7 +37,7 @@
 | 1 | Viewport kaydı ve `resize` aksiyonu (iş 3) | 0,5 gün | Yapıldı |
 | 2 | Runner, ilk sürüm (iş 1) | 2 gün | Yapıldı |
 | 3 | Beklemeleri kaydet (iş 4) | 0,5–1 gün | Yapıldı |
-| 4 | Yeni sekmede devam (iş 5) | 1,5–2 gün | |
+| 4 | Yeni sekmede devam (iş 5) | 1,5–2 gün | Yapıldı |
 | 5 | Karşılaştırma ekranı (iş 2) | 1 gün | |
 | 6 | Senaryo planlama ve rapor (iş 1) | kalan süre | |
 
@@ -182,7 +182,7 @@ Karşılandı ([05 > Test](05-gelistirme.md#test)): son tıklamadan 4 sn sonra k
 
 ## Faz 4: Yeni sekmede ya da başka sitede devam
 
-*İş 5.*
+*İş 5. Durum: yapıldı. Tasarım: [01 > Kayıt hangi sekmede?](01-mimari.md#kayıt-hangi-sekmede).*
 
 ### Problem
 
@@ -208,7 +208,20 @@ Kayıt sekmesi olmayan bir sekme aktif olunca panel sorar: *"Farklı bir sekmede
 - **Farklı boyutlu pencere:** yeni sekme farklı boyutta bir penceredeyse edge bir `resize` ile başlar (Faz 1'in bilinen sınırı).
 - **Runner** aktif sayfayı takip eder: site açtığında `context.waitForEvent('page')`, kullanıcı açtığında `context.newPage()`.
 
+### Yapılanlar
+
+- [x] Kayda katılmamış sekme aktif olunca soru (background'da bekleyen karar, panelde kart); "Evet" / "Hayır"; "Hayır" denen sekme hatırlanır; orada "Node oluştur" soruyu yeniden sorar
+- [x] `tab` aksiyonu: `open` (sayfa açtı / kullanıcı açtı), `switch`, `close`; kayda katılmış sekmeler arası geçiş sorulmaz
+- [x] Yeni sekme farklı boyuttaysa ardından `resize` (Faz 1'in bilinen sınırının sekme kısmı)
+- [x] Kayıt sekmelerinin hepsi kapanınca yalnızca şu anki node'un ekranındaki sekmede devam
+- [x] Runner: çok sekme; sekme adresiyle (URL şablonu) bulunur, sıra numarasıyla değil
+- [x] Dokümanlar: 01, 04, 05, README, runner/README
+
+Bir tasarım değişikliği: planda sekme kimliği "açılış sırası" idi. GraphWalker'ın yolu edge'leri kayıttaki sırayla yürümeyebildiği için (aynı sekmeyi açan edge iki kez geçilirse) sıra numaraları kayardı; sekme adresiyle bulunuyor.
+
 ### Kabul kriteri
+
+Karşılandı ([05 > Test](05-gelistirme.md#test)). Ayrıca kayıt sekmeleri kapandıktan sonra devam etme ve "Node oluştur" ile sorunun yeniden sorulması da denendi.
 
 - `target=_blank` bir linke tıklayıp yeni sekmeye geçince soru çıkar. **Evet** denince yeni sekmede node oluşur; edge'de tıklama ve sekme aksiyonu vardır.
 - **Hayır** denince o sekmede aksiyon kaydedilmez. Eski sekmeye dönünce kayıt sürer; o sekmeye tekrar geçince soru çıkmaz.
@@ -288,7 +301,7 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 
 | Zayıflık | Etki | İyileştirme fikri |
 |---|---|---|
-| Farklı boyuttaki pencerede "Buradan devam et" | Boyut farkı kaydedilmez; test o edge'de tutmayabilir. | Kayıt farklı boyutlu bir pencerede sürerse edge'i bir `resize` ile başlatmak (Faz 4'le birlikte). |
+| Farklı boyuttaki pencerede "Buradan devam et" | Boyut farkı kaydedilmez; test o edge'de tutmayabilir. | Sekme değişiminde yapıldı (Faz 4: yeni sekme farklı boyuttaysa `resize` eklenir). "Buradan devam et" ve kapanmış sekmeden sonra devam için de aynısı yapılabilir. |
 | Farklı ölçekli monitöre taşıma | `devicePixelRatio` yakınlaştırmasız değişir, kaydedilmez. | Background'ın yakınlaştırma olayıyla eşleştirip ayırt etmek. |
 | Bilerek farklı boyutta test yok | Responsive davranış test edilemez. | Ekran filtresiz ikinci parmak izi ve toleranslı doğrulama modu. |
 
@@ -321,3 +334,16 @@ Fazlar ilerledikçe görülen zayıf noktalar ve sonradan yapılabilecek iyileş
 | Tetikleyici en içteki element | Menünün dinleyicisi bir üst elementte olabilir. | Değişen alt ağacı içeren en yakın atayı tetikleyici seçmek. |
 | Etiket ve hedef üzerine gelindikten sonra alınır | Etiket açılan butonun yazısını içerebilir; hedefin sırası sonraki ekrana göredir. | Fare girişinde hedefi ve etiketi önceden hesaplamak (yalnızca etkileşimli elementlerde ucuz). |
 | CSS ile açılan, etkileşimli olmayan tetikleyici | Ekrana bakılmaz, yakalanmaz. | Fare bir süre durduğunda (ör. 300 ms) her elementte ekrana bakmak. |
+
+### Sekmeler (Faz 4)
+
+| Zayıflık | Etki | İyileştirme fikri |
+|---|---|---|
+| Sekme adresiyle bulunur | Aynı adreste (URL şablonu) birden fazla açık sekme varsa en son kullanılan seçilir; kayıtta başka biri kastedilmiş olabilir. | Sekmeye açılış zinciriyle (hangi sekme açtı) birlikte kimlik vermek. |
+| "Hayır" denen sekmede sonradan "Evet" | O sekmede kaydedilmemiş aksiyonların etkisi tekrar oynatılamaz (kullanıcının açtığı sekme tekrar oynatılırken boş sayfa açılıp adrese gidilir). | "Evet"ten önce sekmede aksiyon yapıldıysa uyarmak. |
+| Kullanıcının açtığı sekme = "yeni sekme ve adres" | Adrese giderken gönderilen form, oturum gibi şeyler taşınmaz. | Sekmenin geçmişindeki gezinmeleri de aksiyon olarak almak. |
+| Sayfanın kendini kapatması (`window.close()`) | Kayıtta kapanış aksiyonu olur; tekrar oynatırken sayfa zaten kapanmıştır, sonraki adım kapanmış sayfada denenebilir. | Runner'da kapanmış sayfayı izlemek, kapanış aksiyonunda kontrol etmek. |
+| Popup ayrı penceredir | Yan panel pencere başınadır; soru ana pencerenin panelinde çıkar, kullanıcı görmeyebilir. | Popup penceresi açılınca bildirim (`chrome.notifications`) ya da rozet. |
+| Yalnızca aktif olunca sorulur | Arka planda açılan (Ctrl+tık) sekme, kullanıcı ona geçene kadar sorulmaz. | Açılışta bekleyen soru olarak tutmak. |
+| "Buradan devam et" sekme listesini sıfırlar | Kayıt kapanmış sekmelerden sonra sürerse önceki sekmeler kayıttan düşer. | Açık kalan kayıt sekmelerini korumak. |
+

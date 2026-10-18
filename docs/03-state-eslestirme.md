@@ -238,7 +238,7 @@ Bilerek farklı boyutta test (responsive test) için olası yol: kayıtta ekran 
 
 **Sınırlar:**
 
-- Kayıt farklı boyuttaki bir pencerede **Buradan devam et** ile sürdürülürse aradaki boyut farkı kaydedilmez: o sayfada boyut değişmemiştir.
+- Kayıt farklı boyuttaki bir pencerede **Buradan devam et** ile sürdürülürse aradaki boyut farkı kaydedilmez: o sayfada boyut değişmemiştir. Kayıt başka bir sekmeye geçtiğinde ise fark kaydedilir: yeni sekmenin görünen alanı öncekinden farklıysa sekme aksiyonunun ardından bir `resize` eklenir ([01 > Kayıt hangi sekmede?](01-mimari.md#kayıt-hangi-sekmede)).
 - Pencereyi farklı ölçekli bir monitöre taşımak `devicePixelRatio`'yu yakınlaştırma olmadan değiştirir. Bu değişim, yakınlaştırmayla karıştırılmaması için kaydedilmez.
 - Boyut değişirken açık bir aksiyon varsa (tıklayıp sayfa durulmadan pencereyi büyütmek) ikisinin etkisi ayrılamaz; ikisi de "etkisi bilinmiyor" olur ([01 > Edge düzenleme](01-mimari.md#edge-düzenleme)).
 

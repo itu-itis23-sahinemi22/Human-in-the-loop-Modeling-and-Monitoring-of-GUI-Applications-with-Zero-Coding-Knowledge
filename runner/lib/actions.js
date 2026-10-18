@@ -7,7 +7,10 @@
 // fingerprint.js > targetElement). Bulunamazsa kayıttaki CSS selector kullanılır.
 // =============================================================================
 
-// run: { timeout, secrets, viewport, setViewport(viewport), warn(text) }
+import { urlKey } from './state.js';
+
+// run: { timeout, secrets, viewport, setViewport(viewport), warn(text), context, pages, page,
+//        track(page), activate(page), forget(page) } (bkz. run.js > createRun)
 export async function playAction(page, action, run) {
   switch (action.type) {
     case 'click': return (await elementOf(page, action, run)).click({ timeout: run.timeout });
@@ -26,6 +29,7 @@ export async function playAction(page, action, run) {
     // Kayıttaki bekleme. Ekranı değiştiren bekleme (oturum zaman aşımı) biraz geç sonuçlansa
     // da doğrulamadaki tekrar deneme onu yakalar.
     case 'wait': return page.waitForTimeout(action.ms);
+    case 'tab': return tab(action, run);
     default: throw new Error(`"${action.type}" aksiyonu runner'da henüz desteklenmiyor.`);
   }
 }
@@ -121,3 +125,57 @@ function zoomed({ width, height, devicePixelRatio }, { zoom, fromZoom }) {
   const scale = zoom / fromZoom;
   return { width: Math.floor(width / scale), height: Math.floor(height / scale), devicePixelRatio: devicePixelRatio * scale };
 }
+
+
+// -----------------------------------------------------------------------------
+// SEKMELER: kayıttaki sekme geçişleri (open / switch / close)
+// -----------------------------------------------------------------------------
+// Sekme sıra numarasıyla değil adresiyle (URL şablonu) bulunur: GraphWalker'ın yolu edge'leri
+// kayıttaki sırayla yürümeyebilir; aynı sekmeyi açan edge iki kez geçilirse sıra numaraları
+// kayardı. Aynı adreste birden fazla sekme varsa en son kullanılan seçilir.
+async function tab(action, run) {
+  if (action.operation === 'open') return openTab(action, run);
+  if (action.operation === 'switch') {
+    if (sameAddress(run.page.url(), action.url)) return; // aktif sekme kapanınca zaten buraya gelindi
+    return run.activate(otherTab(action, run));
+  }
+  // Kapanış: aktif sekme kapandıysa Chrome'daki gibi en son kullanılan sekme öne gelir; kayıtta
+  // ardından gelen 'switch' gerekirse düzeltir.
+  const page = action.active ? run.page : otherTab(action, run);
+  await page.close();
+  run.forget(page);
+  if (action.active) await run.activate(run.pages.at(-1));
+}
+
+// Sayfanın açtığı sekme (link, popup) önceki aksiyonla açılmıştır: henüz izlenmeyen sayfa ya da
+// gelecek ilk sayfa. Kullanıcının açtığı sekme yeni bir sayfadır; kayıttaki adrese gidilir
+// (boş sekmeyse adresi sonraki 'navigate' aksiyonu getirir).
+async function openTab({ by, url }, run) {
+  let page;
+  if (by === 'page') {
+    page = run.context.pages().find((p) => !run.pages.includes(p)) ?? await run.context.waitForEvent('page', { timeout: run.timeout });
+  } else {
+    page = await run.context.newPage();
+    if (/^https?:/.test(url)) await page.goto(url);
+  }
+  await run.track(page);
+  await run.activate(page);
+}
+
+// Aktif olmayan sekmelerden adresi tutan, en son kullanılan. Adres tutmuyor ama tek bir başka
+// sekme varsa o (sayfa kendi içinde gezinmiş olabilir).
+function otherTab(action, run) {
+  const others = run.pages.filter((p) => p !== run.page);
+  const page = others.filter((p) => sameAddress(p.url(), action.url)).at(-1) ?? (others.length === 1 ? others[0] : null);
+  if (!page) throw new Error(`"${action.label}": ${action.url} adresinde açık bir sekme yok.`);
+  return page;
+}
+
+function sameAddress(a, b) {
+  try {
+    return urlKey(a) === urlKey(b);
+  } catch {
+    return a === b;
+  }
+}
+

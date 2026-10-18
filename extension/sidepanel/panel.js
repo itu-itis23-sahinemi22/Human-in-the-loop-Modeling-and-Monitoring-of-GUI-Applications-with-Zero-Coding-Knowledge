@@ -12,7 +12,7 @@
 
 const $ = (id) => document.getElementById(id);
 
-const EMPTY_STATE = { tabId: null, currentNodeId: null, startNodeId: null, nodes: [], edges: [], buffer: [], pending: null, undo: [] };
+const EMPTY_STATE = { tabId: null, tabs: [], tabPrompt: null, currentNodeId: null, startNodeId: null, nodes: [], edges: [], buffer: [], pending: null, undo: [] };
 
 let state = EMPTY_STATE;
 let settings = DEFAULT_SETTINGS; // settings.js
@@ -155,6 +155,7 @@ function renderGraph() {
 
 function render() {
   renderStatus();
+  renderTabPrompt();
   renderConfirm();
   renderGraph();
   renderDetails();
@@ -169,7 +170,8 @@ function renderStatus() {
   } else {
     $('status').textContent = `${state.nodes.length} node · ${state.edges.length} edge · Şu an: `
       + (current ? current.name : 'seçili değil (bir node seçip "Buradan devam et"e bas)')
-      + (state.tabId === null ? ' · Kayıt sekmesi kapandı: devam edeceğin sekmede bir node seçip "Buradan devam et"e bas.' : '');
+      + (state.tabs.length > 1 ? ` · ${state.tabs.length} sekme` : '')
+      + (state.tabId === null ? ' · Kayıt sekmesi kapandı: şu anki node\'un ekranındaki bir sekmede soruya "Evet" de ya da bir node seçip "Buradan devam et"e bas.' : '');
   }
   if (settings.recordWaits) $('status').textContent += ` · Beklemeler kaydediliyor (en az ${seconds(settings.minWaitSeconds * 1000)})`;
   // İlk node dışında, bekleyen aksiyon yoksa node oluşturulamaz (aksiyonsuz edge tekrar oynatılamaz).
@@ -178,6 +180,23 @@ function renderStatus() {
   $('btn-node').disabled = busy || Boolean(state.pending) || noActions;
   $('btn-node').title = noActions ? 'Bekleyen aksiyon yok: önce sayfada bir aksiyon yap.' : '';
 }
+
+// Kayda katılmamış sekme sorusu (background.js > SEKMELER). Sekmeyi kayıt sekmesi açtıysa
+// (link, popup) akışın devamı olması muhtemeldir; metin bunu söyler.
+function renderTabPrompt() {
+  const prompt = state.tabPrompt;
+  $('tab-prompt').hidden = !prompt;
+  if (!prompt) return;
+  $('tab-prompt-text').textContent = state.tabId === null
+    ? 'Kayıt sekmesi kapandı. Bu sekme şu anki node\'un ekranındaysa kayıt burada sürsün mü?'
+    : prompt.openedByPage
+      ? 'Kayıt sekmesinin açtığı bir sekmedesiniz. Grafa bu sekmede devam edilsin mi?'
+      : 'Farklı bir sekmedesiniz. Grafa bu sekmede devam edilsin mi? "Hayır" derseniz bu sekmedeki aksiyonlar kaydedilmez, kayıt eski sekmeye dönünce sürer.';
+  $('tab-prompt-url').textContent = [prompt.title, prompt.url].filter(Boolean).join(' · ');
+}
+
+$('btn-tab-follow').onclick = () => send({ type: 'RESOLVE_TAB', follow: true });
+$('btn-tab-decline').onclick = () => send({ type: 'RESOLVE_TAB', follow: false });
 
 // Eşleşen her node bir seçenek: ekran görüntüsü, ismi ve "Evet, bu node" butonu.
 // Kart her storage değişikliğinde (ör. gelen aksiyon) yeniden kurulmasın diye anahtar tutulur.
@@ -451,6 +470,7 @@ function actionItem(action) {
     : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
     : action.type === 'resize' ? ` → ${viewportText(action.viewport)}`
     : action.type === 'wait' ? ` → ${seconds(action.ms)}`
+    : action.type === 'tab' && action.by === 'page' ? ' · önceki aksiyon açtı'
     : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
     : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
