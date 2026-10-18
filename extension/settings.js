@@ -1,12 +1,13 @@
 // =============================================================================
 // settings.js — AYARLAR (ortak tanımlar)
 // -----------------------------------------------------------------------------
-// Panelin "Ayarlar" bölümündeki iki listenin TEK tanımı ve ayarlara bağlı edge set
-// karşılaştırması. Build adımı olmadığı için üç parça da bu dosyayı ayrıca yükler ve
+// Panelin "Ayarlar" bölümündeki iki listenin TEK tanımı ve ayarlara bağlı state
+// karşılaştırması. Build adımı olmadığı için her parça bu dosyayı ayrıca yükler ve
 // buradaki global sabit ve fonksiyonları kullanır:
 //   content.js    : manifest.json > content_scripts > js (content.js'ten önce)
 //   background.js : importScripts('settings.js')
 //   panel.js      : panel.html'de <script> (panel.js'ten önce)
+//   runner        : test edilen sayfaya ve Node tarafına (runner/lib/state.js)
 //
 // Kullanıcının seçimi chrome.storage.local'da 'settings' anahtarında durur (bkz.
 // background.js > getSettings). Şekli DEFAULT_SETTINGS ile aynıdır.
@@ -55,10 +56,25 @@ const DEFAULT_SETTINGS = { disabledActions: [], disabledInteractables: [] };
 
 
 // -----------------------------------------------------------------------------
-// EDGE SET KARŞILAŞTIRMASI (background ve panel ortak kullanır)
+// STATE KARŞILAŞTIRMASI (background, panel ve runner ortak kullanır)
 // -----------------------------------------------------------------------------
-// Ayarlar'daki element türü seçimine bağlı olduğu için burada durur. Background node
-// eşleştirmede ve "bu aksiyon state'i değiştirdi mi?" işaretinde, panel node birleştirmede kullanır.
+// İki ekran ancak URL şablonu ve edge set'i birebir aynıysa aynı state olabilir
+// (docs/03-state-eslestirme.md). Edge set Ayarlar'daki element türü seçimine bağlı olduğu
+// için burada durur. Background node eşleştirmede ve "bu aksiyon state'i değiştirdi mi?"
+// işaretinde, panel node birleştirmede, runner varılan ekranı doğrularken kullanır.
+
+// URL'yi "sayfa şablonu"na indirger. Sorgu (?..) ve hash (#..) atılır,
+// sayısal ve uzun hex/UUID path parçaları ":id" olur.
+//   https://site.com/product/42?ref=x  ->  https://site.com/product/:id
+function urlKey(url) {
+  const { origin, pathname } = new URL(url);
+  const path = pathname
+    .split('/')
+    .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f-]{16,}$/i.test(segment) ? ':id' : segment))
+    .join('/')
+    .replace(/\/+$/, '');
+  return origin + (path || '/');
+}
 
 // Ekranın edge set'i, SAYILI küme olarak: anahtar -> ekranda kaç tane. Yalnızca Ayarlar'da
 // işaretli türlerden en az birine uyan elementler sayılır (content.js > fingerprint).
@@ -75,6 +91,14 @@ function stateCounts(elements, settings) {
 // İki sayılı küme birebir aynı mı? (aynı anahtarlar, aynı sayılar)
 function sameCounts(a, b) {
   return a !== null && b !== null && a.size === b.size && [...a].every(([key, n]) => b.get(key) === n);
+}
+
+// İki sayılı kümenin farkı: sayısı farklı her anahtar için { key, a, b } (bir kümede yoksa 0).
+// Örnek: [{ key: "button:Sil", a: 5, b: 4 }]. Kümeler aynıysa boş dizi.
+function diffCounts(a, b) {
+  return [...new Set([...a.keys(), ...b.keys()])]
+    .filter((key) => (a.get(key) ?? 0) !== (b.get(key) ?? 0))
+    .map((key) => ({ key, a: a.get(key) ?? 0, b: b.get(key) ?? 0 }));
 }
 
 

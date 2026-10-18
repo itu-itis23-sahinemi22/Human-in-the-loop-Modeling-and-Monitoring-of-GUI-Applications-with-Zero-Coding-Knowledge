@@ -273,11 +273,11 @@ function mergeIssue(a, b) {
   return sameCounts(ca, cb) ? null : "edge set farklı: " + countMismatch(ca, cb);
 }
 
-// İki sayılı kümenin farkı, en fazla 3 tür: "button:Sil 5 ≠ 4, a:menu 1 ≠ 0"
+// İki sayılı kümenin farkı, en fazla 3 tür: "button:Sil 5 ≠ 4, a:menu 1 ≠ 0" (settings.js > diffCounts)
 function countMismatch(a, b) {
-  const keys = [...new Set([...a.keys(), ...b.keys()])].filter((k) => (a.get(k) ?? 0) !== (b.get(k) ?? 0));
-  return keys.slice(0, 3).map((k) => `${k} ${a.get(k) ?? 0} ≠ ${b.get(k) ?? 0}`).join(', ')
-    + (keys.length > 3 ? ` (+${keys.length - 3})` : '');
+  const diff = diffCounts(a, b);
+  return diff.slice(0, 3).map(({ key, a: n, b: m }) => `${key} ${n} ≠ ${m}`).join(', ')
+    + (diff.length > 3 ? ` (+${diff.length - 3})` : '');
 }
 
 function openMergeDialog(node) {

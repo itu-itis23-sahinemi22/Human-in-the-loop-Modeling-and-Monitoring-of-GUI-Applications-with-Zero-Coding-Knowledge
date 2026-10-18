@@ -11,7 +11,7 @@
 // Mimari ve mesajların tamamı: docs/01-mimari.md
 // =============================================================================
 
-// ACTION_TYPES, INTERACTABLE_TYPES, DEFAULT_SETTINGS, stateCounts(), sameCounts()
+// ACTION_TYPES, INTERACTABLE_TYPES, DEFAULT_SETTINGS, urlKey(), stateCounts(), sameCounts()
 importScripts('settings.js');
 
 // Eklenti ikonuna tıklanınca yan panel açılsın.
@@ -407,20 +407,7 @@ function findSameStateNodes(state, capture, settings) {
     .filter((node) => node.urlKey === capture.urlKey && sameCounts(stateCounts(node.elements, settings), counts))
     .sort((a, b) => (b.id === state.currentNodeId) - (a.id === state.currentNodeId));
 }
-// stateCounts() ve sameCounts(): settings.js (panel de kullanır)
-
-// URL'yi "sayfa şablonu"na indirger. Sorgu (?..) ve hash (#..) atılır,
-// sayısal ve uzun hex/UUID path parçaları ":id" olur.
-//   https://site.com/product/42?ref=x  ->  https://site.com/product/:id
-function urlKey(url) {
-  const { origin, pathname } = new URL(url);
-  const path = pathname
-    .split('/')
-    .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f-]{16,}$/i.test(segment) ? ':id' : segment))
-    .join('/')
-    .replace(/\/+$/, '');
-  return origin + (path || '/');
-}
+// urlKey(), stateCounts() ve sameCounts(): settings.js (panel ve runner da kullanır)
 
 
 // -----------------------------------------------------------------------------
