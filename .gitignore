@@ -11,3 +11,6 @@ secrets*.json
 *.pdf
 /bitirme adi.txt
 /degisiklik-notlari.md
+
+# Haftalık plan dokümanları (yerel)
+/docs/*-plan.md
