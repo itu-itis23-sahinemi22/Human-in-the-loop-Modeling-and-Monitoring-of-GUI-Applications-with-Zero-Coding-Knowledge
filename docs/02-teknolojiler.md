@@ -16,7 +16,8 @@ Genel ilke: **demo, en az parçayla çalışan ve her satırı okunabilen bir pr
 8. [Kendi selector üreticimiz](#8-kendi-selector-üreticimiz)
 9. [State eşleştirme: element kümesi birebir eşitliği](#9-state-eşleştirme-element-kümesi-birebir-eşitliği)
 10. [Runner: Playwright (Node.js)](#10-runner-playwright-nodejs)
-11. [Hangi izin neden gerekli?](#hangi-izin-neden-gerekli)
+11. [Planlayıcı: GraphWalker ve Native Messaging](#11-planlayıcı-graphwalker-ve-native-messaging)
+12. [Hangi izin neden gerekli?](#hangi-izin-neden-gerekli)
 
 ---
 
@@ -199,6 +200,30 @@ Algoritmanın tam açıklaması, ölçümler ve diğer elenen alternatifler (DOM
 
 ---
 
+## 11. Planlayıcı: GraphWalker ve Native Messaging
+
+**Ne için:** Graph'tan test senaryosu (koşular) üretmek: tüm edge'leri ya da tüm node'ları kapsayan yollar, ya da bir node'a en kısa yol. Panelde tek tıkla, kullanıcının bilgisayarında (bkz. [runner/README.md > Planlayıcı](../runner/README.md#planlayıcı-graphwalker-ile-senaryo)).
+
+**Neden GraphWalker:** Model tabanlı testin yerleşik aracıdır; generator ve durma koşulu dili (`random(edge_coverage(100))`, `a_star(reached_vertex(v))`) tezde açıklanabilir ve başka çalışmalarla karşılaştırılabilir. Eklentinin dışa aktardığı model zaten GraphWalker biçimindedir ([04 > Dışa aktarılan JSON](04-veri-modeli.md#dışa-aktarılan-json)). Tohumla aynı yol tekrar üretilir. Eksiği: çıkış edge'i olmayan node'da (`NoPathFoundException`) durur; planlayıcı yolu orada böler ve kalan edge'ler için yeni koşular açar.
+
+**Neden Native Messaging:** Eklenti bilgisayarda program çalıştıramaz (tarayıcının güvenlik sınırı); GraphWalker ise bir Java jar'ıdır. Chrome'un resmi yolu native messaging'dir: önceden kayıtlı bir programı (host) Chrome kendisi başlatır, standart giriş / çıkışla JSON mesajlaşır. Kullanıcı terminal açmaz, sunucu başlatmaz; her istekte host açılır, cevap verir, kapanır. Host'a yalnızca manifestinde adı geçen eklenti kimliği ulaşabilir.
+
+- Kimliğin sabit olması için `manifest.json`'da bir `key` vardır: paketlenmemiş eklentinin kimliği normalde klasör yolundan gelir, makineden makineye değişir. Chrome Web Store'a geçilirse kimliği mağaza verir; o zaman `key` yerine mağazanın public key'i konur (geliştirme sürümü de aynı kimliği alır), pakete `key` konmaz.
+- Host Node.js ile yazıldı (`runner/planner/host.js`): runner zaten Node ister, planlayıcının kodu (`graphwalker.js`) komut satırıyla (`plan.js`) ortaktır.
+
+**Elenen alternatifler:**
+
+| Alternatif | Neden elendi |
+|---|---|
+| **Yerel sunucu** (`node serve.js`, panel `fetch('http://localhost')`) | Kullanıcı her seferinde sunucuyu başlatır; port kullanılır; başka sitelerin de o porta istek atabilmesine karşı Origin kontrolü gerekir. Native messaging'de bunların hiçbiri yok. |
+| **Komut + Yükle** (panel komutu gösterir, kullanıcı terminalde çalıştırıp dosyayı yükler) | Her senaryo için elle adım; "minimum efor" hedefine aykırı. Yedek yol olarak duruyor (`plan.js`). |
+| **Planlayıcıyı JavaScript'le yazıp panelde çalıştırmak** | Kurulum gerektirmez, anında önizler; ama GraphWalker'ın generator dili ve tez açısından standart araçla uyum kaybolur. Önceki hafta denendi, GraphWalker'da karar kılındı. |
+| **GraphWalker'ın WebSocket / REST sunucusu** (`online`) | Yine elle başlatılan bir süreç; panelden bağlanmak için yerel sunucuyla aynı sorunlar. |
+
+**Bilinçli tercihler:** Jar ve Java depoya ve kuruluma gömülmez (47 MB + JRE): kullanıcı Java 17 / 21 kurar, jar'ın yolunu verir. Kurulum yalnızca Windows içindir (kayıt anahtarı); planlayıcının kendisi ve `plan.js` her yerde çalışır.
+
+---
+
 ## Hangi izin neden gerekli?
 
 `manifest.json`'daki her iznin gerekçesi:
@@ -210,6 +235,7 @@ Algoritmanın tam açıklaması, ölçümler ve diğer elenen alternatifler (DOM
 | `unlimitedStorage` | Ekran görüntüleri 10 MB varsayılan kotayı aşabilir. |
 | `webNavigation` | Adres çubuğu, geri/ileri ve yenileme gibi sayfa dışı gezinmeleri yakalamak |
 | `debugger` | Panelde oynatma: fare ve klavye olaylarını gerçek kullanıcı olayı olarak göndermek, pencere boyutu aksiyonunu kurmak (DevTools protokolü, `chrome.debugger`). Yalnızca oynatma sürerken bağlanır; Chrome bu sırada üstte bir uyarı çubuğu gösterir. |
+| `nativeMessaging` | Planlayıcı: kullanıcının bilgisayarındaki GraphWalker'ı kayıtlı host üzerinden çalıştırmak (`chrome.runtime.sendNativeMessage`). Host kurulu değilse izin bir şey yapmaz; panel kurulumu söyler. |
 | `host_permissions: <all_urls>` | (1) `content.js`'i her siteye eklemek. (2) `captureVisibleTab` ile ekran görüntüsü almak. Hangi sitenin modelleneceğini önceden bilemeyiz. |
 
 **Neden `activeTab` yetmedi?** `activeTab` izni yalnızca belirli kullanıcı hareketlerinde (ikon tıklaması, klavye kısayolu) o sekme için geçici yetki verir. Bizim ise content script'in kayıt boyunca, sayfalar arası geçişlerde bile her sayfada hazır olması gerekiyor.

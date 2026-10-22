@@ -107,6 +107,14 @@
     <!-- Seçili senaryonun düzenlenmesi ve oynatılması; senaryo seçili değilken gizli -->
     <div id="scenario-editor" class="scenario-editor" hidden>
     <label class="option">Strateji <select id="scenario-strategy"></select></label>
+    <!-- GraphWalker stratejisi seçiliyken: ulaşılacak node, tohum, Üret. Kullanıcının bilgisayarındaki
+         GraphWalker native messaging ile çalışır (runner/planner/host.js); koşular seçili senaryoya yazılır. -->
+    <div id="scenario-planner" class="planner" hidden>
+      <label class="option" id="scenario-target-label">Ulaşılacak node <select id="scenario-target"></select></label>
+      <label class="option">Tohum <input type="number" id="scenario-seed" min="0" step="1" placeholder="rastgele"></label>
+      <button id="btn-scenario-generate" class="primary">Üret</button>
+      <p id="scenario-planner-status" class="hint"></p>
+    </div>
     <label class="option">Başlangıç <select id="scenario-start"></select></label>
     <p id="scenario-start-hint" class="hint" hidden>Bu başlangıçla senaryo yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda, graph'ın başlangıcından başlatır ve böyle bir senaryoyu reddeder.</p>
     <div id="scenario-runs" class="segmented" role="group" aria-label="Koşu"></div>

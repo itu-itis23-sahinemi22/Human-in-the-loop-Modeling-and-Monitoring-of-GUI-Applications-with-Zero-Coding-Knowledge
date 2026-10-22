@@ -21,7 +21,7 @@ node tests/e2e/run-all.js graphs scenarios
 node tests/e2e/graphs.test.js --headed # tek test, pencere görünür
 ```
 
-Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkış kodu 0 değildir. `run-all.js` her testin çıktısını `tests/out/<ad>.log`'a, testlerin ürettiği dosyaları (dışa aktarılan model, senaryo, rapor) `tests/out/<ad>/`'ye yazar; bu klasör repoya girmez.
+Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkış kodu 0 değildir; çıkış kodu 3 "atlandı" demektir (ör. planlayıcı kurulu değil). `run-all.js` her testin çıktısını `tests/out/<ad>.log`'a, testlerin ürettiği dosyaları (dışa aktarılan model, senaryo, rapor) `tests/out/<ad>/`'ye yazar; bu klasör repoya girmez.
 
 ## Testler
 
@@ -41,6 +41,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `return-to-start` | "Başlangıç node'una dön": adres ve boyut, gezinmenin kayda girmesi, yönlendirme, okunamayan sayfa |
 | `saucedemo-return` | Gerçek saucedemo'da istemci tarafı yönlendirmenin söylenmesi (internet ister) |
 | `graphs` | Birden fazla graph: otomatik ad, geçiş onayı, sekme sorusu, yeniden adlandırma, yedek ve yükleme, silme, eski kaydın taşınması |
+| `planner` | GraphWalker ile üretim: tüm edge'ler (çıkmaz node'da birden fazla koşu), tüm node'lar, bir node'a ulaş, aynı tohum aynı koşular, runner'da oynatma. Planlayıcı kurulu olmalı (`runner\install-planner.cmd`); değilse atlanır |
 | `scenarios` | Senaryo listesi: önce "Yeni senaryo", kendiliğinden kayıt, seçim ve hatırlama, yürünemeyen senaryo, silme, yedekte senaryolar |
 
 ## Yeni test

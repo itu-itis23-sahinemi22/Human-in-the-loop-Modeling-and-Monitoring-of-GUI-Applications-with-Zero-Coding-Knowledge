@@ -89,7 +89,7 @@ Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşiml
 
 ### `manifest.json`: Kimlik kartı
 
-Chrome'a "bu eklenti nedir, hangi dosya hangi ortamda çalışır, hangi izinlere ihtiyaç duyar" bilgisini verir. İzinlerin tek tek gerekçesi: [02-teknolojiler.md](02-teknolojiler.md#hangi-izin-neden-gerekli)
+Chrome'a "bu eklenti nedir, hangi dosya hangi ortamda çalışır, hangi izinlere ihtiyaç duyar" bilgisini verir. İzinlerin tek tek gerekçesi: [02-teknolojiler.md](02-teknolojiler.md#hangi-izin-neden-gerekli). `key` alanı eklentinin kimliğini sabitler (`limihkoliileclgenbfinjjkgimopjen`): paketlenmemiş eklentinin kimliği normalde klasör yolundan gelir; planlayıcının host'u yalnızca bu kimliğe izin verir ([Senaryolar > GraphWalker](#graphwalker-ile-üretim)).
 
 ---
 
@@ -469,6 +469,28 @@ Paneldeki **Senaryo** kartının başında Graph'lar kartıyla aynı desende bir
 - Panel aynı anda iki pencerede açıksa ikisi de kendi çalışma kopyasını yazar; sonra yazan kazanır. İyileştirme: kayıtta sürüm numarası, eskiyse reddetmek.
 - Senaryo silme geri alınmaz (graph'taki geri al yığınına girmez). İyileştirme: senaryo silmelerini de yığına almak.
 - Senaryolar graph'a bağlıdır; başka bir graph'a kopyalanamaz. Aynı site için iki graph varsa senaryo dosyası indirilip öbüründe yüklenir (edge id'leri tutmuyorsa reddedilir).
+
+
+### GraphWalker ile üretim
+
+**Strateji** listesinde "Elle seç"in yanında üç GraphWalker hedefi vardır: tüm edge'ler, tüm node'lar, bir node'a ulaş. Seçilince ulaşılacak node (yalnızca son hedefte), tohum (boşsa rastgele) ve **Üret** çıkar. Üret seçili senaryonun koşularının yerine yazar (koşular doluysa önce sorar); elle düzeltmek için "Elle seç"e dönülür, ilk elle değişiklikte `planner` "elle" olur. Strateji listesi seçili senaryoyu kim ürettiyse onu gösterir; özet satırı hedefi ve tohumu yazar.
+
+```
+panel.js ▸ Üret
+   │ chrome.runtime.sendNativeMessage('com.graphrecorder.planner',
+   │   { type: 'plan', graph: { start, nodes, edges }, goal, target, seed })   ekran görüntüsü yok
+   ▼
+Chrome ▸ host.cmd ▸ node host.js            (%LOCALAPPDATA%\GraphRecorder, kurulum bir kez)
+   │ graphwalker.js ▸ java -jar graphwalker-cli.jar offline ...   (çağrı başına ~1 sn)
+   ▼
+{ runs, planner: { engine: "graphwalker", goal, generator, seed, deadEnd? }, unreachable }
+   ▼
+panel: koşular senaryoya yazılır ve kaydedilir; bildirim kapsamayı ve ulaşılamayanları söyler
+```
+
+- Senaryonun başlangıcı yolların başlangıcıdır (başka bir node seçildiyse oradan üretilir).
+- Host kurulu değilse panel kurulumu (`runner\install-planner.cmd`) ve aynı senaryoyu panel olmadan üretecek komutu (`node runner/plan.js <Model>.json`) söyler; kimlik uyuşmazsa kurulumun yeniden çalıştırılmasını.
+- Üretim kuralları (ulaşılabilen kısım, çıkmaz node'da bölme, tohum): [runner/README.md > Planlayıcı](../runner/README.md#planlayıcı-graphwalker-ile-senaryo).
 
 ---
 

@@ -225,6 +225,13 @@ dialog.alert .choice .hint { margin: 4px 2px 0; }
   color: var(--text);
 }
 .option input:disabled { opacity: 0.5; }
+.option[hidden] { display: none; }
+
+/* GraphWalker stratejisi: hedef node, tohum, Üret aynı satırda; durum altta */
+.planner { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; }
+.planner[hidden] { display: none; }
+.planner .hint { flex-basis: 100%; margin: 2px 0 0; }
+.planner .hint:empty { display: none; }
 .option select {
   padding: 2px 4px;
   border: 1px solid var(--border);

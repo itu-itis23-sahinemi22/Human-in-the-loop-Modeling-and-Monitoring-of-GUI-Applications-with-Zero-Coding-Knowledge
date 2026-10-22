@@ -8,6 +8,7 @@ Runner, eklentinin parmak izi kodunu (`extension/settings.js`, `extension/finger
 
 - [Kurulum](#kurulum)
 - [Kullanım](#kullanım) (senaryo, raporlar)
+- [Planlayıcı: GraphWalker ile senaryo](#planlayıcı-graphwalker-ile-senaryo) (kurulum, panel, komut satırı)
 - [Nasıl çalışır?](#nasıl-çalışır)
 - [Aksiyonların karşılığı](#aksiyonların-karşılığı)
 - [Sınırlar](#sınırlar)
@@ -90,7 +91,7 @@ Senaryo, başlangıç node'undan başlayan bir ya da birden fazla **koşudur** (
 }
 ```
 
-Senaryo panelde kurulur (**Senaryo** bölümü: senaryo listesi, elle yol, önizleme, indir; senaryolar graph'la saklanır) ya da bir planlayıcı üretir.
+Senaryo panelde kurulur (**Senaryo** bölümü: senaryo listesi, elle yol, önizleme, indir; senaryolar graph'la saklanır) ya da GraphWalker üretir ([Planlayıcı](#planlayıcı-graphwalker-ile-senaryo)).
 
 Panelde koşuların başlangıç node'u seçilebilir (dosyada `start`). Runner her koşuyu temiz bir tarayıcıda graph'ın başlangıcından oynatır; graph'ın ortasındaki bir node'dan başlayan senaryoyu (ör. giriş gerektiren `v_Inventory`) çalıştırmadan reddeder (çıkış kodu `2`). Böyle bir senaryo panelde **Koşuyu oynat** ile oynatılır.
 
@@ -139,6 +140,62 @@ Başarısız adımın ekran görüntüsü PNG olarak da aynı klasöre kaydedili
 | `--timeout <ms>` | Element ve doğrulama için en fazla bekleme (varsayılan 10000) |
 | `--channel <ad>` | Playwright'ın Chromium'u yerine kurulu tarayıcı: `chrome`, `msedge` |
 | `--out <klasör>` | Raporlar ve başarısız adımların ekran görüntüleri (varsayılan `runner/out/<senaryo>-<zaman>/`, git'e girmez) |
+
+---
+
+## Planlayıcı: GraphWalker ile senaryo
+
+Koşuları GraphWalker CLI 4.3.3 üretir (`planner/graphwalker.js`). İki yoldan kullanılır, ikisi aynı senaryoyu üretir:
+
+- **Panelden:** Senaryo bölümünde **Strateji** listesinde "GraphWalker: tüm edge'ler", "tüm node'lar", "bir node'a ulaş"; tohum (boşsa rastgele) ve **Üret**. Eklenti bilgisayarda program çalıştıramaz; Chrome, kayıtlı bir programı (native messaging host, `planner/host.js`) kendisi başlatır ve onunla konuşur. Host bir kez kurulur (aşağıda).
+- **Komut satırından:** `node plan.js` (kurulum gerekmez, `--java` ve `--jar` verilirse).
+
+### Kurulum (bir kez, Windows)
+
+Gerekenler: Node.js (runner için zaten), **Java 17 ya da 21** (GraphWalker 4.3.3, Java 25 ile çalışmaz) ve **GraphWalker CLI jar'ı** ([graphwalker-cli-4.3.3.jar](https://github.com/GraphWalker/graphwalker-project/releases/tag/4.3.3), 47 MB).
+
+`runner\install-planner.cmd`'ye çift tıklayın (ya da `install-planner.cmd --jar C:\yol\graphwalker-cli-4.3.3.jar`). Kurulum:
+
+1. Java 17 / 21'i bulur: `JAVA_HOME`, `PATH` ve bilinen kurulum klasörleri (Program Files altında Java, Eclipse Adoptium, Microsoft, Zulu, Amazon Corretto, BellSoft); en yenisini seçer. Bulamazsa Temurin 21 bağlantısını verip durur; `--java` ile bir `java.exe` gösterilebilir.
+2. Jar'ın yolunu sorar (bir önceki kurulumdakini önerir) ve Java'yla çalıştırıp sürümünü okur.
+3. `planner/host.js` ve `planner/graphwalker.js`'i `%LOCALAPPDATA%\GraphRecorder`'a kopyalar; ayar dosyasını (`config.json`: Java, jar, Node), `host.cmd`'yi ve host manifestini (`com.graphrecorder.planner.json`) yazar. Manifest yalnızca bu eklentinin kimliğine izin verir; kimlik `extension/manifest.json`'daki `key`'den hesaplanır.
+4. Chrome, Chromium ve Edge için `HKCU\Software\...\NativeMessagingHosts\com.graphrecorder.planner` kayıt anahtarını ekler (yönetici yetkisi gerekmez).
+5. Host'u bir "ping" isteğiyle dener.
+
+Host dosyaları kopya olduğu için repo taşınsa da çalışır; `planner/` altındaki kod değişirse kurulum yeniden çalıştırılır. Repo yolunda Türkçe karakter olabileceği için (`Masaüstü`) `host.cmd` yalnızca kendi klasörünü (`%~dp0`) ve Node'un yolunu içerir: `cmd` dosyadaki ASCII olmayan yolları yanlış okur. Kaldırmak: `install-planner.cmd --uninstall`.
+
+### Komut satırı
+
+```
+node plan.js SwagLabs.json --seed 42 > SwagLabs-GraphWalker.json
+node plan.js SwagLabs.json --goal nodes --out SwagLabs-Nodes.json
+node plan.js SwagLabs.json --goal node --target v_Cart --jar C:\yol\graphwalker-cli-4.3.3.jar
+node run.js SwagLabs-GraphWalker.json --secrets secrets.json
+```
+
+Java ve jar: `--java` / `--jar` > ortam değişkenleri (`GRAPHWALKER_JAVA`, `GRAPHWALKER_JAR`) > kurulumun ayar dosyası. Özet (koşu sayısı, kapsama, tohum, ulaşılamayanlar) standart hataya yazılır.
+
+### Nasıl üretilir?
+
+| Hedef | GraphWalker | Sonuç |
+|---|---|---|
+| Tüm edge'ler | `random(edge_coverage(100) or length(N))` | Başlangıçtan ulaşılabilen her edge en az bir koşuda |
+| Tüm node'lar | `random(vertex_coverage(100) or length(N))` | Ulaşılabilen her node en az bir koşuda |
+| Bir node'a ulaş | `a_star(reached_vertex(<node>))` | Başlangıçtan o node'a en kısa yol, tek koşu |
+
+- **Ulaşılabilen kısım.** GraphWalker'a yalnızca başlangıçtan ulaşılabilen node ve edge'ler verilir: ulaşılamayan bir edge'i hiçbir yol kapsayamaz (GraphWalker'ın `a_star`'ı orada bitmez). Ulaşılamayanlar panelde ve komut satırında ayrıca söylenir.
+- **Adlar id'dir.** GraphWalker `reached_edge`'i adla arar; kayıtta aynı adlı edge'ler olabilir (iki `e_Resize`). Planlama modelinde her edge'in adı id'sidir; yollar doğrudan id olarak döner.
+- **Çıkmaz node.** `random` çıkış edge'i olmayan bir node'a varınca GraphWalker `NoPathFoundException` verir; o ana kadarki yol 1. koşu olur (`planner.deadEnd` o node). Kapsanmamış her edge (node) için başlangıçtan `a_star(reached_edge(e))` ile yeni koşu açılır, her koşudan sonra kapsananlar düşer. Başlangıçtan en uzak olanlar önce işlenir: onların en kısa yolu yakındakileri de kapsar, koşu sayısı azalır.
+- **Tohum.** `random` tohumla çalışır (`offline --seed`); tohum verilmezse rastgele seçilir ve senaryoya yazılır (`planner.seed`): aynı tohum, aynı graph'ta aynı koşuları verir. `a_star` rastgele değildir.
+- **Üst sınır.** `length(N)` (N = 20 × edge sayısı + 20), `random`'un bir döngüde uzayıp gitmesine karşıdır; sınıra varılırsa kalanlar `a_star` koşularıyla kapsanır. Her GraphWalker çağrısı 30 sn ile sınırlıdır; her çağrı Java'nın açılışıyla yaklaşık 1 sn sürer.
+- Senaryo dosyasında `planner`: `{ engine: "graphwalker", goal, generator, seed, deadEnd?, target? }`.
+
+**Sınırlar:**
+
+- `random` uzun koşular üretebilir (tüm node'lar için aynı edge'lerden defalarca geçer). İyileştirme: hedef başına generator seçimi (`quick_random`, `weighted_random`).
+- Kurulum yalnızca Windows içindir (kayıt anahtarı); macOS / Linux'ta host manifesti başka bir klasöre yazılır. Komut satırı her yerde çalışır.
+- Jar'ı kullanıcı verir. Chrome Web Store dağıtımında kurulumun jar'ı kendisi indirmesi (GitHub sürümü) daha uygun olur; ileride değişebilir.
+- Host Node.js ile çalışır; Node'u olmayan kullanıcı için host tek bir `.exe`'ye derlenebilir ya da Java'yla yazılabilir (Java zaten gerekli).
 
 ---
 
@@ -211,3 +268,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `lib/state.js` | Eklentinin `settings.js`'ini Node'da yüklemek (`urlKey`, `stateCounts`, `diffCounts`) |
 | `lib/scenario.js` | Girdi: senaryo dosyası ya da model ve yol; eklentinin `scenario.js`'i (kapsama) |
 | `lib/report.js` | Raporlar: `report.json`, `report.html`, `junit.xml` |
+| `plan.js` | Planlayıcının komut satırı: modelden GraphWalker ile senaryo |
+| `planner/graphwalker.js` | Planlayıcı: ulaşılabilen kısım, GraphWalker `offline` çağrıları, çıkmaz node, tohum; Java ve jar'ı bulmak |
+| `planner/host.js` | Native messaging host: panelin isteğini planlayıcıya iletir |
+| `planner/install.js`, `install-planner.cmd` | Host kurulumu: Java ve jar, dosyalar, kayıt anahtarı, deneme |

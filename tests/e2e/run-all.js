@@ -1,4 +1,5 @@
 // Tüm uçtan uca testleri sırayla çalıştırır; her testin çıktısı tests/out/<ad>.log'a yazılır.
+// Çıkış kodu 3 olan test atlanmıştır (ör. planlayıcı kurulu değil); başarısız sayılmaz.
 // Kullanım: node tests/e2e/run-all.js [--offline] [ad ...]
 //   --offline : internet isteyen testleri (gerçek saucedemo) atlar
 //   ad        : yalnızca adı verilen testler (ör. graphs scenarios)
@@ -35,9 +36,10 @@ function run(name) {
     process.stdout.write(`${name.padEnd(18)} `);
     const result = await run(name);
     results.push(result);
-    console.log(`${result.code === 0 ? 'GEÇTİ' : `KALDI (çıkış kodu ${result.code})`}  ${result.seconds} sn`);
+    console.log(`${result.code === 0 ? 'GEÇTİ' : result.code === 3 ? 'ATLANDI' : `KALDI (çıkış kodu ${result.code})`}  ${result.seconds} sn`);
   }
-  const failed = results.filter((r) => r.code !== 0);
-  console.log(`\n${results.length - failed.length}/${results.length} test geçti.` + (failed.length ? ` Ayrıntı: tests/out/<ad>.log` : ''));
+  const failed = results.filter((r) => r.code !== 0 && r.code !== 3);
+  const skipped = results.filter((r) => r.code === 3).length;
+  console.log(`\n${results.length - failed.length - skipped}/${results.length} test geçti${skipped ? `, ${skipped} atlandı` : ''}.` + (failed.length ? ` Ayrıntı: tests/out/<ad>.log` : ''));
   process.exit(failed.length ? 1 : 0);
 })();

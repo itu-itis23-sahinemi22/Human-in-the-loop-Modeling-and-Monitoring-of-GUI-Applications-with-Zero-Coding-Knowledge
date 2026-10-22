@@ -55,6 +55,8 @@ Build adımı ve `npm install` gerekmez.
 
 > **Önemli:** Eklentiyi yüklemeden önce açık olan sekmeleri bir kez **yenileyin (F5)**. Chrome, eklentinin sayfa içi kodunu (content script) yalnızca yeni yüklenen sayfalara ekler.
 
+**İsteğe bağlı: GraphWalker ile senaryo üretimi.** Panelin GraphWalker stratejisi bilgisayardaki GraphWalker'ı çalıştırır. Java 17 ya da 21 ve [GraphWalker CLI jar'ı](https://github.com/GraphWalker/graphwalker-project/releases/tag/4.3.3) gerekir; bir kez `runner\install-planner.cmd`'ye çift tıklayıp jar'ın yolunu verin. Ayrıntı: [runner/README.md > Planlayıcı](runner/README.md#planlayıcı-graphwalker-ile-senaryo)
+
 ---
 
 ## 3. Kullanım: örnek senaryo
@@ -71,7 +73,7 @@ Demo için [saucedemo.com](https://www.saucedemo.com) uygundur: test otomasyonu 
 | 6 | **Continue Shopping**'e basın | **Node oluştur** | Panel sorar: *"Bu sayfanın etkileşimli elementleri mevcut v_Inventory_2 node'u ile birebir aynı. Aynı state mi?"* |
 | 7 | | `v_Inventory_2` altındaki **Evet, bu node** | `v_Cart → v_Inventory_2` edge'i oluşur. Graph'ta döngü kapanır. |
 | 8 | | **GraphWalker JSON** | Graph, GraphWalker JSON modeli olarak `SwagLabs.json` dosyasına iner. GraphWalker Studio'da açılır, GraphWalker CLI ile çalıştırılabilir. |
-| 9 | | **Senaryo** bölümünü açıp **Yeni senaryo**'ya basın, graph'ta edge'lere tıklayarak bir yol kurun, **Senaryo indir** | "Senaryo 1" listeye eklenir ve her tıklamada kendiliğinden kaydedilir. Seçili koşu graph'ta vurgulanır; yol çıkmaz bir node'da biterse "Yeni koşu" baştan başlar. Senaryo, modelin yanına `SwagLabs-Senaryo1.json` olarak iner. Birden fazla senaryo kurulabilir; listede satıra tıklamak seçer. |
+| 9 | | **Senaryo** bölümünü açıp **Yeni senaryo**'ya basın, graph'ta edge'lere tıklayarak bir yol kurun, **Senaryo indir** | "Senaryo 1" listeye eklenir ve her tıklamada kendiliğinden kaydedilir. Seçili koşu graph'ta vurgulanır; yol çıkmaz bir node'da biterse "Yeni koşu" baştan başlar. Senaryo, modelin yanına `SwagLabs-Senaryo1.json` olarak iner. Birden fazla senaryo kurulabilir; listede satıra tıklamak seçer. Planlayıcı kuruluysa Strateji "GraphWalker: tüm edge'ler" ve **Üret** yolları GraphWalker'a ürettirir. |
 | 10 | Giriş sayfasına dönün (koşunun ilk node'u) | Senaryo bölümünde şifreyi girip **Koşuyu oynat** | Koşu bu tarayıcıda, açık sekmede oynatılır: element çerçevelenir, tıklanır; graph'ta geçen edge'ler yeşile döner. Ekran koşunun ilk node'u değilse önce uyarı çıkar. Kalınan adımda fark listesi ve beklenen ekranla görsel karşılaştırma. Bkz. [docs/01 > Panelde oynatma](docs/01-mimari.md#panelde-oynatma) |
 | 11 | *(terminalde)* `node runner/run.js SwagLabs-Senaryo1.json --secrets secrets.json` | | Runner her koşuyu yeni bir tarayıcıda temiz oturumla oynatır, her edge'den sonra varılan ekranın beklenen node olduğunu doğrular ve `report.html`, `report.json`, `junit.xml` yazar. Bkz. [runner/README.md](runner/README.md) |
 
@@ -137,7 +139,10 @@ bitirme_demo/
 ├── runner/                      ← kaydedilen yolu tarayıcıda tekrar oynatır ve doğrular (Node.js + Playwright)
 │   ├── README.md                ← kurulum, kullanım, nasıl çalışır
 │   ├── run.js                   ← komut satırı ve akış
-│   └── lib/                     ← model ve yol, sayfa, aksiyonlar, doğrulama
+│   ├── lib/                     ← model ve yol, sayfa, aksiyonlar, doğrulama
+│   ├── plan.js                  ← planlayıcının komut satırı: modelden GraphWalker ile senaryo
+│   ├── planner/                 ← planlayıcı (graphwalker.js), native messaging host, kurulum
+│   └── install-planner.cmd      ← host kurulumu (bir kez; panelin GraphWalker stratejisi için)
 │
 ├── tests/                       ← uçtan uca testler: eklenti gerçek Chromium'da, runner dahil
 │   ├── README.md                ← çalıştırma ve test listesi
@@ -207,7 +212,7 @@ Her seçimin gerekçesi ve elenen alternatifler: [docs/02-teknolojiler.md](docs/
 - Şifre alanlarını maskeler (`******`).
 - Graph'ı **GraphWalker JSON modeli** olarak dışa aktarır. URL, parmak izi, ekran görüntüsü ve kaydedilen tarayıcı aksiyonları GraphWalker'ın `properties` alanlarında taşınır. GraphWalker CLI 4.3.3 ile doğrulandı (`check`, `offline`). Bkz. [docs/04 > Dışa aktarılan JSON](docs/04-veri-modeli.md#dışa-aktarılan-json)
 - Akış birden fazla sekmeye yayılabilir: site yeni sekme açtığında ya da kullanıcı başka bir sitenin sekmesine geçtiğinde panel "Bu sekmede devam edilsin mi?" diye sorar. "Evet" denirse kayıt orada sürer, "Hayır" denirse o sekme kaydı kirletmez. Bkz. [docs/01 > Kayıt hangi sekmede?](docs/01-mimari.md#kayıt-hangi-sekmede)
-- Panelde test senaryosu kurulur ve graph üzerinde önizlenir (bir ya da birden fazla koşu); senaryo dosyaya indirilir.
+- Panelde test senaryoları kurulur, graph'la birlikte saklanır ve graph üzerinde önizlenir (bir ya da birden fazla koşu); senaryo dosyaya indirilir. Koşular elle (edge'lere tıklayarak) ya da **GraphWalker** ile üretilir: tüm edge'ler, tüm node'lar ya da bir node'a ulaş; çıkmaz node'da yol bölünür, kalan edge'ler yeni koşularla kapsanır. GraphWalker kullanıcının bilgisayarında, Chrome'un native messaging'iyle çalışır (bir kez kurulum). Bkz. [runner/README.md > Planlayıcı](runner/README.md#planlayıcı-graphwalker-ile-senaryo)
 - Seçili koşu **panelde, kullanıcının kendi tarayıcısında** oynatılır ve izlenir: gerçek fare ve klavye olaylarıyla (DevTools protokolü), her edge'den sonra aynı doğrulamayla. Başlangıç sayfası kullanıcının sorumluluğudur; ekran koşunun ilk node'u değilse uyarı çıkar. Sekme başlangıç node'unun adresinde değilse ya da görünen alan farklıysa **Başlangıç node'una dön** sekmeyi o adrese götürür, pencereyi ve yakınlaştırmayı kayıttakine ayarlar; site giriş sayfasına yönlendirirse bunu söyler. Koşuların başlangıç node'u Senaryo bölümünden seçilebilir (graph'ın başlangıcı dışındaki başlangıç yalnızca panelde oynatılır). Bkz. [docs/01 > Panelde oynatma](docs/01-mimari.md#panelde-oynatma)
 - Senaryoyu (ya da GraphWalker'ın ürettiği bir yolu) **runner** ile gerçek bir tarayıcıda tekrar oynatır ve her edge'den sonra varılan ekranı, kayıttaki state tanımıyla doğrular. Her koşu temiz oturumla başlar; kayıttaki görünen alan ve yakınlaştırma aynen kurulur. Sonuç HTML (fark ve görsel fark dahil), JSON ve JUnit XML raporu olarak yazılır. Bkz. [runner/README.md](runner/README.md)
 

@@ -1020,14 +1020,24 @@ function replayAction({ changed, screenBefore, screenAfter, ...action }) {
 // başına hatırlanır (localStorage). Senaryo seçili değilken edge tıklaması senaryoya bir şey
 // eklemez (edge'in detayı açılır): önce "Yeni senaryo".
 //
-// Stratejiler: "Elle seç" kullanıcı graph'ta edge'lere tıklayarak koşuları kurar. Bir
-// planlayıcı stratejisi koşuları kendisi hesaplar: { id, text, plan(graph) } ve plan,
-// { runs, planner } döndüren bir Promise'tir.
+// Stratejiler: "Elle seç" kullanıcı graph'ta edge'lere tıklayarak koşuları kurar. GraphWalker
+// stratejileri koşuları kullanıcının bilgisayarındaki GraphWalker'la üretir (GRAPHWALKER, aşağıda);
+// "Üret" seçili senaryonun koşularının yerine yazar. Elle düzeltmek için "Elle seç"e dönülür.
 //
 // Başlangıç: koşular varsayılan olarak graph'ın başlangıcından başlar; "Başlangıç" listesinden
 // başka bir node seçilebilir (scenario.start; null = graph'ın başlangıcı). Böyle bir senaryo
 // yalnızca panelde oynatılır, runner reddeder (extension/scenario.js).
-const STRATEGIES = [{ id: 'manual', text: "Elle seç (graph'ta edge'lere tıklayın)" }];
+const STRATEGIES = [
+  { id: 'manual', text: "Elle seç (graph'ta edge'lere tıklayın)" },
+  { id: 'gw-edges', goal: 'edges', text: "GraphWalker: tüm edge'ler" },
+  { id: 'gw-nodes', goal: 'nodes', text: "GraphWalker: tüm node'lar" },
+  { id: 'gw-node', goal: 'node', text: "GraphWalker: bir node'a ulaş" },
+];
+
+// Senaryoyu ne ürettiyse strateji listesi onu gösterir (senaryo seçilince).
+function strategyOf(sc) {
+  return sc.planner?.engine === 'graphwalker' ? `gw-${sc.planner.goal}` : 'manual';
+}
 
 let scenario = emptyScenario();
 let scenarioRun = 0; // seçili koşu
@@ -1053,6 +1063,7 @@ function selectScenario(id) {
   scenario = stored ? structuredClone(stored) : emptyScenario();
   if (!scenario.runs.length) scenario.runs = [[]];
   scenarioRun = 0;
+  $('scenario-strategy').value = strategyOf(scenario);
   closeReplayCheck();
 }
 
@@ -1101,6 +1112,7 @@ async function createScenario(fields, notice = null) {
   scenario = { id, ...structuredClone(fields), name: response.name };
   if (!scenario.runs.length) scenario.runs = [[]];
   scenarioRun = 0;
+  $('scenario-strategy').value = strategyOf(scenario);
   rememberScenario(id);
   closeReplayCheck();
   $('scenario').open = true;
@@ -1229,7 +1241,9 @@ function renderScenario() {
   }));
   $('scenario-summary').textContent = problem
     ? `Senaryo graph'la uyuşmuyor: ${problem}`
-    : `Kapsama: ${coverage.edges[0]}/${coverage.edges[1]} edge · ${coverage.nodes[0]}/${coverage.nodes[1]} node · ${filled.length} koşu`;
+    : `Kapsama: ${coverage.edges[0]}/${coverage.edges[1]} edge · ${coverage.nodes[0]}/${coverage.nodes[1]} node · ${filled.length} koşu`
+      + (scenario.planner?.engine === 'graphwalker' ? ` · ${plannerText(scenario.planner)}` : '');
+  renderPlanner(graph, locked);
   const end = runEnd(graph, run);
   const next = problem ? [] : graph.edges.filter((e) => e.source === end);
   $('scenario-hint').textContent = !scenarioEditing() ? ''
@@ -1290,18 +1304,102 @@ $('scenario-start').onchange = () => {
   persistScenario();
 };
 
-$('scenario-strategy').onchange = async () => {
-  const strategy = STRATEGIES.find((s) => s.id === $('scenario-strategy').value);
-  if (strategy?.plan) {
-    try {
-      const { runs, planner } = await strategy.plan(scenarioGraph());
-      await createScenario({ name: `${modelName()} · ${strategy.text}`, start: scenario.start, planner, runs });
-    } catch (error) {
-      showMessage({ error: error.message });
-    }
-  }
+$('scenario-strategy').onchange = () => {
+  showMessage(null);
   renderScenario();
 };
+
+// -----------------------------------------------------------------------------
+// GRAPHWALKER: kullanıcının bilgisayarındaki GraphWalker ile koşu üretimi
+// -----------------------------------------------------------------------------
+// Eklenti program çalıştıramaz; Chrome kayıtlı bir programı (native messaging host) kendisi
+// başlatır. Host bir kez kurulur (runner\install-planner.cmd) ve GraphWalker CLI'ı çalıştırır
+// (runner/planner/graphwalker.js): çıkmaz node'da yol bölünür, kalan edge'ler yeni koşularla
+// kapsanır. Panel graph'ı ekran görüntüsüz gönderir; senaryonun başlangıcı yolların başlangıcıdır.
+// Tohum boşsa host rastgele seçer ve senaryoya yazar: aynı tohum aynı senaryoyu verir.
+const PLANNER_HOST = 'com.graphrecorder.planner';
+let planning = false; // GraphWalker çalışıyor
+
+function plannerText(planner) {
+  const goal = { edges: "tüm edge'ler", nodes: "tüm node'lar", node: `"${nodeById(planner.target)?.name ?? planner.target}" node'una ulaş` }[planner.goal];
+  return `GraphWalker: ${goal}` + (planner.seed !== undefined ? ` (tohum ${planner.seed})` : '');
+}
+
+let plannerTargetKey = '';
+
+function renderPlanner(graph, locked) {
+  const strategy = STRATEGIES.find((s) => s.id === $('scenario-strategy').value);
+  $('scenario-planner').hidden = !strategy?.goal;
+  if (!strategy?.goal) return;
+  $('scenario-target-label').hidden = strategy.goal !== 'node';
+  const targets = state.nodes.filter((n) => n.id !== graph.start);
+  const key = JSON.stringify([graph.start, targets.map((n) => [n.id, n.name])]);
+  if (key !== plannerTargetKey) {
+    plannerTargetKey = key;
+    const selected = $('scenario-target').value || (scenario.planner?.goal === 'node' ? scenario.planner.target : '');
+    $('scenario-target').replaceChildren(...targets.map((n) => Object.assign(document.createElement('option'), { value: n.id, textContent: n.name })));
+    if (targets.some((n) => n.id === selected)) $('scenario-target').value = selected;
+  }
+  $('btn-scenario-generate').disabled = locked || planning || !graph.start || (strategy.goal === 'node' && !targets.length);
+  $('scenario-seed').disabled = locked || planning || strategy.goal === 'node'; // a_star rastgele değil
+  $('scenario-planner-status').textContent = planning ? 'GraphWalker çalışıyor…' : '';
+}
+
+$('btn-scenario-generate').onclick = () => {
+  const strategy = STRATEGIES.find((s) => s.id === $('scenario-strategy').value);
+  if (!strategy?.goal || !scenario.id) return;
+  const seedText = $('scenario-seed').value.trim();
+  const seed = seedText === '' || strategy.goal === 'node' ? null : Number(seedText);
+  if (seed !== null && !(Number.isInteger(seed) && seed >= 0)) return showMessage({ error: 'Tohum 0 ya da pozitif bir tam sayı olmalı (boş: rastgele).' });
+  const target = strategy.goal === 'node' ? $('scenario-target').value : null;
+  const generate = () => generateRuns(strategy.goal, target, seed);
+  if (!scenario.runs.some((r) => r.length)) return generate();
+  confirmDialog(`"${scenario.name}" senaryosunun koşuları GraphWalker'ın ürettikleriyle değişecek.`, 'Üret', generate);
+};
+
+async function generateRuns(goal, target, seed) {
+  const id = scenario.id;
+  const graph = scenarioGraph();
+  planning = true;
+  showMessage(null);
+  renderScenario();
+  let response;
+  try {
+    response = await chrome.runtime.sendNativeMessage(PLANNER_HOST, {
+      type: 'plan', goal, target, seed,
+      graph: {
+        start: graph.start,
+        nodes: state.nodes.map(({ id: nodeId, name }) => ({ id: nodeId, name })),
+        edges: state.edges.map(({ id: edgeId, name, source, target: to }) => ({ id: edgeId, name, source, target: to })),
+      },
+    });
+  } catch (error) {
+    response = { error: plannerHostError(error.message) };
+  }
+  planning = false;
+  if (response?.error || scenario.id !== id) {
+    if (response?.error) showMessage({ error: `GraphWalker: ${response.error}` });
+    return renderScenario();
+  }
+  scenario.runs = response.runs.length ? response.runs : [[]];
+  scenario.planner = response.planner;
+  scenarioRun = 0;
+  const coverage = coverageOf(graph, response.runs);
+  const unreachable = response.unreachable?.length ? ` Başlangıçtan ulaşılamayan: ${response.unreachable.map((x) => x.name).join(', ')}.` : '';
+  showMessage({ notice: `GraphWalker ${response.runs.length} koşu üretti: ${coverage.edges[0]}/${coverage.edges[1]} edge, ${coverage.nodes[0]}/${coverage.nodes[1]} node.${unreachable}` });
+  renderScenario();
+  persistScenario();
+}
+
+// Chrome'un native messaging hataları kullanıcının yapabileceği şeye çevrilir.
+function plannerHostError(message) {
+  if (/not found/i.test(message)) {
+    return 'planlayıcı kurulu değil. Bir kez runner\\install-planner.cmd\'yi çalıştırın (Java 17 ya da 21 ve GraphWalker CLI jar\'ı gerekir). '
+      + `Panel olmadan aynı senaryo: node runner/plan.js ${modelName()}.json`;
+  }
+  if (/forbidden/i.test(message)) return 'planlayıcı bu eklenti kimliği için kurulmamış. runner\\install-planner.cmd\'yi yeniden çalıştırın.';
+  return `planlayıcı çalışmadı (${message}). Node.js kaldırıldı ya da kurulum eksik olabilir; runner\\install-planner.cmd'yi yeniden çalıştırın.`;
+}
 
 $('btn-scenario-undo').onclick = () => {
   const run = scenario.runs[scenarioRun];
