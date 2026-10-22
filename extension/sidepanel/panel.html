@@ -43,7 +43,7 @@
        görüntüleriyle tam graph'ı indirir, "Yükle…" onu yeni bir graph olarak ekler. -->
   <details id="graphs" class="card">
     <summary>Graph'lar <span id="graphs-badge" class="badge"></span> <span id="graphs-active" class="muted"></span></summary>
-    <ul id="graph-list" class="graph-list"></ul>
+    <ul id="graph-list" class="item-list"></ul>
     <div class="toolbar">
       <button id="btn-graph-new">Yeni graph</button>
       <button id="btn-graph-export" title="Graph'ı ekran görüntüleriyle birlikte yedek olarak indirir; &quot;Yükle…&quot; ile geri eklenir">Dışa aktar</button>
@@ -91,10 +91,21 @@
   <!-- Graph çizimi (Cytoscape.js bu div'in içine çizer) -->
   <div id="graph"></div>
 
-  <!-- SENARYO: test yolları (koşular). Açıkken seçili koşu graph'ta vurgulanır; elle yol
-       edge'lere tıklayarak kurulur. İndirilen senaryoyu runner oynatır (scenario.js, panel.js). -->
+  <!-- SENARYO: test yolları (koşular). Senaryolar graph'la saklanır; listede satıra tıklamak seçer.
+       Açıkken seçili koşu graph'ta vurgulanır; elle yol edge'lere tıklayarak kurulur ve kendiliğinden
+       kaydedilir. İndirilen senaryoyu runner oynatır (scenario.js, panel.js). -->
   <details id="scenario" class="card">
-    <summary>Senaryo <span id="scenario-badge" class="badge"></span></summary>
+    <summary>Senaryo <span id="scenario-badge" class="badge"></span> <span id="scenario-active" class="muted"></span></summary>
+    <ul id="scenario-list" class="item-list"></ul>
+    <p id="scenario-empty" class="hint" hidden>Bu graph'ta henüz senaryo yok. "Yeni senaryo" ile başlayın, sonra graph'ta edge'lere tıklayarak yolu kurun.</p>
+    <div class="toolbar">
+      <button id="btn-scenario-new">Yeni senaryo</button>
+      <button id="btn-scenario-load">Yükle…</button>
+    </div>
+    <input type="file" id="scenario-file" accept=".json,application/json" hidden>
+
+    <!-- Seçili senaryonun düzenlenmesi ve oynatılması; senaryo seçili değilken gizli -->
+    <div id="scenario-editor" class="scenario-editor" hidden>
     <label class="option">Strateji <select id="scenario-strategy"></select></label>
     <label class="option">Başlangıç <select id="scenario-start"></select></label>
     <p id="scenario-start-hint" class="hint" hidden>Bu başlangıçla senaryo yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda, graph'ın başlangıcından başlatır ve böyle bir senaryoyu reddeder.</p>
@@ -105,10 +116,8 @@
       <button id="btn-scenario-undo">Son edge'i geri al</button>
       <button id="btn-scenario-new-run">Yeni koşu</button>
       <button id="btn-scenario-clear">Temizle</button>
-      <button id="btn-scenario-load">Yükle…</button>
       <button id="btn-scenario-download" class="primary">Senaryo indir</button>
     </div>
-    <input type="file" id="scenario-file" accept=".json,application/json" hidden>
 
     <!-- PANELDE OYNATMA: seçili koşu bu tarayıcıda, açık sekmede oynatılır (replay.js). Başlangıç
          sayfası kullanıcının sorumluluğudur; ekran koşunun ilk node'u değilse uyarı çıkar. -->
@@ -141,6 +150,7 @@
       <div class="toolbar" id="replay-result-actions" hidden>
         <button id="btn-replay-compare">Beklenen ekranla karşılaştır</button>
       </div>
+    </div>
     </div>
   </details>
 

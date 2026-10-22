@@ -71,9 +71,9 @@ Demo için [saucedemo.com](https://www.saucedemo.com) uygundur: test otomasyonu 
 | 6 | **Continue Shopping**'e basın | **Node oluştur** | Panel sorar: *"Bu sayfanın etkileşimli elementleri mevcut v_Inventory_2 node'u ile birebir aynı. Aynı state mi?"* |
 | 7 | | `v_Inventory_2` altındaki **Evet, bu node** | `v_Cart → v_Inventory_2` edge'i oluşur. Graph'ta döngü kapanır. |
 | 8 | | **GraphWalker JSON** | Graph, GraphWalker JSON modeli olarak `SwagLabs.json` dosyasına iner. GraphWalker Studio'da açılır, GraphWalker CLI ile çalıştırılabilir. |
-| 9 | | **Senaryo** bölümünü açıp graph'ta edge'lere tıklayarak bir yol kurun, **Senaryo indir** | Seçili koşu graph'ta vurgulanır; yol çıkmaz bir node'da biterse "Yeni koşu" baştan başlar. Senaryo, modelin yanına `SwagLabs-senaryo.json` olarak iner. |
+| 9 | | **Senaryo** bölümünü açıp **Yeni senaryo**'ya basın, graph'ta edge'lere tıklayarak bir yol kurun, **Senaryo indir** | "Senaryo 1" listeye eklenir ve her tıklamada kendiliğinden kaydedilir. Seçili koşu graph'ta vurgulanır; yol çıkmaz bir node'da biterse "Yeni koşu" baştan başlar. Senaryo, modelin yanına `SwagLabs-Senaryo1.json` olarak iner. Birden fazla senaryo kurulabilir; listede satıra tıklamak seçer. |
 | 10 | Giriş sayfasına dönün (koşunun ilk node'u) | Senaryo bölümünde şifreyi girip **Koşuyu oynat** | Koşu bu tarayıcıda, açık sekmede oynatılır: element çerçevelenir, tıklanır; graph'ta geçen edge'ler yeşile döner. Ekran koşunun ilk node'u değilse önce uyarı çıkar. Kalınan adımda fark listesi ve beklenen ekranla görsel karşılaştırma. Bkz. [docs/01 > Panelde oynatma](docs/01-mimari.md#panelde-oynatma) |
-| 11 | *(terminalde)* `node runner/run.js SwagLabs-senaryo.json --secrets secrets.json` | | Runner her koşuyu yeni bir tarayıcıda temiz oturumla oynatır, her edge'den sonra varılan ekranın beklenen node olduğunu doğrular ve `report.html`, `report.json`, `junit.xml` yazar. Bkz. [runner/README.md](runner/README.md) |
+| 11 | *(terminalde)* `node runner/run.js SwagLabs-Senaryo1.json --secrets secrets.json` | | Runner her koşuyu yeni bir tarayıcıda temiz oturumla oynatır, her edge'den sonra varılan ekranın beklenen node olduğunu doğrular ve `report.html`, `report.json`, `junit.xml` yazar. Bkz. [runner/README.md](runner/README.md) |
 
 **Temel kurallar:**
 

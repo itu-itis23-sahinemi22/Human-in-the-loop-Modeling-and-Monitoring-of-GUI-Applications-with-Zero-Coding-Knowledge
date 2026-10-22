@@ -12,7 +12,7 @@
 
 const $ = (id) => document.getElementById(id);
 
-const EMPTY_STATE = { id: null, tabId: null, tabs: [], tabPrompt: null, currentNodeId: null, startNodeId: null, nodes: [], edges: [], buffer: [], pending: null, undo: [] };
+const EMPTY_STATE = { id: null, tabId: null, tabs: [], tabPrompt: null, currentNodeId: null, startNodeId: null, nodes: [], edges: [], buffer: [], pending: null, undo: [], scenarios: [] };
 
 let state = EMPTY_STATE;  // aktif graph (storage > graph:<id>)
 let graphs = [];         // graph listesi (storage > graphs; background.js > GRAPH'LAR)
@@ -725,19 +725,43 @@ function switchLockText() {
 
 // Satır: ad, sayılar, yeniden adlandır (satırda), sil. Satıra tıklamak (ya da Enter) geçer.
 function graphItem(graph, locked) {
-  const li = document.createElement('li');
   const active = graph.id === activeGraphId;
+  return listRow({
+    name: graph.name,
+    meta: `${graph.nodes} node · ${graph.edges} edge` + (graph.scenarios ? ` · ${graph.scenarios} senaryo` : ''),
+    title: `Oluşturuldu: ${dateText(graph.created)} · son değişiklik: ${dateText(graph.updated)}`,
+    active,
+    locked,
+    renaming: graph.id === renamingGraphId,
+    select: () => requestSwitch(graph),
+    rename: {
+      start: () => { renamingGraphId = graph.id; renderGraphs(); },
+      end: (name) => {
+        renamingGraphId = null;
+        if (name && name !== graph.name) send({ type: 'RENAME_GRAPH', id: graph.id, name });
+        renderGraphs();
+      },
+    },
+    remove: () => requestDeleteGraph(graph),
+    removeDisabled: active && locked,
+  });
+}
+
+// Liste satırı (Graph'lar ve Senaryo kartları): ad, bilgi, ✎ ile satırda yeniden adlandırma
+// (Enter ya da odaktan çıkmak kaydeder, Esc vazgeçer; rename.end(ad | null)), ✕. Seçili olmayan
+// satıra tıklamak (ya da Enter) select'i çağırır; kilitliyken seçilmez. warning: satırın başında ⚠.
+function listRow({ name, meta, title = '', warning = null, active, locked, renaming, select, rename, remove, removeDisabled = false }) {
+  const li = document.createElement('li');
   li.classList.toggle('active', active);
   li.classList.toggle('locked', locked && !active);
-  if (graph.id === renamingGraphId) {
-    const input = Object.assign(document.createElement('input'), { value: graph.name, maxLength: 80 });
-    input.setAttribute('aria-label', "Graph'ın adı");
+  if (renaming) {
+    const input = Object.assign(document.createElement('input'), { value: name, maxLength: 80 });
+    input.setAttribute('aria-label', 'Ad');
+    let done = false;
     const finish = (keep) => {
-      if (renamingGraphId !== graph.id) return;
-      renamingGraphId = null;
-      const name = input.value.trim();
-      if (keep && name && name !== graph.name) send({ type: 'RENAME_GRAPH', id: graph.id, name });
-      renderGraphs();
+      if (done) return;
+      done = true;
+      rename.end(keep ? input.value.trim() : null);
     };
     input.onkeydown = (event) => {
       if (event.key === 'Enter') finish(true);
@@ -748,17 +772,18 @@ function graphItem(graph, locked) {
     queueMicrotask(() => input.select());
     return li;
   }
-  li.title = `Oluşturuldu: ${dateText(graph.created)} · son değişiklik: ${dateText(graph.updated)}`;
+  li.title = warning ?? title;
+  if (warning) li.append(Object.assign(document.createElement('span'), { className: 'warn', textContent: '⚠' }));
   li.append(
-    Object.assign(document.createElement('span'), { className: 'name', textContent: graph.name }),
-    Object.assign(document.createElement('span'), { className: 'meta', textContent: `${graph.nodes} node · ${graph.edges} edge` }),
-    iconButton('✎', 'Yeniden adlandır', () => { renamingGraphId = graph.id; renderGraphs(); }),
-    Object.assign(iconButton('✕', 'Sil', () => requestDeleteGraph(graph)), { disabled: active && locked }),
+    Object.assign(document.createElement('span'), { className: 'name', textContent: name }),
+    Object.assign(document.createElement('span'), { className: 'meta', textContent: meta }),
+    iconButton('✎', 'Yeniden adlandır', rename.start),
+    Object.assign(iconButton('✕', 'Sil', remove), { disabled: removeDisabled }),
   );
   if (!active && !locked) {
     li.tabIndex = 0;
-    li.onclick = () => requestSwitch(graph);
-    li.onkeydown = (event) => { if (event.key === 'Enter' && event.target === li) requestSwitch(graph); };
+    li.onclick = select;
+    li.onkeydown = (event) => { if (event.key === 'Enter' && event.target === li) select(); };
   }
   return li;
 }
@@ -790,7 +815,8 @@ function requestSwitch(graph) {
 function requestDeleteGraph(graph) {
   const active = graph.id === activeGraphId;
   const after = !active ? '' : graphs.length > 1 ? ' Kayıt en son değişen diğer graph\'ta sürer.' : ' Yerine boş bir graph açılır.';
-  confirmDialog(`"${graph.name}" graph'ı silinecek (${graph.nodes} node, ${graph.edges} edge). Bu geri alınamaz; saklamak için önce "Dışa aktar" ile indirin.${after}`,
+  const scenarios = graph.scenarios ? `, ${graph.scenarios} senaryo` : '';
+  confirmDialog(`"${graph.name}" graph'ı silinecek (${graph.nodes} node, ${graph.edges} edge${scenarios}). Bu geri alınamaz; saklamak için önce "Dışa aktar" ile indirin.${after}`,
     'Sil', () => send({ type: 'DELETE_GRAPH', id: graph.id }));
 }
 
@@ -798,11 +824,11 @@ $('btn-graph-new').onclick = () => confirmLeave('Yeni bir graph açılacak.', ()
 
 $('btn-graph-export').onclick = () => downloadJson(`${modelName()}.graph.json`, graphBackup());
 
-// Tam yedek: kayda ait geçici alanlar (sekmeler, bekleyen aksiyonlar, geri al) girmez.
+// Tam yedek: senaryolar dahil; kayda ait geçici alanlar (sekmeler, bekleyen aksiyonlar, geri al) girmez.
 function graphBackup() {
   return {
     format: GRAPH_BACKUP_FORMAT, name: activeGraph()?.name ?? modelName(), exported: new Date().toISOString(),
-    startNodeId: state.startNodeId, nextId: state.nextId, nodes: state.nodes, edges: state.edges,
+    startNodeId: state.startNodeId, nextId: state.nextId, nodes: state.nodes, edges: state.edges, scenarios: state.scenarios,
   };
 }
 
@@ -838,10 +864,12 @@ function confirmDialog(text, okText, onConfirm) {
 
 $('btn-confirm-dialog-cancel').onclick = () => $('confirm-dialog').close();
 
-// Aktif graph değişti: seçim, senaryo ve oynatma sonucu önceki graph'ındı.
+// Aktif graph değişti: seçim, senaryo ve oynatma sonucu önceki graph'ındı. Yeni graph'ın en son
+// seçilen senaryosu graph okununca geri gelir (restoreScenario).
 function onGraphSwitched() {
   selectedId = null;
   renamingGraphId = null;
+  renamingScenarioId = null;
   scenario = emptyScenario();
   scenarioRun = 0;
   replayResult = null;
@@ -979,12 +1007,18 @@ function replayAction({ changed, screenBefore, screenAfter, ...action }) {
 
 
 // -----------------------------------------------------------------------------
-// SENARYO: test yolları (koşular); önizleme, elle yol, indirme / yükleme (scenario.js)
+// SENARYO: test yolları (koşular); liste, önizleme, elle yol, indirme / yükleme (scenario.js)
 // -----------------------------------------------------------------------------
 // Senaryo: başlangıç node'undan başlayan bir ya da birden fazla koşu. Runner her koşuyu temiz
 // bir oturumla baştan oynatır; yol çıkmaz bir node'a varırsa kalan edge'ler yeni koşuyla
-// kapsanır. Senaryo panelin kendi durumudur (graph state'i değil, storage'a yazılmaz): panel
-// kapanınca gider, "Senaryo indir" ile dosyaya alınır.
+// kapsanır.
+//
+// Senaryolar graph'la saklanır (background.js > SENARYOLAR); kartın başında liste. Panel seçili
+// senaryonun çalışma kopyasını tutar (scenario; id null = seçili senaryo yok) ve her değişiklikte
+// kaydettirir. Storage'dan gelen değişiklik çalışma kopyasının üstüne yazmaz (hızlı tıklamalarda
+// ara bir sürüm geri gelmesin); yalnızca senaryo silindiyse seçim kalkar. Seçili senaryo graph
+// başına hatırlanır (localStorage). Senaryo seçili değilken edge tıklaması senaryoya bir şey
+// eklemez (edge'in detayı açılır): önce "Yeni senaryo".
 //
 // Stratejiler: "Elle seç" kullanıcı graph'ta edge'lere tıklayarak koşuları kurar. Bir
 // planlayıcı stratejisi koşuları kendisi hesaplar: { id, text, plan(graph) } ve plan,
@@ -997,15 +1031,87 @@ const STRATEGIES = [{ id: 'manual', text: "Elle seç (graph'ta edge'lere tıklay
 
 let scenario = emptyScenario();
 let scenarioRun = 0; // seçili koşu
+let renamingScenarioId = null; // satırda adı düzenlenen senaryo
 
 function emptyScenario() {
-  return { name: null, planner: { engine: 'manual' }, start: null, runs: [[]] };
+  return { id: null, name: null, planner: { engine: 'manual' }, start: null, runs: [[]] };
 }
 
 // Senaryonun graph'ı; start, senaryonun başlangıç node'u (seçilen node silindiyse graph'ın başlangıcı).
-function scenarioGraph() {
-  const start = nodeById(scenario.start) ? scenario.start : state.startNodeId;
+function scenarioGraphOf(sc) {
+  const start = nodeById(sc.start) ? sc.start : state.startNodeId;
   return { start, nodes: state.nodes, edges: state.edges };
+}
+
+function scenarioGraph() {
+  return scenarioGraphOf(scenario);
+}
+
+// Listeden seçilen senaryonun çalışma kopyası (bulunamazsa seçim kalkar).
+function selectScenario(id) {
+  const stored = state.scenarios.find((sc) => sc.id === id);
+  scenario = stored ? structuredClone(stored) : emptyScenario();
+  if (!scenario.runs.length) scenario.runs = [[]];
+  scenarioRun = 0;
+  closeReplayCheck();
+}
+
+function rememberScenario(id) {
+  try {
+    localStorage.setItem('scenario:' + state.id, id ?? '');
+  } catch { /* hatırlanmaz */ }
+}
+
+// Graph açılınca (panel açılışı, graph geçişi) o graph'ta en son seçilen senaryo.
+function restoreScenario() {
+  let id = null;
+  try {
+    id = localStorage.getItem('scenario:' + state.id);
+  } catch { /* hatırlanmaz */ }
+  if (id && state.scenarios.some((sc) => sc.id === id)) selectScenario(id);
+}
+
+// Storage'dan yeni state geldi: seçili senaryo silindiyse seçim kalkar.
+function noteScenarioRemoval(next) {
+  if (!scenario.id) return;
+  const before = state.scenarios.some((sc) => sc.id === scenario.id);
+  if (before && !next.scenarios.some((sc) => sc.id === scenario.id)) {
+    scenario = emptyScenario();
+    scenarioRun = 0;
+  }
+}
+
+// Çalışma kopyası background'a yazılır. Yalnızca hata gösterilir (bilgi mesajları kalsın).
+async function persistScenario() {
+  if (!scenario.id) return;
+  const { id, name, start, planner, runs } = scenario;
+  const response = await chrome.runtime.sendMessage({ type: 'SAVE_SCENARIO', scenario: { id, name, start, planner, runs } });
+  if (response?.error) return showMessage(response);
+  if (response?.name && scenario.id === id && scenario.name !== response.name) {
+    scenario.name = response.name;
+    renderScenario();
+  }
+}
+
+// Yeni senaryo listeye eklenir ve seçilir (Yeni senaryo, Yükle…, planlayıcılar).
+async function createScenario(fields, notice = null) {
+  const id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const response = await chrome.runtime.sendMessage({ type: 'NEW_SCENARIO', scenario: { id, ...fields } });
+  if (response?.error) return showMessage(response);
+  scenario = { id, ...structuredClone(fields), name: response.name };
+  if (!scenario.runs.length) scenario.runs = [[]];
+  scenarioRun = 0;
+  rememberScenario(id);
+  closeReplayCheck();
+  $('scenario').open = true;
+  showMessage(notice);
+  renderScenario();
+}
+
+function nextScenarioName() {
+  let n = state.scenarios.length + 1;
+  while (state.scenarios.some((sc) => sc.name === `Senaryo ${n}`)) n++;
+  return `Senaryo ${n}`;
 }
 
 // "Başlangıç" listesi: node'lar değişince yeniden kurulur. İlk seçenek graph'ın başlangıcı.
@@ -1025,21 +1131,95 @@ function renderScenarioStart(graph, locked) {
   $('scenario-start-hint').hidden = !graph.start || graph.start === state.startNodeId;
 }
 
-// Elle yol, bölüm açıkken ve "Elle seç" stratejisindeyken kurulur: edge'e tıklamak onu koşuya ekler.
+// Elle yol: bölüm açık, bir senaryo seçili ve "Elle seç" stratejisindeyken edge'e tıklamak onu koşuya ekler.
 function scenarioEditing() {
-  return $('scenario').open && $('scenario-strategy').value === 'manual';
+  return $('scenario').open && Boolean(scenario.id) && $('scenario-strategy').value === 'manual';
 }
 
 $('scenario-strategy').replaceChildren(...STRATEGIES.map(({ id, text }) => Object.assign(document.createElement('option'), { value: id, textContent: text })));
 
+// Liste: ad, kapsama ya da yürünemiyorsa ⚠. Seçili satır çalışma kopyasından çizilir.
+function renderScenarioList(locked) {
+  $('scenario-empty').hidden = state.scenarios.length > 0;
+  $('scenario-active').textContent = scenario.id ? `· ${scenario.name}` : '';
+  $('btn-scenario-new').disabled = locked;
+  $('btn-scenario-load').disabled = locked;
+  if (renamingScenarioId && $('scenario-list').querySelector('input')) return; // yazılan ad silinmesin
+  $('scenario-list').replaceChildren(...state.scenarios.map((sc) => scenarioItem(sc.id === scenario.id ? scenario : sc, locked)));
+}
+
+function scenarioItem(sc, locked) {
+  const graph = scenarioGraphOf(sc);
+  const filled = sc.runs.filter((r) => r.length);
+  const problem = runProblem(graph, sc.runs);
+  const coverage = coverageOf(graph, filled);
+  return listRow({
+    name: sc.name,
+    meta: problem ? 'yürünemiyor' : `${coverage.edges[0]}/${coverage.edges[1]} edge · ${filled.length} koşu`,
+    warning: problem,
+    active: sc.id === scenario.id,
+    locked,
+    renaming: sc.id === renamingScenarioId,
+    select: () => {
+      selectScenario(sc.id);
+      rememberScenario(sc.id);
+      showMessage(null);
+      renderScenario();
+    },
+    rename: {
+      start: () => { renamingScenarioId = sc.id; renderScenario(); },
+      end: (name) => {
+        renamingScenarioId = null;
+        if (name && name !== sc.name) renameScenario(sc, name);
+        renderScenario();
+      },
+    },
+    remove: () => requestDeleteScenario(sc),
+    removeDisabled: locked && sc.id === scenario.id,
+  });
+}
+
+async function renameScenario(sc, name) {
+  if (sc.id === scenario.id) {
+    scenario.name = name;
+    return persistScenario();
+  }
+  const { id, start, planner, runs } = sc;
+  const response = await chrome.runtime.sendMessage({ type: 'SAVE_SCENARIO', scenario: { id, name, start, planner, runs } });
+  if (response?.error) showMessage(response);
+}
+
+function requestDeleteScenario(sc) {
+  const runs = sc.runs.filter((r) => r.length).length;
+  confirmDialog(`"${sc.name}" senaryosu silinecek (${runs} koşu). Bu geri alınamaz; saklamak için önce seçip "Senaryo indir".`, 'Sil', () => {
+    if (sc.id === scenario.id) {
+      scenario = emptyScenario();
+      scenarioRun = 0;
+      rememberScenario(null);
+      closeReplayCheck();
+    }
+    send({ type: 'DELETE_SCENARIO', id: sc.id });
+    renderScenario();
+  });
+}
+
+$('btn-scenario-new').onclick = () => createScenario({ name: nextScenarioName(), start: null, planner: { engine: 'manual' }, runs: [[]] });
+
 function renderScenario() {
+  const locked = Boolean(replay); // oynatma sürerken senaryo değişmez
+  renderScenarioList(locked);
+  $('scenario-editor').hidden = !scenario.id;
+  cy.elements().removeClass('faded run-edge run-next run-end run-start replay-passed replay-running replay-failed');
+  if (!scenario.id) {
+    $('scenario-badge').textContent = '';
+    return;
+  }
   const graph = scenarioGraph();
   const runs = scenario.runs;
   const run = runs[scenarioRun] ?? [];
   const filled = runs.filter((r) => r.length);
   const coverage = coverageOf(graph, filled);
   const problem = runProblem(graph, runs);
-  const locked = Boolean(replay); // oynatma sürerken senaryo değişmez
   $('scenario-badge').textContent = filled.length ? `${coverage.edges[0]}/${coverage.edges[1]}` : '';
   $('scenario-runs').replaceChildren(...runs.map((r, i) => {
     const button = Object.assign(document.createElement('button'), { textContent: `Koşu ${i + 1} (${r.length})`, disabled: locked });
@@ -1049,8 +1229,7 @@ function renderScenario() {
   }));
   $('scenario-summary').textContent = problem
     ? `Senaryo graph'la uyuşmuyor: ${problem}`
-    : `Kapsama: ${coverage.edges[0]}/${coverage.edges[1]} edge · ${coverage.nodes[0]}/${coverage.nodes[1]} node · ${filled.length} koşu`
-      + (scenario.name ? ` · ${scenario.name}` : '');
+    : `Kapsama: ${coverage.edges[0]}/${coverage.edges[1]} edge · ${coverage.nodes[0]}/${coverage.nodes[1]} node · ${filled.length} koşu`;
   const end = runEnd(graph, run);
   const next = problem ? [] : graph.edges.filter((e) => e.source === end);
   $('scenario-hint').textContent = !scenarioEditing() ? ''
@@ -1060,14 +1239,12 @@ function renderScenario() {
   $('btn-scenario-undo').disabled = locked || (!run.length && runs.length === 1);
   $('btn-scenario-new-run').disabled = locked || !run.length;
   $('btn-scenario-clear').disabled = locked || !filled.length;
-  $('btn-scenario-load').disabled = locked;
   $('scenario-strategy').disabled = locked;
   $('btn-scenario-download').disabled = !filled.length || Boolean(problem);
   renderScenarioStart(graph, locked);
   renderReplay();
 
   // Graph'ta önizleme: yalnızca bölüm açıkken
-  cy.elements().removeClass('faded run-edge run-next run-end run-start replay-passed replay-running replay-failed');
   if (!$('scenario').open || !graph.start) return;
   cy.elements().addClass('faded');
   const orders = new Map();
@@ -1091,9 +1268,9 @@ function addScenarioEdge(id) {
   }
   run.push(id);
   scenario.planner = { engine: 'manual' };
-  scenario.name = null;
   showMessage(null);
   renderScenario();
+  persistScenario();
 }
 
 $('scenario').ontoggle = renderScenario;
@@ -1103,13 +1280,14 @@ $('scenario-start').onchange = () => {
   const start = $('scenario-start').value;
   scenario.start = start === state.startNodeId ? null : start;
   if (scenario.runs.some((r) => r.length) && runProblem(scenarioGraph(), scenario.runs)) {
-    scenario = { ...emptyScenario(), start: scenario.start };
+    scenario.runs = [[]];
     scenarioRun = 0;
     showMessage({ notice: `Koşular "${nodeById(scenarioGraph().start)?.name}" node'undan yürünemediği için temizlendi.` });
   } else {
     showMessage(null);
   }
   renderScenario();
+  persistScenario();
 };
 
 $('scenario-strategy').onchange = async () => {
@@ -1117,9 +1295,7 @@ $('scenario-strategy').onchange = async () => {
   if (strategy?.plan) {
     try {
       const { runs, planner } = await strategy.plan(scenarioGraph());
-      scenario = { name: `${modelName()} · ${strategy.text}`, planner, runs: runs.length ? runs : [[]] };
-      scenarioRun = 0;
-      showMessage(null);
+      await createScenario({ name: `${modelName()} · ${strategy.text}`, start: scenario.start, planner, runs });
     } catch (error) {
       showMessage({ error: error.message });
     }
@@ -1136,31 +1312,35 @@ $('btn-scenario-undo').onclick = () => {
   }
   scenario.planner = { engine: 'manual' };
   renderScenario();
+  persistScenario();
 };
 
 $('btn-scenario-new-run').onclick = () => {
   scenario.runs.push([]);
   scenarioRun = scenario.runs.length - 1;
   renderScenario();
+  persistScenario();
 };
 
 $('btn-scenario-clear').onclick = () => {
-  scenario = { ...emptyScenario(), start: scenario.start }; // başlangıç seçimi kalır
+  scenario.runs = [[]]; // ad ve başlangıç seçimi kalır
+  scenario.planner = { engine: 'manual' };
   scenarioRun = 0;
   renderScenario();
+  persistScenario();
 };
 
 // Senaryo dosyası: model dosyasıyla aynı klasöre indirilmesi beklenir (runner model yolunu
-// senaryoya göre çözer). Elle kurulan senaryonun adı modelden gelir. start yalnızca graph'ın
-// başlangıcı dışında bir node seçildiyse yazılır.
+// senaryoya göre çözer). Dosya adı model ve senaryo adından: SwagLabs-GirisAkisi.json. start
+// yalnızca graph'ın başlangıcı dışında bir node seçildiyse yazılır.
 $('btn-scenario-download').onclick = () => {
   const runs = scenario.runs.filter((r) => r.length);
   const graph = scenarioGraph();
-  const name = modelName();
-  downloadJson(`${name}-senaryo.json`, {
+  const model = modelName();
+  downloadJson(`${model}-${toPascalCase(scenario.name ?? '') || 'Senaryo'}.json`, {
     format: SCENARIO_FORMAT,
-    name: scenario.name ?? `${name} · elle seçilen yol`,
-    model: `${name}.json`,
+    name: scenario.name,
+    model: `${model}.json`,
     ...(graph.start !== state.startNodeId && { start: graph.start }),
     planner: scenario.planner,
     runs,
@@ -1168,8 +1348,8 @@ $('btn-scenario-download').onclick = () => {
   });
 };
 
-// Bir senaryo dosyasını önizlemek için yükler (ör. komut satırında üretilmiş). Bu graph'la
-// yürünemiyorsa (edge silinmiş, başka model) reddedilir.
+// Bir senaryo dosyası listeye yeni senaryo olarak eklenir (ör. komut satırında üretilmiş). Bu
+// graph'la yürünemiyorsa (edge silinmiş, başka model) reddedilir.
 $('btn-scenario-load').onclick = () => $('scenario-file').click();
 $('scenario-file').onchange = async () => {
   const file = $('scenario-file').files[0];
@@ -1182,9 +1362,9 @@ $('scenario-file').onchange = async () => {
     const start = json.start && json.start !== state.startNodeId ? json.start : null;
     const problem = runProblem({ ...scenarioGraph(), start: start ?? state.startNodeId }, json.runs);
     if (problem) throw new Error(`Senaryo bu graph'la uyuşmuyor: ${problem}`);
-    scenario = { name: json.name ?? file.name, planner: json.planner ?? { engine: 'manual' }, start, runs: json.runs.map((run) => [...run]) };
-    scenarioRun = 0;
-    showMessage({ notice: `"${scenario.name}" yüklendi: ${json.runs.length} koşu.` });
+    const name = json.name ?? file.name.replace(/\.json$/i, '');
+    await createScenario({ name, start, planner: json.planner ?? { engine: 'manual' }, runs: json.runs.map((run) => [...run]) },
+      { notice: `"${name}" yüklendi: ${json.runs.length} koşu.` });
   } catch (error) {
     showMessage({ error: `Senaryo yüklenemedi: ${error.message}` });
   }
@@ -1214,7 +1394,7 @@ function replayEdges() {
 // Panelde gösterilen oynatma: süren ya da seçili koşu için en son biten.
 function shownReplay() {
   if (replay) return replay;
-  return replayResult?.runKey === JSON.stringify(scenario.runs[scenarioRun]) ? replayResult : null;
+  return replayResult?.runKey === runKey() ? replayResult : null;
 }
 
 function renderReplay() {
@@ -1462,8 +1642,13 @@ function closeReplayCheck() {
   renderReplay();
 }
 
+// Oynatma sonucu hangi senaryonun hangi koşusunun (o anki edge'leriyle).
+function runKey() {
+  return JSON.stringify([scenario.id, scenario.runs[scenarioRun]]);
+}
+
 async function runReplay(tab, edges) {
-  const runKey = JSON.stringify(scenario.runs[scenarioRun]);
+  const key = runKey();
   await send({ type: 'REPLAY', active: true });
   replay = startReplay({
     tabId: tab.id, edges, settings, secrets: replaySecrets, slow: $('replay-slow').checked,
@@ -1474,7 +1659,7 @@ async function runReplay(tab, edges) {
   renderScenario();
   const result = await replay.done;
   replay = null;
-  replayResult = { runKey, ...result };
+  replayResult = { runKey: key, ...result };
   await send({ type: 'REPLAY', active: false, endNodeId: result.endNodeId, tabId: result.tabId });
   const broken = result.steps.find((s) => s.status === 'failed' || s.status === 'stopped');
   const end = nodeById(result.endNodeId);
@@ -1660,6 +1845,7 @@ async function showGraph(id) {
   const stored = id ? (await chrome.storage.local.get(key))[key] : null;
   if (id !== activeGraphId) return; // bu arada yine değişti
   state = stored ? normalizeState(stored) : { ...EMPTY_STATE, id };
+  if (!scenario.id) restoreScenario();
   render();
 }
 
@@ -1674,7 +1860,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     onGraphSwitched();
     showGraph(activeGraphId);
   } else if (changes['graph:' + activeGraphId]?.newValue) {
-    state = normalizeState(changes['graph:' + activeGraphId].newValue);
+    const next = normalizeState(changes['graph:' + activeGraphId].newValue);
+    noteScenarioRemoval(next);
+    state = next;
     render();
   }
   if (changes.settings) {

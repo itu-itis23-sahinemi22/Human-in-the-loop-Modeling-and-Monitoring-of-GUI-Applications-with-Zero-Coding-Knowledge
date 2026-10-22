@@ -18,6 +18,7 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - [Geri al](#geri-al)
 - [Kayıt hangi sekmede?](#kayıt-hangi-sekmede)
 - [Graph'lar](#graphlar)
+- [Senaryolar](#senaryolar)
 - [Panelde oynatma](#panelde-oynatma)
 - [Service worker'ın ölümlülüğü](#service-workerın-ölümlülüğü)
 
@@ -128,6 +129,9 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `RENAME_GRAPH` | panel → background | `{ id, name }` | Graph'ı yeniden adlandırır; ad artık otomatik değişmez. Boş ad reddedilir, aynı ad varsa sonuna "(2)". |
 | `DELETE_GRAPH` | panel → background | `{ id }` | Graph'ı siler. Aktif olan silinirse en son değişen diğerine, o da yoksa yeni boş graph'a geçer. |
 | `IMPORT_GRAPH` | panel → background | `{ graph }` | Graph yedeğini denetler, yeni bir graph olarak ekler ve ona geçer ([04 > Graph yedeği](04-veri-modeli.md#graph-yedeği)). |
+| `NEW_SCENARIO` | panel → background | `{ scenario: { id, name, start, planner, runs } }` | Senaryoyu aktif graph'a ekler; ad tekil yapılır, `{ name }` döner. Bkz. [Senaryolar](#senaryolar) |
+| `SAVE_SCENARIO` | panel → background | `{ scenario }` | Senaryoyu günceller (koşular, başlangıç, ad); `{ name }` döner. Senaryo silinmişse reddeder. |
+| `DELETE_SCENARIO` | panel → background | `{ id }` | Senaryoyu siler. |
 | `MONITOR` | background → content | `{ monitor, hover }` | Kayıt sekmesine ekranı aksiyonsuz da izleyip izlemeyeceğini ve fareyle üzerine gelmeyi kaydedip kaydetmeyeceğini bildirir: ayar değişince, kayıt bir sekmeye bağlanınca. Yeni yüklenen sayfa bunu ilk ACTION / SCREEN cevabından öğrenir. |
 | `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements, viewport }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. `viewport`, kümenin alındığı görünen alandır: `{ width, height, devicePixelRatio }`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
@@ -445,6 +449,26 @@ Panelde açılır-kapanır **Graph'lar** kartı: her satırda ad, node / edge sa
 - Graph'lar arasında node ya da edge taşınmaz, iki graph birleştirilemez. İyileştirme: yedeği mevcut graph'a "ekle" (id'leri yeniden numaralayarak).
 - Kayıt aynı anda yalnızca bir graph'a yapılır; iki sitede paralel kayıt için graph'lar arasında geçmek gerekir ve her geçişte bekleyen aksiyonlar silinir.
 - Yedek ekran görüntülerini base64 olarak taşır; büyük graph'larda dosya onlarca MB olabilir. İyileştirme: görüntüleri ayrı dosyalar olarak bir zip'te taşımak.
+
+---
+
+## Senaryolar
+
+Senaryo, graph üzerinde test yoludur: başlangıç node'undan başlayan bir ya da birden fazla koşu ([04 > Senaryo dosyası](04-veri-modeli.md#senaryo-dosyası)). Senaryolar **graph'ın içinde** saklanır (`state.scenarios`); graph silinince gider, graph yedeğine girer.
+
+Paneldeki **Senaryo** kartının başında Graph'lar kartıyla aynı desende bir liste vardır: her satırda ad ve kapsama (`2/3 edge · 1 koşu`), yürünemiyorsa ⚠ ve "yürünemiyor"; **✎** satırda yeniden adlandırır, **✕** onayla siler; satıra tıklamak seçer. Altta **Yeni senaryo** ("Senaryo N") ve **Yükle…** (dosya listeye yeni senaryo olarak eklenir). Seçili senaryo yokken düzenleme alanı (strateji, başlangıç, koşular, oynatma) gizlidir.
+
+- **Önce "Yeni senaryo".** Senaryo seçili değilken graph'ta edge'e tıklamak senaryoya bir şey eklemez, edge'in detayını açar: kazara senaryo oluşmaz.
+- **Kendiliğinden kayıt.** Seçili senaryo düzenlendikçe (edge eklemek, geri almak, yeni koşu, temizle, başlangıç) kaydedilir; ayrı "Kaydet" yoktur. Panel seçili senaryonun çalışma kopyasını tutar ve her değişikliği background'a yazdırır (state'i yine yalnızca background yazar). Storage'dan gelen değişiklik çalışma kopyasının üstüne yazmaz: hızlı ardışık tıklamalarda önceki bir kaydın bildirimi yeni eklenen edge'i geri almasın. Yalnızca seçili senaryo silindiyse seçim kalkar.
+- **Seçim hatırlanır.** Her graph'ta en son seçilen senaryo panelin `localStorage`'ında durur; panel yeniden açılınca ya da graph'a geri dönülünce o senaryo seçili gelir.
+- **Yürünemeyen senaryo.** Graph değişip (edge silindi, node birleştirildi) koşular yürünemez olursa senaryo silinmez, listede ⚠ ile işaretlenir; seçilince nedeni yazılır, oynatma ve indirme kapalıdır. Silme geri alınınca işaret kalkar.
+- **Ad** graph içinde tekildir (aynı ad varsa "(2)"). İndirilen dosya `<Model>-<Senaryo>.json` (ör. `SwagLabs-GirisAkisi.json`), dosyadaki `name` senaryonun adıdır.
+
+**Sınırlar:**
+
+- Panel aynı anda iki pencerede açıksa ikisi de kendi çalışma kopyasını yazar; sonra yazan kazanır. İyileştirme: kayıtta sürüm numarası, eskiyse reddetmek.
+- Senaryo silme geri alınmaz (graph'taki geri al yığınına girmez). İyileştirme: senaryo silmelerini de yığına almak.
+- Senaryolar graph'a bağlıdır; başka bir graph'a kopyalanamaz. Aynı site için iki graph varsa senaryo dosyası indirilip öbüründe yüklenir (edge id'leri tutmuyorsa reddedilir).
 
 ---
 

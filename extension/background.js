@@ -43,6 +43,7 @@ function emptyState(id) {
     viewport: null,       // Kayıt sekmesinin son bilinen görünen alanı (bkz. enterTab)
     pending: null,        // Aynı element kümeli node bulunduğunda kullanıcının onayını bekleyen karar
     undo: [],             // Edge'lerden silinen aksiyonlar ("Geri al" için; en yenisi sonda)
+    scenarios: [],        // Test yolları (bkz. SENARYOLAR)
   };
 }
 
@@ -125,7 +126,7 @@ function addEntry(graphs, name = null) {
   const now = Date.now();
   const entry = {
     id: now.toString(36) + Math.random().toString(36).slice(2, 6),
-    name: uniqueGraphName(graphs, name ?? NEW_GRAPH_NAME), auto: !name, created: now, updated: now, nodes: 0, edges: 0,
+    name: uniqueGraphName(graphs, name ?? NEW_GRAPH_NAME), auto: !name, created: now, updated: now, nodes: 0, edges: 0, scenarios: 0,
   };
   graphs.list.push(entry);
   return entry;
@@ -134,8 +135,9 @@ function addEntry(graphs, name = null) {
 // Sayılar ya da otomatik ad değiştiyse girdi güncellenir; değişti mi döner.
 function refreshEntry(graphs, entry, state) {
   const name = entry.auto ? uniqueGraphName(graphs, autoGraphName(state), entry.id) : entry.name;
-  if (entry.nodes === state.nodes.length && entry.edges === state.edges.length && entry.name === name) return false;
-  Object.assign(entry, { name, nodes: state.nodes.length, edges: state.edges.length, updated: Date.now() });
+  const counts = { nodes: state.nodes.length, edges: state.edges.length, scenarios: state.scenarios.length };
+  if (entry.name === name && Object.entries(counts).every(([key, value]) => entry[key] === value)) return false;
+  Object.assign(entry, { name, ...counts, updated: Date.now() });
   return true;
 }
 
@@ -233,7 +235,7 @@ async function importGraph(state, data) {
   const graphs = await getGraphs();
   const entry = addEntry(graphs, data.name ? String(data.name) : null);
   const imported = Object.assign(emptyState(entry.id), {
-    nodes: data.nodes, edges: data.edges, startNodeId: data.startNodeId,
+    nodes: data.nodes, edges: data.edges, startNodeId: data.startNodeId, scenarios: data.scenarios ?? [],
     nextId: Math.max(data.nextId ?? 0, ...[...data.nodes, ...data.edges].map((x) => Number(String(x.id).slice(1)) + 1 || 0)),
   });
   refreshEntry(graphs, entry, imported);
@@ -251,7 +253,64 @@ function backupProblem(data) {
   const broken = data.edges.find((e) => !nodes.has(e.source) || !nodes.has(e.target) || !Array.isArray(e.actions));
   if (broken) return `"${broken.name ?? broken.id}" edge'inin ucu ya da aksiyonları yok.`;
   if (data.nodes.length && !nodes.has(data.startNodeId)) return 'başlangıç node\'u yok.';
+  if (data.scenarios !== undefined && !Array.isArray(data.scenarios)) return 'senaryo listesi bozuk.';
+  const scenario = (data.scenarios ?? []).find((sc) => typeof sc?.id !== 'string' || scenarioProblem(sc));
+  if (scenario) return `"${scenario?.name ?? scenario?.id}" senaryosu bozuk: ${(scenario && scenarioProblem(scenario)) || 'id yok.'}`;
   return null;
+}
+
+
+// -----------------------------------------------------------------------------
+// SENARYOLAR: graph'ın test yolları
+// -----------------------------------------------------------------------------
+// Senaryoyu panel kurar (elle yol, yükleme, planlayıcı), background graph'ın içinde saklar:
+// state.scenarios = [{ id, name, start, planner, runs, created, updated }]. Alanlar senaryo
+// dosyasıyla aynıdır (scenario.js). Yürünebilirlik burada denetlenmez: graph sonradan
+// değişebilir, panel yürünemeyen senaryoyu işaretler. Id'yi panel verir (çalışma kopyası
+// kayıttan önce de seçili olabilsin); ad graph içinde tekildir.
+async function newScenario(state, data) {
+  const problem = scenarioProblem(data);
+  if (problem) throw new Error(`Senaryo kaydedilemedi: ${problem}`);
+  if (typeof data.id !== 'string' || state.scenarios.some((sc) => sc.id === data.id)) throw new Error('Senaryo kaydedilemedi: id eksik ya da kullanılıyor.');
+  const now = Date.now();
+  const scenario = { id: data.id, name: uniqueScenarioName(state, data.name?.trim() || 'Senaryo'), ...scenarioFields(data), created: now, updated: now };
+  state.scenarios.push(scenario);
+  await save(state);
+  return { name: scenario.name };
+}
+
+async function saveScenario(state, data) {
+  const scenario = state.scenarios.find((sc) => sc.id === data?.id);
+  if (!scenario) throw new Error('Senaryo bulunamadı (silinmiş olabilir).');
+  const problem = scenarioProblem(data);
+  if (problem) throw new Error(`Senaryo kaydedilemedi: ${problem}`);
+  const name = data.name?.trim() ? uniqueScenarioName(state, data.name.trim(), scenario.id) : scenario.name;
+  Object.assign(scenario, { name, ...scenarioFields(data), updated: Date.now() });
+  await save(state);
+  return { name };
+}
+
+function deleteScenario(state, id) {
+  state.scenarios = state.scenarios.filter((sc) => sc.id !== id);
+  return save(state);
+}
+
+function scenarioFields({ start = null, planner = null, runs }) {
+  return { start, planner: planner ?? { engine: 'manual' }, runs: runs.map((run) => [...run]) };
+}
+
+function scenarioProblem(data) {
+  if (!Array.isArray(data?.runs) || data.runs.some((run) => !Array.isArray(run) || run.some((id) => typeof id !== 'string'))) return 'koşu listesi bozuk.';
+  if (data.start != null && typeof data.start !== 'string') return 'başlangıç bozuk.';
+  return null;
+}
+
+function uniqueScenarioName(state, name, exceptId = null) {
+  const taken = new Set(state.scenarios.filter((sc) => sc.id !== exceptId).map((sc) => sc.name));
+  if (!taken.has(name)) return name;
+  let n = 2;
+  while (taken.has(`${name} (${n})`)) n++;
+  return `${name} (${n})`;
 }
 
 // Ayarlar state'ten ayrı bir anahtarda durur; "Sıfırla" onlara dokunmaz.
@@ -314,6 +373,9 @@ async function handle(message, sender) {
     case 'RENAME_GRAPH': return renameGraph(message.id, message.name);
     case 'DELETE_GRAPH': return deleteGraph(state, message.id);
     case 'IMPORT_GRAPH': return importGraph(state, message.graph);
+    case 'NEW_SCENARIO': return newScenario(state, message.scenario);
+    case 'SAVE_SCENARIO': return saveScenario(state, message.scenario);
+    case 'DELETE_SCENARIO': return deleteScenario(state, message.id);
     case 'RECORD_NAVIGATE': return addAction(state, message.tabId, navigateAction(message.url, Date.now()));
   }
 }

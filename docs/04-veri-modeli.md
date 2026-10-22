@@ -24,7 +24,7 @@ Birden fazla graph saklanır; kayıt her zaman **aktif** olana yapılır ([01 > 
 
 | Anahtar | Tip | Açıklama |
 |---|---|---|
-| `graphs` | `{ id, name, auto, created, updated, nodes, edges }[]` | Graph listesi (paneldeki "Graph'lar" kartı). `auto`: ad kullanıcı tarafından verilmedi, başlangıç node'unun sayfasından gelir (başlık, yoksa alan adı). `nodes` / `edges` sayılar; liste yalnızca sayılar ya da ad değişince yazılır. `created` / `updated` zaman damgası (ms). |
+| `graphs` | `{ id, name, auto, created, updated, nodes, edges, scenarios }[]` | Graph listesi (paneldeki "Graph'lar" kartı). `auto`: ad kullanıcı tarafından verilmedi, başlangıç node'unun sayfasından gelir (başlık, yoksa alan adı). `nodes` / `edges` / `scenarios` sayılar; liste yalnızca sayılar ya da ad değişince yazılır. `created` / `updated` zaman damgası (ms). |
 | `activeGraph` | `string` | Aktif graph'ın id'si. |
 | `graph:<id>` | `State` | Bir graph'ın state'i (aşağıda). |
 | `settings` | `Settings` | Ayarlar; graph'lardan bağımsız ([Ayarlar](#ayarlar-settings)). |
@@ -54,6 +54,7 @@ Bir graph'ın verisi `graph:<id>` anahtarı altında tek bir nesne olarak durur.
 | `viewport` | `{ width, height, devicePixelRatio } \| null` | Aktif kayıt sekmesinin son bilinen görünen alanı; sekme değişince fark varsa `resize` eklenir. |
 | `idleSince` | `number \| null` | Ekranın son aksiyondan (ya da node'dan) sonra durulduğu an (ms). O andan beri aksiyon yok; beklemeler bununla ölçülür. Aksiyon yapılınca `null` olur. Bkz. [01 > Beklemeler](01-mimari.md#beklemeler) |
 | `undo` | `Silme[]` | Geri al yığını, en yenisi sonda, en fazla 20. Her kayıt silineni ve eski yerini tutar: `{ kind: 'node', node, index, edges: [{ edge, index }], startNodeId, currentNodeId }`, `{ kind: 'edge', edge, index }`, `{ kind: 'action', edgeId, index, action }` ya da `{ kind: 'merge', keepId, node, index, edges: [{ id, source, target }], startNodeId, currentNodeId }` (birleştirmede taşınan edge'lerin eski uçları). Bkz. [01 > Geri al](01-mimari.md#geri-al) |
+| `scenarios` | `Senaryo[]` | Graph'ın test yolları: `{ id, name, start, planner, runs, created, updated }`. Alanlar [senaryo dosyasıyla](#senaryo-dosyası) aynıdır; id'yi panel verir, ad graph içinde tekildir. Yürünebilirlik saklanmaz: graph değişince panel yürünemeyen senaryoyu işaretler. "Sıfırla" senaryoları da siler. Bkz. [01 > Senaryolar](01-mimari.md#senaryolar) |
 
 ---
 
@@ -268,22 +269,23 @@ Model kurulurken dikkat:
   "startNodeId": "n1",
   "nextId": 14,
   "nodes": [ /* Node, ekran görüntüsü dahil */ ],
-  "edges": [ /* Edge, aksiyonlarıyla */ ]
+  "edges": [ /* Edge, aksiyonlarıyla */ ],
+  "scenarios": [ /* Senaryo */ ]
 }
 ```
 
-- Kayda ait geçici alanlar (sekmeler, bekleyen aksiyonlar, bekleyen karar, geri al yığını) dosyaya girmez; yüklenen graph'ta şu anki node boştur, kayıt "Buradan devam et" ile sürer.
+- Senaryolar (`scenarios`) dosyaya girer ve yüklenince geri gelir. Kayda ait geçici alanlar (sekmeler, bekleyen aksiyonlar, bekleyen karar, geri al yığını) dosyaya girmez; yüklenen graph'ta şu anki node boştur, kayıt "Buradan devam et" ile sürer.
 - Yüklerken denetlenir: biçim, node ve edge id'lerinin varlığı ve tekilliği, her edge'in iki ucunun ve aksiyon listesinin olması, başlangıç node'unun varlığı. Sorun varsa graph eklenmez ve nedeni söylenir. GraphWalker JSON seçilirse bunun yüklenemeyeceği (ekran görüntüsü ve kayıt bilgisi yok) ayrıca söylenir.
 - Ad dosyadaki `name`'dir; aynı ad varsa sonuna "(2)" eklenir. Yüklenen graph'ın adı otomatik değişmez.
 
 ## Senaryo dosyası
 
-Paneldeki **Senaryo** bölümünün **Senaryo indir** butonu (ya da bir planlayıcı) test yollarını ayrı bir dosyaya yazar; runner onu oynatır ([runner/README.md](../runner/README.md)). Biçim ve kapsama hesabı `extension/scenario.js`'tedir (panel ve runner ortak kullanır).
+Senaryolar graph'la birlikte saklanır (state'te `scenarios`); paneldeki **Senaryo** bölümünün **Senaryo indir** butonu seçili senaryoyu ayrı bir dosyaya yazar (`<Model>-<Senaryo>.json`, ör. `SwagLabs-GirisAkisi.json`); runner onu oynatır ([runner/README.md](../runner/README.md)). Biçim ve kapsama hesabı `extension/scenario.js`'tedir (panel ve runner ortak kullanır).
 
 ```json
 {
   "format": "graph-recorder-scenario/v1",
-  "name": "SwagLabs · elle seçilen yol",
+  "name": "Giriş akışı",
   "model": "SwagLabs.json",
   "planner": { "engine": "manual" },
   "runs": [["e13"], ["e3", "e5", "e7"]],
@@ -294,14 +296,14 @@ Paneldeki **Senaryo** bölümünün **Senaryo indir** butonu (ya da bir planlay�
 | Alan | Açıklama |
 |---|---|
 | `format` | Şema sürümü. |
-| `name` | Rapor başlığı. |
+| `name` | Senaryonun paneldeki adı; rapor başlığı. |
 | `model` | Modelin dosya adı, senaryo dosyasına göre (ikisi aynı klasörde durur). |
 | `start` | (İsteğe bağlı) Koşuların başladığı node'un id'si; yoksa graph'ın başlangıcı. Panelde "Başlangıç" listesinden seçilir. Graph'ın başlangıcı dışında bir node'dan başlayan senaryo yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda başlattığı için graph'ın ortasındaki bir ekrana doğrudan gidemez, böyle bir senaryoyu açık bir hatayla reddeder. |
 | `planner` | Senaryoyu ne üretti: `{ engine: "manual" }` (panelde elle), bir planlayıcının adı ve ayarları (ör. `{ engine: "graphwalker", generator, seed }`). Yalnızca bilgi içindir. |
 | `runs` | Koşular: her biri başlangıç node'undan (`start`) başlayan edge id'leri dizisi; her edge bir öncekinin vardığı node'dan çıkar. Runner her koşuyu temiz bir oturumla baştan oynatır. Yol çıkmaz bir node'a varırsa koşu biter, kalan edge'ler yeni bir koşuyla kapsanır. |
 | `coverage` | Koşuların geçtiği farklı edge ve node sayısı / toplam (`[kapsanan, toplam]`). Yalnızca bilgi içindir; runner yeniden hesaplar. |
 
-Senaryo edge id'leriyle modele bağlıdır: graph'ta edge silinir ya da yeniden kaydedilirse senaryo geçersiz olur; panel yüklerken, runner çalıştırmadan önce bunu söyler.
+Senaryo edge id'leriyle modele bağlıdır: graph'ta edge silinir ya da yeniden kaydedilirse senaryo geçersiz olur; panel listede ⚠ ile işaretler (senaryo silinmez, edge geri gelirse işaret kalkar), yüklerken reddeder; runner çalıştırmadan önce söyler. **Yükle…** dosyayı listeye yeni bir senaryo olarak ekler.
 
 ## GraphWalker'a aktarım
 

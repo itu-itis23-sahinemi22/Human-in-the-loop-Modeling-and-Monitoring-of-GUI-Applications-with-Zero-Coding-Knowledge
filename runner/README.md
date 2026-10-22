@@ -34,7 +34,7 @@ Eklentiden farklı olarak runner'ın bir npm bağımlılığı (Playwright) vard
 ## Kullanım
 
 ```
-node run.js SwagLabs-senaryo.json --secrets secrets.json
+node run.js SwagLabs-Senaryo1.json --secrets secrets.json
 node run.js SwagLabs.json --path e_Login,e_AddToCart,e_Cart1Items --secrets secrets.json
 ```
 
@@ -90,7 +90,7 @@ Senaryo, başlangıç node'undan başlayan bir ya da birden fazla **koşudur** (
 }
 ```
 
-Senaryo panelde kurulur (**Senaryo** bölümü: elle yol, önizleme, indir) ya da bir planlayıcı üretir.
+Senaryo panelde kurulur (**Senaryo** bölümü: senaryo listesi, elle yol, önizleme, indir; senaryolar graph'la saklanır) ya da bir planlayıcı üretir.
 
 Panelde koşuların başlangıç node'u seçilebilir (dosyada `start`). Runner her koşuyu temiz bir tarayıcıda graph'ın başlangıcından oynatır; graph'ın ortasındaki bir node'dan başlayan senaryoyu (ör. giriş gerektiren `v_Inventory`) çalıştırmadan reddeder (çıkış kodu `2`). Böyle bir senaryo panelde **Koşuyu oynat** ile oynatılır.
 

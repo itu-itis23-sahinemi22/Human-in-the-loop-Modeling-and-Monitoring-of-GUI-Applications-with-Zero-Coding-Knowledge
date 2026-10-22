@@ -144,6 +144,7 @@ function normalizeState(state) {
   state.edges ??= [];
   state.buffer ??= [];
   state.undo ??= [];
+  state.scenarios ??= [];
   state.pending ??= null;
   state.screen ??= null;
   state.idleSince ??= null;

@@ -236,16 +236,19 @@ dialog.alert .choice .hint { margin: 4px 2px 0; }
 #scenario[open] summary, #graphs[open] summary { margin-bottom: 6px; }
 #graphs-active { font-weight: 400; }
 
-/* Graph'lar: aktif olan vurgulu; satıra tıklamak geçer */
-.graph-list { list-style: none; margin: 0 0 6px; padding: 0; }
-.graph-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
-.graph-list li:hover { background: var(--bg); }
-.graph-list li.active { background: var(--highlight); cursor: default; }
-.graph-list li.locked { cursor: default; }
-.graph-list .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.graph-list li.active .name { font-weight: 600; }
-.graph-list .meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
-.graph-list input { flex: 1; min-width: 0; font: inherit; padding: 1px 4px; }
+/* Graph ve senaryo listeleri: seçili olan vurgulu; satıra tıklamak seçer */
+.item-list { list-style: none; margin: 0 0 6px; padding: 0; }
+.item-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+.item-list li:hover { background: var(--bg); }
+.item-list li.active { background: var(--highlight); cursor: default; }
+.item-list li.locked { cursor: default; }
+.item-list .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-list li.active .name { font-weight: 600; }
+.item-list .meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.item-list input { flex: 1; min-width: 0; font: inherit; padding: 1px 4px; }
+.item-list .warn { color: var(--danger); }
+#scenario-active { font-weight: 400; }
+.scenario-editor { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 
 /* Panelde oynatma: adımlar (geçti / kaldı / sürüyor / atlandı) */
 .replay { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
