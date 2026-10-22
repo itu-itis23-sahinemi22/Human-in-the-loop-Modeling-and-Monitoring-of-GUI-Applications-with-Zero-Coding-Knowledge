@@ -313,6 +313,12 @@ Edge oluşmadan önce de yanlışlıkla yapılan bir aksiyon (fazladan bir tıkl
 - Silinen aksiyon açıksa (sonrası henüz görülmediyse) sayfa durulunca gelen ekran aksiyonsuz bir değişim gibi işlenir; "Beklemeleri kaydet" açıksa bile bekleme eklenmez (boşluk o anda başlar).
 - Yazma (`input`) silinince alandaki yazı sayfada kalır: alana yazmaya devam edilirse alanın o anki tam değeriyle yeni bir `input` aksiyonu oluşur.
 
+**Sınırlar:**
+
+- Uyarı yalnızca aksiyonun kendi etkisine bakar. Ekranı değiştirmeyen bir aksiyon sonraki adımın önkoşulu olabilir ("Login" ancak alanlar doluyken çalışır); böyle bir alan doldurma uyarısız silinir, oynatmada sonraki adım kalır. İyileştirme: silinen aksiyonla sonraki aksiyonların hedefleri arasında bağımlılık uyarısı (aynı form gibi).
+- Silme geri alınmaz; bazı aksiyonlar (sayfanın açtığı sekme, oturum zaman aşımı beklemesi) sayfada kolay tekrarlanmaz. İyileştirme: bekleyen aksiyon silmelerini de geri al yığınına almak.
+- Karar beklerken yapılan yanlış aksiyon önce karar verilip sonra silinir. İyileştirme: karardaki aksiyonlarla sonradan gelenleri ayırıp yalnızca sonradan gelenleri silinebilir göstermek.
+
 ---
 
 ## Beklemeler
