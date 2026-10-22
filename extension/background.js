@@ -13,7 +13,8 @@
 
 // ACTION_TYPES, INTERACTABLE_TYPES, DEFAULT_SETTINGS, urlKey(), stateCounts(), sameCounts(),
 // toPascalCase(), GRAPH_BACKUP_FORMAT, normalizeState()
-importScripts('settings.js');
+// scenarioSnapshot() (senaryo graph'ı)
+importScripts('settings.js', 'scenario.js');
 
 // Eklenti ikonuna tıklanınca yan panel açılsın.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
@@ -264,19 +265,23 @@ function backupProblem(data) {
 // SENARYOLAR: graph'ın test yolları
 // -----------------------------------------------------------------------------
 // Senaryoyu panel kurar (elle yol, yükleme, planlayıcı), background graph'ın içinde saklar:
-// state.scenarios = [{ id, name, start, planner, runs, created, updated }]. Alanlar senaryo
+// state.scenarios = [{ id, name, start, planner, runs, graph, created, updated }]. Alanlar senaryo
 // dosyasıyla aynıdır (scenario.js). Yürünebilirlik burada denetlenmez: graph sonradan
 // değişebilir, panel yürünemeyen senaryoyu işaretler. Id'yi panel verir (çalışma kopyası
 // kayıttan önce de seçili olabilsin); ad graph içinde tekildir.
+// graph: senaryo graph'ı, koşuların geçtiği kısmın ana graph'tan kopyası (scenario.js >
+// scenarioSnapshot). Yeni senaryoda ve koşular düzenlenince (panel copy: true gönderir; "Ana
+// graph'tan yenile" de böyle) yeniden alınır, yeniden adlandırmada alınmaz.
 async function newScenario(state, data) {
   const problem = scenarioProblem(data);
   if (problem) throw new Error(`Senaryo kaydedilemedi: ${problem}`);
   if (typeof data.id !== 'string' || state.scenarios.some((sc) => sc.id === data.id)) throw new Error('Senaryo kaydedilemedi: id eksik ya da kullanılıyor.');
   const now = Date.now();
   const scenario = { id: data.id, name: uniqueScenarioName(state, data.name?.trim() || 'Senaryo'), ...scenarioFields(data), created: now, updated: now };
+  scenario.graph = snapshotOf(state, scenario);
   state.scenarios.push(scenario);
   await save(state);
-  return { name: scenario.name };
+  return { name: scenario.name, graph: scenario.graph };
 }
 
 async function saveScenario(state, data) {
@@ -286,13 +291,20 @@ async function saveScenario(state, data) {
   if (problem) throw new Error(`Senaryo kaydedilemedi: ${problem}`);
   const name = data.name?.trim() ? uniqueScenarioName(state, data.name.trim(), scenario.id) : scenario.name;
   Object.assign(scenario, { name, ...scenarioFields(data), updated: Date.now() });
+  if (data.copy || !scenario.graph) scenario.graph = snapshotOf(state, scenario, scenario.graph);
   await save(state);
-  return { name };
+  return { name, graph: scenario.graph };
 }
 
 function deleteScenario(state, id) {
   state.scenarios = state.scenarios.filter((sc) => sc.id !== id);
   return save(state);
+}
+
+// Senaryonun başlangıcı silinmişse graph'ın başlangıcı (panel > scenarioGraphOf ile aynı kural).
+function snapshotOf(state, scenario, previous = null) {
+  const start = state.nodes.some((n) => n.id === scenario.start) ? scenario.start : state.startNodeId;
+  return scenarioSnapshot({ start, nodes: state.nodes, edges: state.edges }, scenario.runs, previous);
 }
 
 function scenarioFields({ start = null, planner = null, runs }) {

@@ -81,7 +81,7 @@ Ayrı dosyadadır, çünkü kayıt ile test **aynı tanımı** kullanmalıdır. 
 
 ### `scenario.js`: Senaryo
 
-Senaryonun biçimi (`SCENARIO_FORMAT`), koşuların graph'ta yürünebilirliği (`runProblem`) ve kapsama (`coverageOf`). Panel `<script>` ile, runner Node'da yükler; kapsama iki tarafta aynı hesaplanır.
+Senaryonun biçimi (`SCENARIO_FORMAT`), koşuların graph'ta yürünebilirliği (`runProblem`), kapsama (`coverageOf`), senaryo graph'ı (`scenarioSnapshot`) ve kopyadan sonra ana graph'taki değişiklikler (`snapshotDrift`). Panel `<script>` ile, background `importScripts` ile, runner Node'da yükler; kapsama ve kopya her yerde aynı hesaplanır.
 
 ### `settings.js`: Ortak tanımlar
 
@@ -464,10 +464,30 @@ Paneldeki **Senaryo** kartının başında Graph'lar kartıyla aynı desende bir
 - **Yürünemeyen senaryo.** Graph değişip (edge silindi, node birleştirildi) koşular yürünemez olursa senaryo silinmez, listede ⚠ ile işaretlenir; seçilince nedeni yazılır, oynatma ve indirme kapalıdır. Silme geri alınınca işaret kalkar.
 - **Ad** graph içinde tekildir (aynı ad varsa "(2)"). İndirilen dosya `<Model>-<Senaryo>.json` (ör. `SwagLabs-GirisAkisi.json`), dosyadaki `name` senaryonun adıdır.
 
-**Sınırlar:**
+### Senaryo graph'ı ve görünüm sekmeleri
+
+Her senaryonun kendi graph'ı vardır: koşularının geçtiği node'ların ve edge'lerin ana graph'tan **kopyası** (`scenario.graph`; `scenario.js > scenarioSnapshot`). İleride senaryoya özel monitörler (node'da ya da edge'de kontrol edilecek koşullar) buraya bağlanacak: monitör ana graph'a değil senaryoya aittir, aynı ekran iki senaryoda farklı kontrol edilebilir. Kopyadaki her node ve edge'de şimdilik boş `monitors: []` alanı vardır; arayüzde görünmez.
+
+- **Ne zaman alınır?** Senaryo oluşunca ve koşuları her değiştiğinde (edge eklemek, geri almak, yeni koşu, temizle, başlangıç, GraphWalker'ın Üret'i). Yeniden adlandırma kopyayı değiştirmez. Background kaydederken alır (asıl kayıt); panel aynı fonksiyonla anında gösterir, cevap gelince background'unkini kullanır (bu arada koşular yine değiştiyse yerel kopya kalır).
+- **Dondurulmuş.** Ana graph sonradan değişse de kopya değişmez. Ekran görüntüleri kopyalanmaz: node id'siyle ana graph'tan okunur (storage iki katına çıkmasın); node ana graph'tan silindiyse "ekran görüntüsü yok".
+- **Değişiklik uyarısı.** Panel kopyayı ana graph'la karşılaştırır (`scenario.js > snapshotDrift`): silinen ya da değişen (ad, URL şablonu, edge set, uçlar, aksiyonlar) node ve edge'ler; koşuların kullandığı, ana graph'ta olan ama kopyada olmayan edge'ler ("eklendi", ör. silme geri alındı). Karşılaştırma anahtar sırasından bağımsızdır: Chrome storage nesne anahtarlarını sıralar, mesajla gelen nesne sıralamaz. Fark varsa sekmede "•", senaryo görünümünde uyarı ve **Ana graph'tan yenile** (kopya yeniden alınır, monitörler id'yle korunur).
+
+**Görünüm sekmeleri.** Graph'ın üstünde, graph'ta senaryo varsa: **Ana graph** ve her senaryo için bir sekme. Sekme şeridi Senaryo kartındaki listeyle eştir: senaryo sekmesine geçmek o senaryoyu listede de seçer; senaryo görünümündeyken listede başka bir senaryo seçmek görünümü ona geçirir.
+
+- Senaryo görünümünde yalnızca o senaryonun graph'ı çizilir (çerçeve kesik çizgili); üstte not: node / edge sayısı, kopyanın zamanı, "salt okunur".
+- **Salt okunur.** Edge'e tıklamak koşuya bir şey eklemez, detayını açar; detayda ad değiştirilmez, aksiyon silinmez, "Buradan devam et" / "Birleştir" / "Sil" yoktur. Koşular "Ana graph" sekmesinde düzenlenir (Senaryo kartı bunu söyler).
+- **Kayıt sürer.** Senaryo görünümündeyken de kayıt ana graph'a yapılır; yeni node ana graph'a eklenir, senaryo görünümü değişmez.
+- **Karşılıklı bağlantılar.** Senaryo görünümündeki detayda **Ana graph'ta göster** aynı öğeyi ana graph'ta açar (silinmişse söyler). Ana graph'ta node ya da edge detayında **Kullanan senaryolar**: o öğeyi koşularında kullanan senaryolar; tıklayınca o senaryonun graph'ı, öğe seçili.
+- Panelde oynatma sürerken ve graph değişince ana graph görünümüne dönülür.
+
+İndirilen senaryo dosyasında ve graph yedeğinde kopya da vardır (`graph`); runner kullanmaz. Yüklenen senaryo dosyasının kopyası alınmaz: senaryo bu graph'tan yeniden kopyalanır.
+
+**Senaryoların ve senaryo graph'larının sınırları:**
 
 - Panel aynı anda iki pencerede açıksa ikisi de kendi çalışma kopyasını yazar; sonra yazan kazanır. İyileştirme: kayıtta sürüm numarası, eskiyse reddetmek.
 - Senaryo silme geri alınmaz (graph'taki geri al yığınına girmez). İyileştirme: senaryo silmelerini de yığına almak.
+- Senaryo graph'ı yalnızca koşuların geçtiği kısımdır; kopyalanan node'un ekran görüntüsü ana graph'tan okunur, node ana graph'tan silinince görüntü de gider. İyileştirme: monitör eklenen node'ların görüntüsünü kopyaya almak.
+- Ana graph'taki değişiklik kopyaya kendiliğinden yansımaz; koşu düzenlenince kopya tümüyle yeniden alındığı için o ana kadarki farklar da sessizce gelir. İyileştirme: yeniden almadan önce farkı gösterip onay istemek (monitör eklendiğinde önem kazanır).
 - Senaryolar graph'a bağlıdır; başka bir graph'a kopyalanamaz. Aynı site için iki graph varsa senaryo dosyası indirilip öbüründe yüklenir (edge id'leri tutmuyorsa reddedilir).
 
 

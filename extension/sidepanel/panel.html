@@ -88,6 +88,15 @@
     </div>
   </section>
 
+  <!-- GÖRÜNÜM: "Ana graph" ve her senaryonun graph'ı (koşuların geçtiği kısmın kopyası). Senaryo
+       sekmesi o senaryoyu Senaryo kartındaki listede de seçer. Senaryo görünümü salt okunurdur. -->
+  <div id="view-tabs" class="segmented view-tabs" role="tablist" aria-label="Görünüm" hidden></div>
+  <div id="view-note" class="view-note" hidden>
+    <p id="view-note-text" class="small"></p>
+    <p id="view-drift" class="small warn-text" hidden></p>
+    <button id="btn-view-refresh" hidden>Ana graph'tan yenile</button>
+  </div>
+
   <!-- Graph çizimi (Cytoscape.js bu div'in içine çizer) -->
   <div id="graph"></div>
 
@@ -168,8 +177,13 @@
     <p id="details-subtitle" class="muted small"></p>
     <label class="field">İsim <input id="details-name" spellcheck="false"></label>
     <img id="details-shot" alt="">
+    <p id="details-noshot" class="hint" hidden>Ekran görüntüsü yok: bu node ana graph'tan silinmiş.</p>
     <ol id="details-actions" class="actions"></ol>
+    <!-- Ana graph görünümünde: bu node'u / edge'i koşularında kullanan senaryolar (tıklayınca o senaryonun graph'ı) -->
+    <p id="details-scenarios" class="small" hidden></p>
     <div class="toolbar">
+      <!-- Senaryo görünümünde: aynı node'u / edge'i ana graph'ta açar -->
+      <button id="btn-show-main" hidden>Ana graph'ta göster</button>
       <button id="btn-save">İsmi kaydet</button>
       <button id="btn-continue">Buradan devam et</button>
       <button id="btn-merge">Birleştir…</button>

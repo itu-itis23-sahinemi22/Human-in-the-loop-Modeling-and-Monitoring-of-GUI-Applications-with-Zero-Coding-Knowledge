@@ -136,31 +136,44 @@ cy.on('tap', (event) => {
   renderDetails();
 });
 
+// Çizilen graph: ana graph ya da senaryo görünümünde seçili senaryonun graph'ı (kopya; bkz.
+// GÖRÜNÜM). Kopyada ekran görüntüsü yoktur, node id'siyle ana graph'tan okunur.
+function viewGraph() {
+  if (scenarioView && scenario.id) {
+    const copy = scenario.graph ?? scenarioSnapshot(scenarioGraph(), scenario.runs);
+    return { key: `scenario:${scenario.id}`, start: copy.start, current: null, nodes: copy.nodes, edges: copy.edges };
+  }
+  return { key: 'main', start: state.startNodeId, current: state.currentNodeId, nodes: state.nodes, edges: state.edges };
+}
+
 function renderGraph() {
   // Her aksiyonda storage değişir ama graph değişmeyebilir; gereksiz yeniden çizimden kaçın.
+  const graph = viewGraph();
   const key = JSON.stringify([
     state.id,
-    state.currentNodeId,
-    state.nodes.map((n) => [n.id, n.name]),
-    state.edges.map((e) => [e.id, e.name, e.source, e.target]),
+    graph.key,
+    graph.current,
+    graph.nodes.map((n) => [n.id, n.name, Boolean(nodeById(n.id)?.screenshot)]),
+    graph.edges.map((e) => [e.id, e.name, e.source, e.target]),
   ]);
   if (key === lastGraphKey) return;
   lastGraphKey = key;
 
+  $('graph').classList.toggle('scenario-view', graph.key !== 'main');
   cy.elements().remove();
   cy.add([
-    ...state.nodes.map((n) => ({
-      data: { id: n.id, label: n.name, screenshot: n.screenshot },
-      classes: n.id === state.currentNodeId ? 'current' : '',
+    ...graph.nodes.map((n) => ({
+      data: { id: n.id, label: n.name, screenshot: nodeById(n.id)?.screenshot ?? 'none' },
+      classes: n.id === graph.current ? 'current' : '',
     })),
-    ...state.edges.map((e) => ({ data: { id: e.id, label: e.name, source: e.source, target: e.target } })),
+    ...graph.edges.map((e) => ({ data: { id: e.id, label: e.name, source: e.source, target: e.target } })),
   ]);
 
   // 'breadthfirst': başlangıç node'u en üstte, ondan ulaşılanlar alt satırlarda.
   cy.layout({
     name: 'breadthfirst',
     directed: true,
-    roots: state.startNodeId ? '#' + state.startNodeId : undefined,
+    roots: graph.start && cy.getElementById(graph.start).nonempty() ? '#' + graph.start : undefined,
     spacingFactor: 1.1,
     padding: 24,
     animate: false,
@@ -179,6 +192,7 @@ function render() {
   renderStatus();
   renderTabPrompt();
   renderConfirm();
+  renderViewTabs();
   renderGraph();
   renderScenario();
   renderDetails();
@@ -412,26 +426,38 @@ $('btn-loop-continue').onclick = () => {
 };
 $('btn-loop-back').onclick = () => $('loop-dialog').close();
 
+// Seçili node / edge'in detayı. Senaryo görünümünde kopyadan, salt okunur: ad değişmez, aksiyon
+// silinmez; "Ana graph'ta göster" aynı öğeyi ana graph'ta açar. Ana graph görünümünde öğeyi
+// koşularında kullanan senaryolar listelenir.
 function renderDetails() {
-  const node = nodeById(selectedId);
-  const edge = state.edges.find((e) => e.id === selectedId);
+  const graph = viewGraph();
+  const readOnly = graph.key !== 'main';
+  const node = graph.nodes.find((n) => n.id === selectedId);
+  const edge = graph.edges.find((e) => e.id === selectedId);
   const item = node || edge;
   $('details').hidden = !item;
   if (!item) return;
+  const nameOf = (id) => graph.nodes.find((n) => n.id === id)?.name ?? id;
 
-  $('details-title').textContent = node ? 'Node' : 'Edge';
+  $('details-title').textContent = (node ? 'Node' : 'Edge') + (readOnly ? ` · "${scenario.name}" senaryosunda` : '');
   $('details-subtitle').textContent = node
     ? node.url + (node.viewport ? ' · ' + viewportText(node.viewport) : '')
-    : `${nodeById(edge.source)?.name} → ${nodeById(edge.target)?.name} · ${edge.actions.length} aksiyon`
+    : `${nameOf(edge.source)} → ${nameOf(edge.target)} · ${edge.actions.length} aksiyon`
       + (edge.recordedActions ? ` · düzenlendi (kayıtta ${edge.recordedActions.length})` : '');
   // Kullanıcı o an yazıyorsa input'u ezme
   if (document.activeElement !== $('details-name')) $('details-name').value = item.name;
+  $('details-name').readOnly = readOnly;
 
-  $('details-shot').hidden = !node;
-  if (node) $('details-shot').src = node.screenshot;
-  $('details-actions').replaceChildren(...(edge ? editableActionItems(edge) : []));
-  $('btn-continue').hidden = !node;
-  $('btn-merge').hidden = !node;
+  const shot = node && nodeById(node.id)?.screenshot;
+  $('details-shot').hidden = !shot;
+  if (shot) $('details-shot').src = shot;
+  $('details-noshot').hidden = !node || Boolean(shot);
+  $('details-actions').replaceChildren(...(edge ? (readOnly ? edge.actions.map(actionItem) : editableActionItems(edge)) : []));
+  renderDetailsScenarios(item, readOnly);
+  $('btn-show-main').hidden = !readOnly;
+  for (const id of ['btn-save', 'btn-delete']) $(id).hidden = readOnly;
+  $('btn-continue').hidden = !node || readOnly;
+  $('btn-merge').hidden = !node || readOnly;
   $('btn-merge').disabled = state.nodes.length < 2 || Boolean(state.pending);
   $('btn-merge').title = state.pending ? 'Önce bekleyen "aynı node mu?" sorusunu cevaplayın' : 'Bu node\'u aynı edge set\'e sahip başka bir node ile birleştir';
 }
@@ -868,6 +894,7 @@ $('btn-confirm-dialog-cancel').onclick = () => $('confirm-dialog').close();
 // seçilen senaryosu graph okununca geri gelir (restoreScenario).
 function onGraphSwitched() {
   selectedId = null;
+  scenarioView = false;
   renamingGraphId = null;
   renamingScenarioId = null;
   scenario = emptyScenario();
@@ -1089,19 +1116,27 @@ function noteScenarioRemoval(next) {
   if (before && !next.scenarios.some((sc) => sc.id === scenario.id)) {
     scenario = emptyScenario();
     scenarioRun = 0;
+    scenarioView = false;
   }
 }
 
 // Çalışma kopyası background'a yazılır. Yalnızca hata gösterilir (bilgi mesajları kalsın).
-async function persistScenario() {
+// copy: koşular değişti (ya da "Ana graph'tan yenile"): senaryo graph'ı yeniden alınır; panel
+// anında göstermek için aynısını kendisi de alır (scenario.js > scenarioSnapshot). Yeniden
+// adlandırmada alınmaz.
+async function persistScenario({ copy = true } = {}) {
   if (!scenario.id) return;
+  if (copy) scenario.graph = scenarioSnapshot(scenarioGraph(), scenario.runs, scenario.graph);
   const { id, name, start, planner, runs } = scenario;
-  const response = await chrome.runtime.sendMessage({ type: 'SAVE_SCENARIO', scenario: { id, name, start, planner, runs } });
+  const sent = JSON.stringify(runs); // koşular yerinde değişir: gönderilen hâli
+  const response = await chrome.runtime.sendMessage({ type: 'SAVE_SCENARIO', scenario: { id, name, start, planner, runs, copy } });
   if (response?.error) return showMessage(response);
-  if (response?.name && scenario.id === id && scenario.name !== response.name) {
-    scenario.name = response.name;
-    renderScenario();
-  }
+  if (scenario.id !== id) return;
+  const renamed = response?.name && scenario.name !== response.name;
+  if (renamed) scenario.name = response.name;
+  // Bu arada koşular yine değiştiyse (hızlı tıklamalar) cevaptaki kopya eskidir; yerel kopya kalır.
+  if (response?.graph && JSON.stringify(scenario.runs) === sent) scenario.graph = response.graph;
+  if (renamed || copy) render();
 }
 
 // Yeni senaryo listeye eklenir ve seçilir (Yeni senaryo, Yükle…, planlayıcılar).
@@ -1109,7 +1144,7 @@ async function createScenario(fields, notice = null) {
   const id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   const response = await chrome.runtime.sendMessage({ type: 'NEW_SCENARIO', scenario: { id, ...fields } });
   if (response?.error) return showMessage(response);
-  scenario = { id, ...structuredClone(fields), name: response.name };
+  scenario = { id, ...structuredClone(fields), name: response.name, graph: response.graph };
   if (!scenario.runs.length) scenario.runs = [[]];
   scenarioRun = 0;
   $('scenario-strategy').value = strategyOf(scenario);
@@ -1117,7 +1152,7 @@ async function createScenario(fields, notice = null) {
   closeReplayCheck();
   $('scenario').open = true;
   showMessage(notice);
-  renderScenario();
+  render();
 }
 
 function nextScenarioName() {
@@ -1145,7 +1180,7 @@ function renderScenarioStart(graph, locked) {
 
 // Elle yol: bölüm açık, bir senaryo seçili ve "Elle seç" stratejisindeyken edge'e tıklamak onu koşuya ekler.
 function scenarioEditing() {
-  return $('scenario').open && Boolean(scenario.id) && $('scenario-strategy').value === 'manual';
+  return $('scenario').open && Boolean(scenario.id) && !scenarioView && $('scenario-strategy').value === 'manual';
 }
 
 $('scenario-strategy').replaceChildren(...STRATEGIES.map(({ id, text }) => Object.assign(document.createElement('option'), { value: id, textContent: text })));
@@ -1176,7 +1211,7 @@ function scenarioItem(sc, locked) {
       selectScenario(sc.id);
       rememberScenario(sc.id);
       showMessage(null);
-      renderScenario();
+      render(); // senaryo görünümündeyse graph da değişir
     },
     rename: {
       start: () => { renamingScenarioId = sc.id; renderScenario(); },
@@ -1194,7 +1229,7 @@ function scenarioItem(sc, locked) {
 async function renameScenario(sc, name) {
   if (sc.id === scenario.id) {
     scenario.name = name;
-    return persistScenario();
+    return persistScenario({ copy: false });
   }
   const { id, start, planner, runs } = sc;
   const response = await chrome.runtime.sendMessage({ type: 'SAVE_SCENARIO', scenario: { id, name, start, planner, runs } });
@@ -1207,11 +1242,12 @@ function requestDeleteScenario(sc) {
     if (sc.id === scenario.id) {
       scenario = emptyScenario();
       scenarioRun = 0;
+      scenarioView = false;
       rememberScenario(null);
       closeReplayCheck();
     }
     send({ type: 'DELETE_SCENARIO', id: sc.id });
-    renderScenario();
+    render();
   });
 }
 
@@ -1246,7 +1282,8 @@ function renderScenario() {
   renderPlanner(graph, locked);
   const end = runEnd(graph, run);
   const next = problem ? [] : graph.edges.filter((e) => e.source === end);
-  $('scenario-hint').textContent = !scenarioEditing() ? ''
+  $('scenario-hint').textContent = !scenarioEditing()
+    ? (scenarioView && $('scenario-strategy').value === 'manual' ? 'Koşuları düzenlemek için "Ana graph" sekmesine geçin.' : '')
     : !graph.start ? 'Önce graph kaydedin.'
       : next.length ? `"${nodeById(end)?.name}" node'undan çıkan bir edge'e tıklayın (kesik çizgili).`
         : `Koşu çıkmaz bir node'da (${nodeById(end)?.name}) bitti. Kalan edge'ler için "Yeni koşu".`;
@@ -1443,6 +1480,7 @@ $('btn-scenario-download').onclick = () => {
     planner: scenario.planner,
     runs,
     coverage: coverageOf(graph, runs),
+    graph: scenario.graph, // senaryo graph'ı (runner kullanmaz)
   });
 };
 
@@ -1468,6 +1506,103 @@ $('scenario-file').onchange = async () => {
   }
   renderScenario();
 };
+
+
+// -----------------------------------------------------------------------------
+// GÖRÜNÜM: ana graph ya da seçili senaryonun graph'ı (sekme şeridi)
+// -----------------------------------------------------------------------------
+// Her senaryonun graph'ı, koşularının geçtiği kısmın ana graph'tan kopyasıdır (scenario.graph;
+// scenario.js > scenarioSnapshot): ileride senaryoya özel monitörler buraya bağlanır. Sekme
+// şeridi Senaryo kartındaki listeyle eştir: senaryo sekmesine geçmek o senaryoyu seçer;
+// senaryo görünümündeyken listede başka senaryo seçmek görünümü ona geçirir. Senaryo görünümü
+// salt okunurdur: kayıt ana graph'a sürer, koşular ana graph görünümünde düzenlenir. Kopyadan
+// sonra ana graph değiştiyse (scenario.js > snapshotDrift) uyarı ve "Ana graph'tan yenile".
+let scenarioView = false;
+
+function renderViewTabs() {
+  if (scenarioView && (!scenario.id || replay)) scenarioView = false;
+  const scenarios = state.scenarios;
+  $('view-tabs').hidden = !scenarios.length;
+  const tab = (text, active, onclick, title = '') => {
+    const button = Object.assign(document.createElement('button'), { textContent: text, title, disabled: Boolean(replay) });
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(active));
+    button.classList.toggle('active', active);
+    button.onclick = onclick;
+    return button;
+  };
+  $('view-tabs').replaceChildren(
+    tab("Ana graph", !scenarioView, () => showView(null)),
+    ...scenarios.map((stored) => {
+      const sc = stored.id === scenario.id ? scenario : stored;
+      const drift = snapshotDrift(state, sc.graph, sc.runs).length;
+      return tab(sc.name + (drift ? ' •' : ''), scenarioView && sc.id === scenario.id, () => showView(sc.id),
+        drift ? 'Ana graph bu senaryonun kopyasından sonra değişti' : `"${sc.name}" senaryosunun graph'ı`);
+    }),
+  );
+  renderViewNote();
+}
+
+// Görünüm değişir; id null = ana graph. Seçili öğe görünümde de varsa seçili kalır.
+function showView(id, select = selectedId) {
+  if (id && id !== scenario.id) {
+    selectScenario(id);
+    rememberScenario(id);
+  }
+  scenarioView = Boolean(id);
+  selectedId = select;
+  showMessage(null);
+  render();
+  if (selectedId) cy.getElementById(selectedId).select();
+}
+
+function renderViewNote() {
+  $('view-note').hidden = !scenarioView;
+  if (!scenarioView) return;
+  const copy = viewGraph();
+  const drift = snapshotDrift(state, scenario.graph, scenario.runs);
+  $('view-note-text').textContent = `"${scenario.name}" senaryosunun graph'ı: ${copy.nodes.length} node · ${copy.edges.length} edge`
+    + (scenario.graph?.copied ? ` · ana graph'tan kopya (${dateText(scenario.graph.copied)})` : '')
+    + ' · salt okunur; koşular "Ana graph" sekmesinde düzenlenir.';
+  $('view-drift').hidden = !drift.length;
+  $('btn-view-refresh').hidden = !drift.length;
+  if (drift.length) {
+    const LIMIT = 5;
+    $('view-drift').textContent = 'Kopyadan sonra ana graph değişti: '
+      + drift.slice(0, LIMIT).map((d) => `${d.name} ${d.change}`).join(', ')
+      + (drift.length > LIMIT ? ` (+${drift.length - LIMIT})` : '') + '. Senaryo graph\'ı olduğu gibi duruyor.';
+  }
+}
+
+// Kopya ana graph'tan yeniden alınır (monitörler id'yle korunur). Silinen edge'ler kopyadan
+// düşer; koşular onları hâlâ kullanıyorsa senaryo listede yürünemez görünür.
+$('btn-view-refresh').onclick = () => persistScenario();
+
+// Senaryo görünümündeki öğe ana graph'ta açılır.
+$('btn-show-main').onclick = () => {
+  const id = selectedId;
+  if (!nodeById(id) && !state.edges.some((e) => e.id === id)) {
+    return showMessage({ error: 'Bu öğe ana graph\'ta yok: kopyadan sonra silinmiş.' });
+  }
+  showView(null, id);
+};
+
+// Ana graph görünümünde: öğeyi koşularında kullanan senaryolar; tıklayınca o senaryonun graph'ı.
+function renderDetailsScenarios(item, readOnly) {
+  const users = readOnly ? [] : state.scenarios.filter((stored) => {
+    const sc = stored.id === scenario.id ? scenario : stored;
+    const copy = sc.graph ?? scenarioSnapshot(scenarioGraphOf(sc), sc.runs);
+    return copy.nodes.some((n) => n.id === item.id) || copy.edges.some((e) => e.id === item.id);
+  });
+  $('details-scenarios').hidden = !users.length;
+  $('details-scenarios').replaceChildren(...(users.length ? [
+    document.createTextNode('Kullanan senaryolar: '),
+    ...users.flatMap((sc, i) => [
+      ...(i ? [document.createTextNode(', ')] : []),
+      Object.assign(document.createElement('a'), { href: '#', textContent: sc.name, onclick: (event) => { event.preventDefault(); showView(sc.id, item.id); } }),
+    ]),
+  ] : []));
+}
 
 
 // -----------------------------------------------------------------------------

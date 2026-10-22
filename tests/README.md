@@ -42,6 +42,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `saucedemo-return` | Gerçek saucedemo'da istemci tarafı yönlendirmenin söylenmesi (internet ister) |
 | `graphs` | Birden fazla graph: otomatik ad, geçiş onayı, sekme sorusu, yeniden adlandırma, yedek ve yükleme, silme, eski kaydın taşınması |
 | `planner` | GraphWalker ile üretim: tüm edge'ler (çıkmaz node'da birden fazla koşu), tüm node'lar, bir node'a ulaş, aynı tohum aynı koşular, runner'da oynatma. Planlayıcı kurulu olmalı (`runner\install-planner.cmd`); değilse atlanır |
+| `scenario-graphs` | Senaryo graph'ları: kopyanın içeriği, sekmeler ve listeyle eşlik, salt okunur detay, "Ana graph'ta göster", "Kullanan senaryolar", senaryo görünümünde kayıt, değişiklik uyarısı ve yenileme |
 | `scenarios` | Senaryo listesi: önce "Yeni senaryo", kendiliğinden kayıt, seçim ve hatırlama, yürünemeyen senaryo, silme, yedekte senaryolar |
 
 ## Yeni test

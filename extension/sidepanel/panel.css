@@ -103,6 +103,15 @@ button[hidden] { display: none; }
 .message.error { background: var(--error-bg); color: var(--danger); }
 .message.notice { background: var(--notice-bg); color: var(--notice-text); }
 
+/* Görünüm sekmeleri ve senaryo görünümü notu (senaryo graph'ı salt okunur: kesik çerçeve) */
+.view-tabs { margin: 8px 0 4px; }
+.view-tabs[hidden] { display: none; }
+.view-note { margin: 0 0 6px; padding: 4px 8px; border-left: 3px solid var(--primary); }
+.view-note p { margin: 2px 0; }
+.view-note button { margin: 4px 0 2px; }
+.warn-text { color: var(--danger); }
+#graph.scenario-view { border-style: dashed; border-color: var(--primary); }
+
 #graph {
   height: 45vh;
   min-height: 260px;
