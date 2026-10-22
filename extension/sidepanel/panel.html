@@ -38,6 +38,20 @@
     <p id="status" class="muted"></p>
   </header>
 
+  <!-- GRAPH'LAR: birden fazla graph saklanır, kayıt aktif olana yapılır (background.js > GRAPH'LAR).
+       Satıra tıklamak o graph'a geçer; ✎ satırda yeniden adlandırır, ✕ siler. "Dışa aktar" ekran
+       görüntüleriyle tam graph'ı indirir, "Yükle…" onu yeni bir graph olarak ekler. -->
+  <details id="graphs" class="card">
+    <summary>Graph'lar <span id="graphs-badge" class="badge"></span> <span id="graphs-active" class="muted"></span></summary>
+    <ul id="graph-list" class="graph-list"></ul>
+    <div class="toolbar">
+      <button id="btn-graph-new">Yeni graph</button>
+      <button id="btn-graph-export" title="Graph'ı ekran görüntüleriyle birlikte yedek olarak indirir; &quot;Yükle…&quot; ile geri eklenir">Dışa aktar</button>
+      <button id="btn-graph-import">Yükle…</button>
+    </div>
+    <input type="file" id="graph-file" accept=".json,application/json" hidden>
+  </details>
+
   <div class="toolbar">
     <button id="btn-node" class="primary">Node oluştur</button>
     <!-- Son silmeyi (node, edge ya da edge'den aksiyon) geri alır; kısayolu Ctrl+Z -->
@@ -247,6 +261,17 @@
 
   <!-- Edge'den ekranı değiştirmiş (ya da etkisi bilinmeyen) bir aksiyon silinmek istenince
        çıkan uyarı. Gerekçeleri panel.js, aksiyonun kayıttaki "state'i değiştirdi mi?" işaretinden doldurur. -->
+  <!-- Genel onay: graph değiştirirken bekleyen aksiyonların silinmesi, graph silme (panel.js > confirmDialog) -->
+  <dialog id="confirm-dialog" class="alert" aria-labelledby="confirm-dialog-text">
+    <div class="dialog-body">
+      <p id="confirm-dialog-text"></p>
+      <div class="toolbar">
+        <button id="btn-confirm-dialog-ok" class="danger"></button>
+        <button id="btn-confirm-dialog-cancel">Vazgeç</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="delete-action-dialog" class="alert" aria-labelledby="delete-action-text">
     <div class="dialog-body">
       <p id="delete-action-text"></p>

@@ -2,7 +2,7 @@
 // panel.js — ARAYÜZ (yan panel)
 // -----------------------------------------------------------------------------
 // Bu dosya state'i ve ayarları ASLA kendisi değiştirmez. Sadece:
-//   - chrome.storage.local'daki state'i ve ayarları okuyup ekrana çizer,
+//   - chrome.storage.local'daki aktif graph'ı (state), graph listesini ve ayarları okuyup ekrana çizer,
 //   - kullanıcı bir butona / ayara basınca background.js'e istek (mesaj) gönderir.
 //
 // Veri akışı tek yönlüdür:
@@ -12,9 +12,11 @@
 
 const $ = (id) => document.getElementById(id);
 
-const EMPTY_STATE = { tabId: null, tabs: [], tabPrompt: null, currentNodeId: null, startNodeId: null, nodes: [], edges: [], buffer: [], pending: null, undo: [] };
+const EMPTY_STATE = { id: null, tabId: null, tabs: [], tabPrompt: null, currentNodeId: null, startNodeId: null, nodes: [], edges: [], buffer: [], pending: null, undo: [] };
 
-let state = EMPTY_STATE;
+let state = EMPTY_STATE;  // aktif graph (storage > graph:<id>)
+let graphs = [];         // graph listesi (storage > graphs; background.js > GRAPH'LAR)
+let activeGraphId = null;
 let settings = DEFAULT_SETTINGS; // settings.js
 let selectedId = null;   // graph'ta tıklanan node/edge
 let busy = false;        // "Node oluştur" isteği sürerken butonu kilitlemek için
@@ -137,6 +139,7 @@ cy.on('tap', (event) => {
 function renderGraph() {
   // Her aksiyonda storage değişir ama graph değişmeyebilir; gereksiz yeniden çizimden kaçın.
   const key = JSON.stringify([
+    state.id,
     state.currentNodeId,
     state.nodes.map((n) => [n.id, n.name]),
     state.edges.map((e) => [e.id, e.name, e.source, e.target]),
@@ -172,6 +175,7 @@ function renderGraph() {
 // -----------------------------------------------------------------------------
 
 function render() {
+  renderGraphs();
   renderStatus();
   renderTabPrompt();
   renderConfirm();
@@ -207,7 +211,7 @@ function renderTabPrompt() {
   $('tab-prompt').hidden = !prompt;
   if (!prompt) return;
   $('tab-prompt-text').textContent = state.tabId === null
-    ? 'Kayıt sekmesi kapandı. Bu sekme şu anki node\'un ekranındaysa kayıt burada sürsün mü?'
+    ? `Kayıt sekmesi yok (kapandı ya da graph değişti). Bu sekme şu anki node'un${nodeById(state.currentNodeId) ? ` ("${nodeById(state.currentNodeId).name}")` : ''} ekranındaysa kayıt burada sürsün mü?`
     : prompt.openedByPage
       ? 'Kayıt sekmesinin açtığı bir sekmedesiniz. Grafa bu sekmede devam edilsin mi?'
       : 'Farklı bir sekmedesiniz. Grafa bu sekmede devam edilsin mi? "Hayır" derseniz bu sekmedeki aksiyonlar kaydedilmez, kayıt eski sekmeye dönünce sürer.';
@@ -689,6 +693,163 @@ function showMessage(response) {
 
 
 // -----------------------------------------------------------------------------
+// GRAPH'LAR: birden fazla graph; kayıt aktif olana yapılır (background.js > GRAPH'LAR)
+// -----------------------------------------------------------------------------
+// Geçiş (yeni graph ve yükleme de geçer) karar beklerken ve oynatma sürerken kapalıdır.
+// Bekleyen aksiyon varsa önce sorulur: geçişte bırakılan graph'ın bekleyen aksiyonları silinir.
+// Geçilen graph'ta seçim, senaryo ve oynatma sonucu sıfırlanır (önceki graph'ın edge'leriydi).
+// Yedek ("Dışa aktar"): ekran görüntüleriyle tam graph; GraphWalker JSON'dan ayrıdır.
+let renamingGraphId = null; // satırda adı düzenlenen graph
+
+function activeGraph() {
+  return graphs.find((g) => g.id === activeGraphId);
+}
+
+function renderGraphs() {
+  const active = activeGraph();
+  const locked = Boolean(state.pending) || Boolean(replay);
+  $('graphs-badge').textContent = graphs.length || '';
+  $('graphs-active').textContent = active ? `· ${active.name}` : '';
+  for (const id of ['btn-graph-new', 'btn-graph-import']) {
+    $(id).disabled = locked;
+    $(id).title = locked ? switchLockText() : '';
+  }
+  $('btn-graph-export').disabled = !state.nodes.length;
+  if (renamingGraphId && $('graph-list').querySelector('input')) return; // yazılan ad her aksiyonda silinmesin
+  $('graph-list').replaceChildren(...graphs.map((graph) => graphItem(graph, locked)));
+}
+
+function switchLockText() {
+  return state.pending ? 'Önce bekleyen "aynı node mu?" sorusunu cevaplayın.' : 'Panelde oynatma sürüyor.';
+}
+
+// Satır: ad, sayılar, yeniden adlandır (satırda), sil. Satıra tıklamak (ya da Enter) geçer.
+function graphItem(graph, locked) {
+  const li = document.createElement('li');
+  const active = graph.id === activeGraphId;
+  li.classList.toggle('active', active);
+  li.classList.toggle('locked', locked && !active);
+  if (graph.id === renamingGraphId) {
+    const input = Object.assign(document.createElement('input'), { value: graph.name, maxLength: 80 });
+    input.setAttribute('aria-label', "Graph'ın adı");
+    const finish = (keep) => {
+      if (renamingGraphId !== graph.id) return;
+      renamingGraphId = null;
+      const name = input.value.trim();
+      if (keep && name && name !== graph.name) send({ type: 'RENAME_GRAPH', id: graph.id, name });
+      renderGraphs();
+    };
+    input.onkeydown = (event) => {
+      if (event.key === 'Enter') finish(true);
+      if (event.key === 'Escape') finish(false);
+    };
+    input.onblur = () => finish(true);
+    li.append(input);
+    queueMicrotask(() => input.select());
+    return li;
+  }
+  li.title = `Oluşturuldu: ${dateText(graph.created)} · son değişiklik: ${dateText(graph.updated)}`;
+  li.append(
+    Object.assign(document.createElement('span'), { className: 'name', textContent: graph.name }),
+    Object.assign(document.createElement('span'), { className: 'meta', textContent: `${graph.nodes} node · ${graph.edges} edge` }),
+    iconButton('✎', 'Yeniden adlandır', () => { renamingGraphId = graph.id; renderGraphs(); }),
+    Object.assign(iconButton('✕', 'Sil', () => requestDeleteGraph(graph)), { disabled: active && locked }),
+  );
+  if (!active && !locked) {
+    li.tabIndex = 0;
+    li.onclick = () => requestSwitch(graph);
+    li.onkeydown = (event) => { if (event.key === 'Enter' && event.target === li) requestSwitch(graph); };
+  }
+  return li;
+}
+
+function iconButton(text, label, onclick) {
+  const button = Object.assign(document.createElement('button'), { className: 'icon', textContent: text, title: label });
+  button.setAttribute('aria-label', label);
+  button.onclick = (event) => {
+    event.stopPropagation();
+    onclick();
+  };
+  return button;
+}
+
+function dateText(time) {
+  return new Date(time).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+// Aktif graph'tan ayrılan işlem: bekleyen aksiyonlar silinecekse önce sorulur.
+function confirmLeave(text, action) {
+  if (!state.buffer.length) return action();
+  confirmDialog(`${text} "Bekleyen aksiyonlar"daki ${state.buffer.length} aksiyon silinecek.`, 'Devam et ve sil', action);
+}
+
+function requestSwitch(graph) {
+  confirmLeave(`"${graph.name}" graph'ına geçilecek.`, () => send({ type: 'SWITCH_GRAPH', id: graph.id }));
+}
+
+function requestDeleteGraph(graph) {
+  const active = graph.id === activeGraphId;
+  const after = !active ? '' : graphs.length > 1 ? ' Kayıt en son değişen diğer graph\'ta sürer.' : ' Yerine boş bir graph açılır.';
+  confirmDialog(`"${graph.name}" graph'ı silinecek (${graph.nodes} node, ${graph.edges} edge). Bu geri alınamaz; saklamak için önce "Dışa aktar" ile indirin.${after}`,
+    'Sil', () => send({ type: 'DELETE_GRAPH', id: graph.id }));
+}
+
+$('btn-graph-new').onclick = () => confirmLeave('Yeni bir graph açılacak.', () => send({ type: 'NEW_GRAPH' }));
+
+$('btn-graph-export').onclick = () => downloadJson(`${modelName()}.graph.json`, graphBackup());
+
+// Tam yedek: kayda ait geçici alanlar (sekmeler, bekleyen aksiyonlar, geri al) girmez.
+function graphBackup() {
+  return {
+    format: GRAPH_BACKUP_FORMAT, name: activeGraph()?.name ?? modelName(), exported: new Date().toISOString(),
+    startNodeId: state.startNodeId, nextId: state.nextId, nodes: state.nodes, edges: state.edges,
+  };
+}
+
+// Yedek yeni bir graph olarak eklenir ve ona geçilir; denetimi background yapar.
+$('btn-graph-import').onclick = () => $('graph-file').click();
+$('graph-file').onchange = async () => {
+  const file = $('graph-file').files[0];
+  $('graph-file').value = '';
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    return showMessage({ error: 'Graph yüklenemedi: dosya JSON değil.' });
+  }
+  if (data?.format !== GRAPH_BACKUP_FORMAT) {
+    const graphWalker = Array.isArray(data?.models) ? ' Bu bir GraphWalker modeli: ekran görüntüleri ve kayıt bilgileri olmadığı için graph olarak yüklenemez; "Dışa aktar" ile alınan yedeği seçin.' : '';
+    return showMessage({ error: `Graph yüklenemedi: bu bir graph yedeği değil.${graphWalker}` });
+  }
+  const name = data.name || file.name.replace(/(\.graph)?\.json$/i, '');
+  confirmLeave(`"${name}" yeni bir graph olarak eklenecek ve ona geçilecek.`, () => send({ type: 'IMPORT_GRAPH', graph: { ...data, name } }));
+};
+
+function confirmDialog(text, okText, onConfirm) {
+  $('confirm-dialog-text').textContent = text;
+  $('btn-confirm-dialog-ok').textContent = okText;
+  $('btn-confirm-dialog-ok').onclick = () => {
+    $('confirm-dialog').close();
+    onConfirm();
+  };
+  $('confirm-dialog').showModal();
+}
+
+$('btn-confirm-dialog-cancel').onclick = () => $('confirm-dialog').close();
+
+// Aktif graph değişti: seçim, senaryo ve oynatma sonucu önceki graph'ındı.
+function onGraphSwitched() {
+  selectedId = null;
+  renamingGraphId = null;
+  scenario = emptyScenario();
+  scenarioRun = 0;
+  replayResult = null;
+  closeReplayCheck();
+}
+
+
+// -----------------------------------------------------------------------------
 // BUTONLAR -> background.js'e mesaj
 // -----------------------------------------------------------------------------
 
@@ -749,9 +910,12 @@ function downloadJson(name, data) {
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
-// Dışa aktarılan modelin adı: başlangıç node'unun adı, "v_" öneki olmadan.
+// Dışa aktarılan modelin adı: graph'ın adı, node adları gibi yalnızca harf ve rakam ("Swag Labs"
+// -> "SwagLabs"; settings.js > toPascalCase). Ad boş kalırsa başlangıç node'unun adı, "v_"
+// öneki olmadan. Dosya adı da budur: senaryo dosyasındaki model alanı runner'da dosyayı bulur,
+// GraphWalker model adından kod üretir; boşluksuz ad komut satırında tırnak istemez.
 function modelName() {
-  return nodeById(state.startNodeId)?.name.replace(/^v_/, '') || 'GraphRecorder';
+  return toPascalCase(activeGraph()?.name ?? '') || nodeById(state.startNodeId)?.name.replace(/^v_/, '') || 'GraphRecorder';
 }
 
 // Graph'ı GraphWalker JSON model formatına çevirir (GraphWalker Studio'nun kaydettiği ve
@@ -1481,16 +1645,36 @@ $('btn-unsaved-back').onclick = () => $('unsaved-dialog').close();
 // BAŞLANGIÇ: state'i ve ayarları oku, sonra her değişiklikte yeniden çiz
 // -----------------------------------------------------------------------------
 
-chrome.storage.local.get(['state', 'settings']).then((r) => {
-  state = r.state ? normalizeState(r.state) : EMPTY_STATE;
+// Background ilk mesajda graph listesini kurar (eski sürümün tek 'state' anahtarını taşır);
+// ardından aktif graph okunur.
+chrome.runtime.sendMessage({ type: 'SYNC' }).catch(() => null).then(async () => {
+  const r = await chrome.storage.local.get(['graphs', 'activeGraph', 'settings']);
+  graphs = r.graphs ?? [];
+  activeGraphId = r.activeGraph ?? null;
   settings = { ...DEFAULT_SETTINGS, ...r.settings };
-  render();
+  await showGraph(activeGraphId);
 });
+
+async function showGraph(id) {
+  const key = 'graph:' + id;
+  const stored = id ? (await chrome.storage.local.get(key))[key] : null;
+  if (id !== activeGraphId) return; // bu arada yine değişti
+  state = stored ? normalizeState(stored) : { ...EMPTY_STATE, id };
+  render();
+}
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.state) {
-    state = changes.state.newValue ? normalizeState(changes.state.newValue) : EMPTY_STATE;
+  if (changes.graphs) {
+    graphs = changes.graphs.newValue ?? [];
+    renderGraphs();
+  }
+  if (changes.activeGraph && changes.activeGraph.newValue !== activeGraphId) {
+    activeGraphId = changes.activeGraph.newValue;
+    onGraphSwitched();
+    showGraph(activeGraphId);
+  } else if (changes['graph:' + activeGraphId]?.newValue) {
+    state = normalizeState(changes['graph:' + activeGraphId].newValue);
     render();
   }
   if (changes.settings) {

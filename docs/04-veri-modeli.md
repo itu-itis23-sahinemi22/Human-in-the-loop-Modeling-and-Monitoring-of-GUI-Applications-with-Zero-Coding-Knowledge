@@ -4,24 +4,40 @@ Bu doküman eklentinin sakladığı ve dışa aktardığı verinin tam şemasın
 
 ## İçindekiler
 
-- [State (storage'daki tek kayıt)](#state-storagedaki-tek-kayıt)
+- [Storage: graph'lar](#storage-graphlar)
+- [State (bir graph)](#state-bir-graph)
 - [Node](#node)
 - [Edge](#edge)
 - [Aksiyon](#aksiyon)
 - [Bekleyen karar (pending)](#bekleyen-karar-pending)
 - [Ayarlar (settings)](#ayarlar-settings)
 - [Dışa aktarılan JSON](#dışa-aktarılan-json)
+- [Graph yedeği](#graph-yedeği)
 - [Senaryo dosyası](#senaryo-dosyası)
 - [GraphWalker'a aktarım](#graphwalkera-aktarım)
 
 ---
 
-## State (storage'daki tek kayıt)
+## Storage: graph'lar
 
-Tüm veri `chrome.storage.local` içinde **`state`** anahtarı altında, tek bir nesne olarak durur. Şekli `background.js > emptyState()` fonksiyonunda tanımlıdır.
+Birden fazla graph saklanır; kayıt her zaman **aktif** olana yapılır ([01 > Graph'lar](01-mimari.md#graphlar)). `chrome.storage.local` anahtarları:
+
+| Anahtar | Tip | Açıklama |
+|---|---|---|
+| `graphs` | `{ id, name, auto, created, updated, nodes, edges }[]` | Graph listesi (paneldeki "Graph'lar" kartı). `auto`: ad kullanıcı tarafından verilmedi, başlangıç node'unun sayfasından gelir (başlık, yoksa alan adı). `nodes` / `edges` sayılar; liste yalnızca sayılar ya da ad değişince yazılır. `created` / `updated` zaman damgası (ms). |
+| `activeGraph` | `string` | Aktif graph'ın id'si. |
+| `graph:<id>` | `State` | Bir graph'ın state'i (aşağıda). |
+| `settings` | `Settings` | Ayarlar; graph'lardan bağımsız ([Ayarlar](#ayarlar-settings)). |
+
+Önceki sürümler tek bir **`state`** anahtarı kullanıyordu. Eklenti güncellenince ilk açılışta bu anahtar bir graph'a taşınır (yeni anahtar yazılıp okunduktan sonra eskisi silinir). Hiç graph yoksa boş bir "Yeni graph" açılır: her zaman bir aktif graph vardır.
+
+## State (bir graph)
+
+Bir graph'ın verisi `graph:<id>` anahtarı altında tek bir nesne olarak durur. Şekli `background.js > emptyState()` fonksiyonunda tanımlıdır.
 
 | Alan | Tip | Açıklama |
 |---|---|---|
+| `id` | `string` | Graph'ın id'si (anahtardaki ile aynı). Nesne kendi id'sini taşıdığı için yazılırken doğru anahtara gider; silinmiş bir graph'a yazılmaz. |
 | `tabId` | `number \| null` | Kaydın bağlı olduğu sekme. `null` ise kayıt henüz başlamamış ya da sekme kapatılmış demektir; kapandıysa kayıt "Buradan devam et" ile başka sekmeye bağlanır. |
 | `nextId` | `number` | Yeni id üretmek için sayaç. Node ve edge'ler aynı sayacı paylaşır: `n1`, `n2`, `e3`, `n4`... |
 | `startNodeId` | `string \| null` | İlk oluşturulan node. Graph çiziminde en üste yerleşir. |
@@ -147,7 +163,7 @@ Panelin **Ayarlar** bölümündeki seçim, `chrome.storage.local` içinde state'
 
 ## Dışa aktarılan JSON
 
-Panelde **GraphWalker JSON** butonu, graph'ı **GraphWalker JSON model formatında** indirir (`sidepanel/panel.js > graphWalkerModel()`). Dosya adı model adıdır (başlangıç node'unun adı, `v_` öneki olmadan): `SwagLabs.json`. Format, GraphWalker Studio'nun kaydettiği dosyayla aynı iskelete sahiptir ve GraphWalker CLI tarafından doğrudan okunur.
+Panelde **GraphWalker JSON** butonu, graph'ı **GraphWalker JSON model formatında** indirir (`sidepanel/panel.js > graphWalkerModel()`). Dosya adı model adıdır: graph'ın adı, node adları gibi yalnızca harf ve rakam ("Swag Labs" → `SwagLabs.json`; ad boşsa başlangıç node'unun adı, `v_` öneki olmadan). GraphWalker model adından kod ürettiği ve senaryo dosyası modeli dosya adıyla bulduğu için boşluk ve özel karakter atılır. Format, GraphWalker Studio'nun kaydettiği dosyayla aynı iskelete sahiptir ve GraphWalker CLI tarafından doğrudan okunur.
 
 Kayda özel bilgiler (URL, parmak izi, ekran görüntüsü, kaydedilen tarayıcı aksiyonları) GraphWalker'ın her vertex, edge ve modelde bulunan serbest **`properties`** alanında taşınır. GraphWalker bu alanı yorumlamaz, olduğu gibi saklar. Oturuma ait alanlar (`buffer`, `pending`, `tabId`) dosyaya girmez.
 
@@ -239,6 +255,26 @@ Model kurulurken dikkat:
 - **Aynı isimli edge'ler:** GraphWalker aynı isimli her edge için test kodunda aynı metodu çağırır. Otomatik isim son aksiyondan geldiği için farklı aksiyonlu iki edge aynı ismi alabilir (ör. iki ayrı `e_Login`). Test kodu isme göre yazılacaksa bu edge'leri panelden farklı isimlerle yeniden adlandırın ya da tarayıcı aksiyonlarını o anki edge'in `properties.uiActions`'ından okuyun.
 
 ---
+
+## Graph yedeği
+
+"Graph'lar" kartındaki **Dışa aktar**, aktif graph'ı **ekran görüntüleriyle birlikte** tek dosyaya indirir (`SwagLabs.graph.json`); **Yükle…** onu yeni bir graph olarak ekler ve ona geçer (mevcut graph'ın üstüne yazmaz). GraphWalker JSON'dan farklıdır: o, test aracı için modeldir; yedek ise eklentinin kendi verisidir ve geri yüklenebilir.
+
+```json
+{
+  "format": "graph-recorder-graph/v1",
+  "name": "Swag Labs",
+  "exported": "2026-10-22T14:03:11.000Z",
+  "startNodeId": "n1",
+  "nextId": 14,
+  "nodes": [ /* Node, ekran görüntüsü dahil */ ],
+  "edges": [ /* Edge, aksiyonlarıyla */ ]
+}
+```
+
+- Kayda ait geçici alanlar (sekmeler, bekleyen aksiyonlar, bekleyen karar, geri al yığını) dosyaya girmez; yüklenen graph'ta şu anki node boştur, kayıt "Buradan devam et" ile sürer.
+- Yüklerken denetlenir: biçim, node ve edge id'lerinin varlığı ve tekilliği, her edge'in iki ucunun ve aksiyon listesinin olması, başlangıç node'unun varlığı. Sorun varsa graph eklenmez ve nedeni söylenir. GraphWalker JSON seçilirse bunun yüklenemeyeceği (ekran görüntüsü ve kayıt bilgisi yok) ayrıca söylenir.
+- Ad dosyadaki `name`'dir; aynı ad varsa sonuna "(2)" eklenir. Yüklenen graph'ın adı otomatik değişmez.
 
 ## Senaryo dosyası
 

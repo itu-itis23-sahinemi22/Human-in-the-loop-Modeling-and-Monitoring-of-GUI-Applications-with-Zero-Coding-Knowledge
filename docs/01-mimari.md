@@ -17,6 +17,7 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - [Node birleştirme](#node-birleştirme)
 - [Geri al](#geri-al)
 - [Kayıt hangi sekmede?](#kayıt-hangi-sekmede)
+- [Graph'lar](#graphlar)
 - [Panelde oynatma](#panelde-oynatma)
 - [Service worker'ın ölümlülüğü](#service-workerın-ölümlülüğü)
 
@@ -59,7 +60,7 @@ Eklentinin tek "durum sahibi" (single source of truth).
 - Content script'ten gelen aksiyonları `buffer` dizisinde biriktirir.
 - Tarayıcı seviyesindeki gezinmeleri (adres çubuğu, geri/ileri, yenile) `chrome.webNavigation` ile, sekme geçişlerini (`chrome.tabs`) kendisi yakalar; kayda katılmamış bir sekme aktif olunca "bu sekmede devam edilsin mi?" diye sorar ([Kayıt hangi sekmede?](#kayıt-hangi-sekmede)).
 - "Node oluştur" isteğinde parmak izi ve ekran görüntüsü alır, element kümesi birebir aynı olan node'u arar, node ve edge ekler.
-- Her değişiklikten sonra state'in tamamını `chrome.storage.local`'a yazar.
+- Her değişiklikten sonra aktif graph'ın state'inin tamamını `chrome.storage.local`'a yazar (`graph:<id>`); graph listesini ve aktif graph'ı da o tutar ([Graph'lar](#graphlar)).
 - Panelin Ayarlar penceresindeki seçimleri `settings` anahtarında saklar ve uygular: işaretsiz aksiyon tiplerini buffer'a almaz (isteğe bağlı tipler, ör. üzerine gelme, işaretlenmedikçe kapalıdır), işaretsiz element türlerini state karşılaştırmasına katmaz. "Beklemeleri kaydet" açıksa aksiyonlar arasındaki boşlukları ve ekranın kendiliğinden değişmesini bekleme olarak kaydeder (bkz. [Beklemeler](#beklemeler)).
 
 ### `sidepanel/`: Arayüz
@@ -121,6 +122,12 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 |---|---|---|---|
 | `ACTION` | content → background | `{ action, screen, viewport, typingSince?, replaces? }` | Aksiyonu buffer'a ekler; gerekiyorsa önüne bir bekleme koyar ([Beklemeler](#beklemeler)). `typingSince`: aksiyondan önce yazmaya başlanan an; önceki bekleme o anda biter. Cevap `{ monitor, hover }`: bu sekme ekranı aksiyonsuz da izlesin mi, fareyle üzerine gelmeyi kaydetsin mi. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `viewport`, gönderildiği andaki sayfa boyutudur; açık bir yakınlaştırma aksiyonu bununla kapanırsa varılan boyut olarak saklanır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
 | `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; yoksa ve ekran değiştiyse, beklemeler kaydediliyorsa ekranı değiştiren bir bekleme ekler. Ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. Cevap `{ monitor, hover }` (ACTION'daki gibi). |
+| `SYNC` | panel → background | (boş) | Panel açılınca gönderir: background graph listesini kurar (gerekirse eski `state` anahtarını taşır), panel ardından storage'dan okur. |
+| `NEW_GRAPH` | panel → background | (boş) | Boş bir "Yeni graph" ekler ve ona geçer. Karar beklerken ya da oynatma sürerken reddeder. Bkz. [Graph'lar](#graphlar) |
+| `SWITCH_GRAPH` | panel → background | `{ id }` | Aktif graph'ı değiştirir: bırakılanın bekleyen aksiyonları ve sekme bağları silinir; geçilende node varsa aktif sekme için sorulur. Karar beklerken ya da oynatma sürerken reddeder. |
+| `RENAME_GRAPH` | panel → background | `{ id, name }` | Graph'ı yeniden adlandırır; ad artık otomatik değişmez. Boş ad reddedilir, aynı ad varsa sonuna "(2)". |
+| `DELETE_GRAPH` | panel → background | `{ id }` | Graph'ı siler. Aktif olan silinirse en son değişen diğerine, o da yoksa yeni boş graph'a geçer. |
+| `IMPORT_GRAPH` | panel → background | `{ graph }` | Graph yedeğini denetler, yeni bir graph olarak ekler ve ona geçer ([04 > Graph yedeği](04-veri-modeli.md#graph-yedeği)). |
 | `MONITOR` | background → content | `{ monitor, hover }` | Kayıt sekmesine ekranı aksiyonsuz da izleyip izlemeyeceğini ve fareyle üzerine gelmeyi kaydedip kaydetmeyeceğini bildirir: ayar değişince, kayıt bir sekmeye bağlanınca. Yeni yüklenen sayfa bunu ilk ACTION / SCREEN cevabından öğrenir. |
 | `GET_FINGERPRINT` | background → content | (boş) | Cevap olarak `{ url, title, elements, viewport }` döner. `elements`, ekrandaki elementlerin sayılı kümesidir: `[{ key, types, count }]`. `viewport`, kümenin alındığı görünen alandır: `{ width, height, devicePixelRatio }`. |
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
@@ -417,6 +424,27 @@ Kayıt **ilk "Node oluştur"un yapıldığı sekmede** başlar. Akış başka se
 **Tekrar oynatırken** sekme sıra numarasıyla değil adresiyle (URL şablonu) bulunur. GraphWalker'ın yolu edge'leri kayıttaki sırayla yürümeyebilir; aynı sekmeyi açan bir edge iki kez geçilirse sıra numaraları kayardı ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)).
 
 **Kayıt sekmelerinin hepsi kapanırsa** aksiyon kaydı durur. Başka bir sekmede soruya "Evet" denince kayıt, o sekme **şu anki node'un ekranındaysa** (URL şablonu ve edge set'i aynı) sürer; değilse sonraki edge'ler kayıttaki ekranlarla tutmayacağı için reddedilir. Diğer yol: graph'ta bir node seçip **Buradan devam et**. Panelin durum satırı bu durumu hatırlatır.
+
+---
+
+## Graph'lar
+
+Birden fazla graph saklanır (örneğin her site ya da her akış için bir graph); kayıt her zaman **aktif** graph'a yapılır. Her graph storage'da kendi anahtarındadır (`graph:<id>`), liste ve aktif graph ayrı anahtarlarda ([04 > Storage](04-veri-modeli.md#storage-graphlar)). Background yalnızca aktif graph'ı bellekte tutar (`background.js > GRAPH'LAR`).
+
+Panelde açılır-kapanır **Graph'lar** kartı: her satırda ad, node / edge sayısı (üzerine gelince oluşturma ve son değişiklik zamanı), **✎** (satırda yeniden adlandır: Enter kaydeder, Esc vazgeçer) ve **✕** (onaylı sil). Satıra tıklamak o graph'a geçer. Altta **Yeni graph**, **Dışa aktar**, **Yükle…**.
+
+- **Ad.** Yeni graph "Yeni graph" olarak açılır; ilk node oluşunca adı o sayfanın başlığından (yoksa alan adından) gelir. Kullanıcı yeniden adlandırdıysa ad bir daha kendiliğinden değişmez. Aynı ad varsa sonuna "(2)" eklenir. Dışa aktarılan GraphWalker modelinin ve senaryo dosyasındaki `model`'in adı graph'ın adından gelir; node adları gibi yalnızca harf ve rakam ("Swag Labs" → `SwagLabs`), çünkü GraphWalker model adından kod üretir ve runner modeli dosya adıyla bulur.
+- **Geçiş.** Karar ("aynı node mu?") beklerken ve panelde oynatma sürerken kapalıdır. Bekleyen aksiyon varsa panel önce sorar: *"... "Bekleyen aksiyonlar"daki N aksiyon silinecek."* Bırakılan graph'ın bekleyen aksiyonları ve sekme bağları silinir, şu anki node'u kalır. Gerekçe: kayıt sekmesiyle bağ kopmalıdır (yoksa bir sitenin sayfası öbür graph'a kaydedilir); bağ kopunca kayda dönüş ([Kayıt hangi sekmede?](#kayıt-hangi-sekmede): "kayıt sekmelerinin hepsi kapanırsa") bekleyen aksiyonları zaten siler, saklamak bir şey kazandırmaz.
+- **Geçilen graph'ta** kayıt, "kayıt sekmelerinin hepsi kapandı" durumundaki gibi sürer: graph'ta node varsa aktif sekme için hemen sorulur (*"Kayıt sekmesi yok (kapandı ya da graph değişti). Bu sekme şu anki node'un ekranındaysa kayıt burada sürsün mü?"*); sekme o node'un ekranındaysa "Evet" kaydı orada sürdürür. Diğer yol: bir node seçip **Buradan devam et**. Panelde seçim, senaryo ve oynatma sonucu sıfırlanır (önceki graph'ın edge'leriydi).
+- **Sil.** Geri alınamaz; onay penceresi node / edge sayısını ve önce dışa aktarmayı hatırlatır. Aktif graph silinirse en son değişen diğer graph'a, başka yoksa boş bir "Yeni graph"a geçilir: her zaman bir aktif graph vardır. **Sıfırla** yalnızca aktif graph'ı boşaltır, ad ve liste kalır.
+- **Dışa aktar / Yükle…** Graph'ın ekran görüntüleriyle tam yedeği; yüklenen dosya yeni bir graph olur ve ona geçilir ([04 > Graph yedeği](04-veri-modeli.md#graph-yedeği)). Yüklenen graph'ta şu anki node boştur: kayıt "Buradan devam et" ile sürer.
+- **Eski sürümden.** Önceki sürümün tek `state` anahtarı ilk açılışta bir graph'a taşınır; kullanıcı bir şey yapmaz.
+
+**Sınırlar:**
+
+- Graph'lar arasında node ya da edge taşınmaz, iki graph birleştirilemez. İyileştirme: yedeği mevcut graph'a "ekle" (id'leri yeniden numaralayarak).
+- Kayıt aynı anda yalnızca bir graph'a yapılır; iki sitede paralel kayıt için graph'lar arasında geçmek gerekir ve her geçişte bekleyen aksiyonlar silinir.
+- Yedek ekran görüntülerini base64 olarak taşır; büyük graph'larda dosya onlarca MB olabilir. İyileştirme: görüntüleri ayrı dosyalar olarak bir zip'te taşımak.
 
 ---
 

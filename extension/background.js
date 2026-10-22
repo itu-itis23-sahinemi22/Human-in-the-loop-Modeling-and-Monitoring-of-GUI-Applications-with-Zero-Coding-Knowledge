@@ -11,7 +11,8 @@
 // Mimari ve mesajların tamamı: docs/01-mimari.md
 // =============================================================================
 
-// ACTION_TYPES, INTERACTABLE_TYPES, DEFAULT_SETTINGS, urlKey(), stateCounts(), sameCounts()
+// ACTION_TYPES, INTERACTABLE_TYPES, DEFAULT_SETTINGS, urlKey(), stateCounts(), sameCounts(),
+// toPascalCase(), GRAPH_BACKUP_FORMAT, normalizeState()
 importScripts('settings.js');
 
 // Eklenti ikonuna tıklanınca yan panel açılsın.
@@ -23,8 +24,9 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(consol
 // -----------------------------------------------------------------------------
 // Veri modelinin tamamı: docs/04-veri-modeli.md
 
-function emptyState() {
+function emptyState(id) {
   return {
+    id,                   // Graph'ın id'si: storage'da graph:<id> anahtarında durur (bkz. GRAPH'LAR)
     tabId: null,          // Kaydın sürdüğü (aktif) sekme. İlk "Node oluştur"da belirlenir.
     tabs: [],             // Kayda katılan sekmeler { id, url } (bkz. SEKMELER)
     declinedTabs: [],     // "Bu sekmede devam edilsin mi?" sorusuna "Hayır" denen sekmeler
@@ -45,17 +47,211 @@ function emptyState() {
 }
 
 // MV3 service worker boşta kalınca Chrome onu kapatır; RAM'deki her şey silinir.
-// Bu yüzden state'in asıl yeri chrome.storage.local. Worker her uyandığında state
-// bir kez okunur ve sonraki tüm mesajlar AYNI nesne üzerinde çalışır.
+// Bu yüzden state'in asıl yeri chrome.storage.local. Worker her uyandığında aktif graph'ın
+// state'i bir kez okunur ve sonraki tüm mesajlar AYNI nesne üzerinde çalışır.
 let statePromise = null;
 
 function getState() {
-  statePromise ??= chrome.storage.local.get('state').then((r) => (r.state ? normalizeState(r.state) : emptyState()));
+  statePromise ??= getGraphs().then(({ active }) => loadGraph(active));
   return statePromise;
 }
 
-function save(state) {
-  return chrome.storage.local.set({ state });
+async function loadGraph(id) {
+  const key = graphKey(id);
+  const stored = (await chrome.storage.local.get(key))[key];
+  return stored ? normalizeState({ ...stored, id }) : emptyState(id);
+}
+
+// Graph kendi anahtarına yazılır; liste girdisi (sayılar, otomatik ad) değiştiyse o da.
+// Silinmiş bir graph'a (elinde eski referans kalan bir işlem) yazılmaz.
+async function save(state) {
+  const graphs = await getGraphs();
+  const entry = graphs.list.find((g) => g.id === state.id);
+  if (!entry) return;
+  const items = { [graphKey(state.id)]: state };
+  if (refreshEntry(graphs, entry, state)) items.graphs = graphs.list;
+  return chrome.storage.local.set(items);
+}
+
+
+// -----------------------------------------------------------------------------
+// GRAPH'LAR: birden fazla graph saklanır, kayıt aktif olana yapılır
+// -----------------------------------------------------------------------------
+// Storage:
+//   graphs       : [{ id, name, auto, created, updated, nodes, edges }] (panelde liste; sayılar
+//                  ve ad değişince yazılır, her aksiyonda değil)
+//   activeGraph  : aktif graph'ın id'si
+//   graph:<id>   : graph'ın state'i (emptyState'in şekli)
+// Ad: kullanıcı yeniden adlandırmadıysa (auto) başlangıç node'unun sayfasından gelir.
+// Geçişte bırakılan graph'ın bekleyen aksiyonları ve sekme bağları silinir (panel önce sorar):
+// kayıt sekmesiyle bağ kopunca kayda dönüş (resumeInTab) bekleyen aksiyonları zaten siler.
+// Geçilen graph'ta kayıt, şu anki node'un ekranındaki bir sekmede sürer ("Kayıt sekmesi
+// kapandı" ile aynı); aktif sekme için hemen sorulur.
+// Eski sürümün tek 'state' anahtarı ilk açılışta bir graph'a taşınır.
+const NEW_GRAPH_NAME = 'Yeni graph';
+let graphsPromise = null;
+
+function graphKey(id) {
+  return 'graph:' + id;
+}
+
+function getGraphs() {
+  graphsPromise ??= loadGraphs();
+  return graphsPromise;
+}
+
+async function loadGraphs() {
+  const r = await chrome.storage.local.get(['graphs', 'activeGraph', 'state']);
+  const list = r.graphs ?? [];
+  if (list.some((g) => g.id === r.activeGraph)) return { list, active: r.activeGraph };
+  if (list.length) {
+    await chrome.storage.local.set({ activeGraph: list[0].id });
+    return { list, active: list[0].id };
+  }
+  // İlk açılış ya da eski sürümden taşıma: tek 'state' graph olur. Yeni anahtar yazılıp
+  // okunduktan sonra eskisi silinir.
+  const graphs = { list: [], active: null };
+  const entry = addEntry(graphs);
+  graphs.active = entry.id;
+  const state = r.state ? normalizeState({ ...r.state, id: entry.id }) : emptyState(entry.id);
+  Object.assign(state, detachedFields());
+  refreshEntry(graphs, entry, state);
+  await chrome.storage.local.set({ [graphKey(entry.id)]: state, graphs: graphs.list, activeGraph: entry.id });
+  if (r.state && (await chrome.storage.local.get(graphKey(entry.id)))[graphKey(entry.id)]) await chrome.storage.local.remove('state');
+  return graphs;
+}
+
+function addEntry(graphs, name = null) {
+  const now = Date.now();
+  const entry = {
+    id: now.toString(36) + Math.random().toString(36).slice(2, 6),
+    name: uniqueGraphName(graphs, name ?? NEW_GRAPH_NAME), auto: !name, created: now, updated: now, nodes: 0, edges: 0,
+  };
+  graphs.list.push(entry);
+  return entry;
+}
+
+// Sayılar ya da otomatik ad değiştiyse girdi güncellenir; değişti mi döner.
+function refreshEntry(graphs, entry, state) {
+  const name = entry.auto ? uniqueGraphName(graphs, autoGraphName(state), entry.id) : entry.name;
+  if (entry.nodes === state.nodes.length && entry.edges === state.edges.length && entry.name === name) return false;
+  Object.assign(entry, { name, nodes: state.nodes.length, edges: state.edges.length, updated: Date.now() });
+  return true;
+}
+
+function autoGraphName(state) {
+  const start = state.nodes.find((n) => n.id === state.startNodeId) ?? state.nodes[0];
+  if (!start) return NEW_GRAPH_NAME;
+  try {
+    return start.title?.trim() || new URL(start.url).hostname || NEW_GRAPH_NAME;
+  } catch {
+    return start.title?.trim() || NEW_GRAPH_NAME;
+  }
+}
+
+function uniqueGraphName(graphs, name, exceptId = null) {
+  const taken = new Set(graphs.list.filter((g) => g.id !== exceptId).map((g) => g.name));
+  if (!taken.has(name)) return name;
+  let n = 2;
+  while (taken.has(`${name} (${n})`)) n++;
+  return `${name} (${n})`;
+}
+
+// Kayıt sekmesiyle bağ: geçişte bırakılan ve geçilen graph'ta sıfırlanır.
+function detachedFields() {
+  return { tabId: null, tabs: [], declinedTabs: [], pageOpenedTabs: [], tabPrompt: null, buffer: [], screen: null, idleSince: null };
+}
+
+async function guardSwitch(state) {
+  if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
+  if (await isReplaying()) throw new Error('Panelde oynatma sürüyor. Bitince ya da durdurunca graph değiştirebilirsiniz.');
+}
+
+// Aktif graph'ı bırakıp id'li graph'a geçer.
+async function activateGraph(state, id) {
+  const graphs = await getGraphs();
+  if (!graphs.list.some((g) => g.id === id)) throw new Error('Graph bulunamadı.');
+  const previousTab = state.tabId;
+  if (id !== state.id) {
+    Object.assign(state, detachedFields());
+    await save(state);
+  }
+  graphs.active = id;
+  await chrome.storage.local.set({ activeGraph: id });
+  const next = await loadGraph(id);
+  Object.assign(next, detachedFields());
+  statePromise = Promise.resolve(next);
+  notifyMonitor(next, await getSettings(), previousTab); // önceki kayıt sekmesi izlemeyi bırakır
+  if (next.nodes.length) {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab) await askForTab(next, tab.id);
+  }
+  await save(next);
+}
+
+async function switchGraph(state, id) {
+  if (id === state.id) return;
+  await guardSwitch(state);
+  await activateGraph(state, id);
+}
+
+async function newGraph(state) {
+  await guardSwitch(state);
+  const graphs = await getGraphs();
+  const entry = addEntry(graphs);
+  await chrome.storage.local.set({ [graphKey(entry.id)]: emptyState(entry.id), graphs: graphs.list });
+  await activateGraph(state, entry.id);
+}
+
+async function renameGraph(id, name) {
+  const graphs = await getGraphs();
+  const entry = graphs.list.find((g) => g.id === id);
+  const trimmed = name?.trim();
+  if (!entry || !trimmed) throw new Error("Graph'ın adı boş olamaz.");
+  Object.assign(entry, { name: uniqueGraphName(graphs, trimmed, id), auto: false });
+  await chrome.storage.local.set({ graphs: graphs.list });
+}
+
+// Aktif graph silinirse en son değişen diğerine, o da yoksa yeni boş graph'a geçilir.
+async function deleteGraph(state, id) {
+  const graphs = await getGraphs();
+  if (!graphs.list.some((g) => g.id === id)) return;
+  if (id === state.id) await guardSwitch(state);
+  graphs.list = graphs.list.filter((g) => g.id !== id);
+  await chrome.storage.local.remove(graphKey(id));
+  const next = id === state.id ? [...graphs.list].sort((a, b) => b.updated - a.updated)[0] ?? addEntry(graphs) : null;
+  await chrome.storage.local.set({ graphs: graphs.list });
+  if (next) await activateGraph(state, next.id);
+}
+
+// Dışa aktarılan graph (panel.js > graphBackup) yeni bir graph olarak eklenir ve ona geçilir.
+// Kayda ait geçici alanlar (sekmeler, bekleyen aksiyonlar, geri al) dosyada yoktur.
+async function importGraph(state, data) {
+  await guardSwitch(state);
+  const problem = backupProblem(data);
+  if (problem) throw new Error(`Graph yüklenemedi: ${problem}`);
+  const graphs = await getGraphs();
+  const entry = addEntry(graphs, data.name ? String(data.name) : null);
+  const imported = Object.assign(emptyState(entry.id), {
+    nodes: data.nodes, edges: data.edges, startNodeId: data.startNodeId,
+    nextId: Math.max(data.nextId ?? 0, ...[...data.nodes, ...data.edges].map((x) => Number(String(x.id).slice(1)) + 1 || 0)),
+  });
+  refreshEntry(graphs, entry, imported);
+  await chrome.storage.local.set({ [graphKey(entry.id)]: imported, graphs: graphs.list });
+  await activateGraph(state, entry.id);
+  return { notice: `"${entry.name}" yüklendi: ${imported.nodes.length} node, ${imported.edges.length} edge.` };
+}
+
+function backupProblem(data) {
+  if (data?.format !== GRAPH_BACKUP_FORMAT) return `dosya bir graph yedeği değil (format: ${data?.format ?? 'yok'}).`;
+  if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) return 'node ya da edge listesi yok.';
+  const ids = [...data.nodes, ...data.edges].map((x) => x?.id);
+  if (ids.some((id) => typeof id !== 'string') || new Set(ids).size !== ids.length) return 'id\'ler eksik ya da tekrar ediyor.';
+  const nodes = new Set(data.nodes.map((n) => n.id));
+  const broken = data.edges.find((e) => !nodes.has(e.source) || !nodes.has(e.target) || !Array.isArray(e.actions));
+  if (broken) return `"${broken.name ?? broken.id}" edge'inin ucu ya da aksiyonları yok.`;
+  if (data.nodes.length && !nodes.has(data.startNodeId)) return 'başlangıç node\'u yok.';
+  return null;
 }
 
 // Ayarlar state'ten ayrı bir anahtarda durur; "Sıfırla" onlara dokunmaz.
@@ -113,6 +309,11 @@ async function handle(message, sender) {
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO':        return undo(state);
     case 'REPLAY':      return setReplay(state, message);
+    case 'NEW_GRAPH':   return newGraph(state);
+    case 'SWITCH_GRAPH': return switchGraph(state, message.id);
+    case 'RENAME_GRAPH': return renameGraph(message.id, message.name);
+    case 'DELETE_GRAPH': return deleteGraph(state, message.id);
+    case 'IMPORT_GRAPH': return importGraph(state, message.graph);
     case 'RECORD_NAVIGATE': return addAction(state, message.tabId, navigateAction(message.url, Date.now()));
   }
 }
@@ -950,7 +1151,7 @@ async function setCurrent(state, id, tabId) {
 
 // Nesneyi yerinde sıfırlıyoruz ki elinde eski referansı tutan başka bir işlem kalmasın.
 function reset(state) {
-  Object.assign(state, emptyState());
+  Object.assign(state, emptyState(state.id));
   return save(state);
 }
 
@@ -959,19 +1160,8 @@ function reset(state) {
 // İSİMLENDİRME YARDIMCILARI
 // -----------------------------------------------------------------------------
 // GraphWalker geleneği: node (vertex) isimleri "v_", edge isimleri "e_" ile başlar.
-// İsimler ileride Java/JS metot adına dönüşeceği için sadece harf ve rakam içerir.
-
-// "add to cart" -> "AddToCart",  "Giriş yap" -> "GirisYap"
-function toPascalCase(text) {
-  return text
-    .replace(/ı/g, 'i')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '') // aksanları at: ş->s, ç->c, ğ->g...
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join('')
-    .slice(0, 40);
-}
+// İsimler ileride Java/JS metot adına dönüşeceği için sadece harf ve rakam içerir
+// (settings.js > toPascalCase).
 
 // "https://site.com/shop/inventory.html" -> "inventory"
 function lastPathSegment(url) {

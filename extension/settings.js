@@ -116,6 +116,23 @@ function diffCounts(a, b) {
 }
 
 
+// İsimler: node ve edge adları (background), dışa aktarılan modelin ve dosyasının adı (panel).
+// GraphWalker geleneğinde isimler ileride metot / sınıf adına dönüşür: yalnızca harf ve rakam.
+// "add to cart" -> "AddToCart",  "Giriş yap" -> "GirisYap"
+function toPascalCase(text) {
+  return text
+    .replace(/ı/g, 'i')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // aksanları at: ş->s, ç->c, ğ->g...
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join('')
+    .slice(0, 40);
+}
+
+// Graph yedeği (dışa aktarılan tam graph, ekran görüntüleriyle): panel yazar, background okur.
+const GRAPH_BACKUP_FORMAT = 'graph-recorder-graph/v1';
+
 // -----------------------------------------------------------------------------
 // ESKİ SÜRÜMLERDEN KALAN STATE (background ve panel ortak kullanır)
 // -----------------------------------------------------------------------------

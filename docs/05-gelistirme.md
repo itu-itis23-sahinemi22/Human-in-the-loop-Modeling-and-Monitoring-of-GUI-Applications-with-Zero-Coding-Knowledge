@@ -34,19 +34,21 @@ Eklentinin üç parçası üç ayrı ortamda çalıştığı için (bkz. [01-mim
 | `sidepanel/` | Yan panelde sağ tık → **İncele** (Inspect) |
 | `content.js` | Kayıt yapılan sayfada F12 → Console sekmesi → üstteki **"top"** açılır menüsünden **"Graph Recorder (Bitirme Demo)"** seçilir |
 
-**State'i görmek** için background ya da panel console'una yazın:
+**Aktif graph'ın state'ini görmek** için background ya da panel console'una yazın (graph listesi: `(await chrome.storage.local.get('graphs')).graphs`):
 
 ```js
-(await chrome.storage.local.get('state')).state
+const { activeGraph } = await chrome.storage.local.get('activeGraph');
+const state = (await chrome.storage.local.get('graph:' + activeGraph))['graph:' + activeGraph];
+state
 ```
 
 **Belirli bir node'un parmak izini görmek:**
 
 ```js
-(await chrome.storage.local.get('state')).state.nodes.find(n => n.name === 'v_Inventory').elements
+state.nodes.find(n => n.name === 'v_Inventory').elements
 ```
 
-**Sıfırlamak** için paneldeki **Sıfırla** butonunu kullanın. `chrome.storage.local.clear()` tek başına yetmez: background state'in bir kopyasını bellekte tuttuğu için bir sonraki yazışında eski veriyi geri yazar. Mutlaka `clear()` kullanılacaksa ardından eklentiyi yenileyin.
+**Sıfırlamak** için paneldeki **Sıfırla** butonunu (aktif graph) ya da Graph'lar kartındaki ✕'i kullanın. `chrome.storage.local.clear()` tek başına yetmez: background aktif graph'ın ve graph listesinin bir kopyasını bellekte tuttuğu için bir sonraki yazışında eski veriyi geri yazar. Mutlaka `clear()` kullanılacaksa ardından eklentiyi yenileyin.
 
 ---
 
@@ -123,7 +125,8 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 
 **Manuel duman testi (smoke test).** Her değişiklikten sonra 3 dakikada yapılabilir. Adımlar [README > Kullanım](../README.md#3-kullanım-örnek-senaryo) bölümündeki saucedemo senaryosudur. Kontrol listesi:
 
-- [ ] İlk node oluşuyor ve içinde ekran görüntüsü var.
+- [ ] İlk node oluşuyor ve içinde ekran görüntüsü var. Graph'lar kartında aktif graph'ın adı "Swag Labs" oluyor.
+- [ ] Graph'lar kartında **Yeni graph**: bekleyen aksiyon varsa silineceği soruluyor; boş graph açılıyor. Eski graph'ın satırına tıklayınca node'ları geri geliyor ve aktif sekme için "Kayıt sekmesi yok ... sürsün mü?" soruluyor. **Dışa aktar** ile inen `.graph.json` **Yükle…** ile "(2)" ekli yeni bir satır olarak geliyor; ✕ onay sorup siliyor.
 - [ ] Login sonrası `e_Login` edge'i 3 aksiyonla oluşuyor, şifre `******`.
 - [ ] Sepete ekledikten sonra soru **gelmiyor**; yeni node `v_Inventory_2` ve `e_AddToCart` edge'i oluşuyor.
 - [ ] Sepetten **Continue Shopping** ile dönünce "aynı node mu?" sorusu geliyor (aday `v_Inventory_2`). "Evet" denince `v_Cart → v_Inventory_2` edge'i çiziliyor.
@@ -287,6 +290,8 @@ Ardından bekleme, üzerine gelme, pencere boyutu, yakınlaştırma ve saucedemo
 **Başlangıç node'u ve kayıttaki boyuta getirmek.** 4 node'lu bir site kaydedildi (giriş → uygulama → göster → onay); 14 kontrolün hepsi geçti. Başlangıç listesi graph'ın başlangıcıyla başladı; ikinci node seçilince ipucu çıktı, graph'ta o node işaretlendi, gidilebilecek tek edge onun edge'iydi; giriş edge'i reddedildi; kapsama "2/3 edge · 3/4 node". İndirilen senaryoda `start` vardı; runner onu çıkış kodu 2 ve "node'undan başlıyor" mesajıyla reddetti; "Yükle…" başlangıcı geri getirdi. Pencere 1000×720'ye küçültülüp yakınlaştırma %125 yapıldı: kartta "Görünen alan farklı: kayıtta 1184×749, şu an 787×455 @1.25x" ve buton çıktı; butondan sonra görünen alan tam 1184×749 @1x oldu, kartta yalnızca bekleyen aksiyon uyarısı kaldı; seçilen başlangıçtan oynatma 2/2 geçti. Başlangıç graph'ın başlangıcına geri alınınca koşu yürünemediği için temizlendi. İlk denemede pencere Chrome'un "en az %50'si ekranda" kuralına takıldı (test tarayıcısının sanal ekranı küçüktü); pencere artık ekranın kullanılabilir alanına sığdırılıyor.
 
 Elle testte buton tam ekran pencereyi normal boyuta aldı ve görünen alan daha da küçüldü (1483×1128'den 1463×1118'e): fark pencereden değil, kayıttan sonra genişletilen yan panelden geliyordu ve tam ekran pencere zaten büyüyemezdi. Artık pencere büyüyemiyorsa ona dokunulmuyor, kullanıcı yan paneli daraltmaya yönlendiriliyor; sonuç kötüleşirse pencere eski haline dönüyor. Taklit edilmiş Chrome API'leriyle birim testi (7 kontrol): tam ekran ve genişlik eksik (pencere değişmedi, eksik 287 × 0,8 = 230 ekran pikseli), tam ekrandan küçülme (normal pencere, tuttu), ekrandan büyük normal pencere (dokunulmadı), yakınlaştırma ve pencere birlikte, kötüleşince geri alma, yaklaşıp tutturamayınca kalma. Uçtan uca testte pencere tam ekrana alınıp geniş yan panel sekmenin genişliği daraltılarak taklit edildi (19 kontrolün hepsi geçti): pencere tam ekranda kaldı, kart "287 piksel daraltın" dedi, buton gizlendi; daraltıldıkça "100 piksel", fazla daraltınca "10 piksel fazla daralttınız" yazdı; tutunca yönlendirme bitti ve görünen alan uyarısı kalktı. Küçük sanal ekranda pencereye dokunulmadı, yakınlaştırma düzeldi, genişlik ve yükseklik için ayrı yönlendirme çıktı.
+
+**Birden fazla graph.** İki yerel sitede 38 kontrolün hepsi geçti. İlk açılışta tek bir "Yeni graph" vardı; A sitesinde ilk node oluşunca adı "Site A" oldu. Bekleyen bir aksiyon varken "Yeni graph" onay sordu, Vazgeç geçmedi; onaylayınca boş graph açıldı, A'nın node'ları kaldı, bekleyen aksiyonları ve sekme bağı silindi. B sitesinin graph'ı "Site B" adını aldı. A'nın satırına tıklayınca (B'de bekleyen gezinme için yine onay) node'lar geri geldi, aktif sekme için "Kayıt sekmesi yok (kapandı ya da graph değişti)" sorusu çıktı, "Evet" kaydı A'nın şu anki node'undan sürdürdü. "Aynı node mu?" sorusu beklerken geçiş reddedildi, satırlar ve "Yeni graph" kilitliydi. Satırda yeniden adlandırma ("Banka") otomatik adı kapattı. "Dışa aktar" `Banka.graph.json` indirdi (ekran görüntüleri dahil, bekleyen aksiyon yok); "Yükle…" onu "Banka (2)" olarak ekledi, node, edge ve görüntüler birebir aynıydı; ucu olmayan edge'li yedek ve GraphWalker modeli açıklamayla reddedildi. Yüklenen graph'tan dışa aktarılan model (`Banka2`) runner'da geçti. Panel yeniden açılınca liste ve aktif graph aynıydı. Aktif graph silinince en son değişene geçildi, son graph silinince boş "Yeni graph" açıldı. Eski sürümün tek `state` anahtarı ilk açılışta "Site A" adıyla listeye taşındı, eski anahtar silindi. İlk denemede satırdaki ad kutusu hiç çizilmiyordu (yazılan adı korumak için konan kontrol kutunun kendisini de engelliyordu); düzeltildi. Ardından bekleyen aksiyon, başlangıca dön (saucedemo dahil), başlangıç ve boyut, panelde oynatma, senaryo, sekme, bekleme, üzerine gelme, pencere boyutu, yakınlaştırma ve karşılaştırma testleri yeni storage biçimiyle tekrar koşuldu ve geçti.
 
 **Başlangıç node'una dön.** Giriş isteyen yerel bir sitede (çerez yoksa uygulama sayfası giriş sayfasına yönlendirir) 17 kontrolün hepsi geçti. Sekme başka bir sitedeyken (farklı origin, pencere 1000×720, yakınlaştırma %125) kart "Başlangıç node'una dön (adres ve boyut 1184×749)" gösterdi; basınca sekme giriş sayfasına gitti, görünen alan tam 1184×749 @1x oldu (yeni sitenin yakınlaştırması %100'dü, yalnızca pencere ayarlandı), kartta yalnızca "silinecek" uyarısı kaldı, gezinme `GoTo 127.0.0.1` olarak kayda girdi, oynatma 2/2 geçti. Çerezler silinip uygulama başlangıçlı senaryoda buton yönlendirmeyi söyledi, kart kaldı. `about:blank`'te kart "sayfa okunamadı" dedi, "Yine de oynat" gizliydi; dönünce sayfa okundu ve buton geri geldi. Yalnızca boyut farklıyken buton "(boyut 1184×749)" dedi, gezinme olmadı. Gerçek saucedemo'da (state panele doğrudan verildi) çıkış yapılmışken `inventory.html`'e dönmek, sitenin ara adreslerden geçip istemci tarafında giriş sayfasına yönlendirmesine rağmen dört denemede de "başka bir adrese yönlendirdi" dedi. Ardından başlangıç seçimi ve boyut (küçük sanal ekran dahil), panelde oynatma, sekme ve bekleyen aksiyon testleri tekrar koşuldu ve geçti.
 
