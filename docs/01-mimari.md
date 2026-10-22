@@ -126,6 +126,7 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `CREATE_NODE` | panel → background | `{ tabId, windowId }` | "Node oluştur" akışını başlatır (aşağıda). |
 | `RESOLVE` | panel → background | `{ targetId }` | Onay kartındaki cevap: seçilen aday node'un id'si ("Evet, bu node") ya da `null` ("yeni node"). Aday olmayan id yok sayılır. |
 | `REMOVE_ACTION` | panel → background | `{ edgeId, index }` | Edge'den bir aksiyonu siler. Tek aksiyon kaldıysa reddeder. İlk silmede orijinal liste `recordedActions`'a kopyalanır; silinen aksiyon geri al yığınına (`state.undo`) girer. |
+| `REMOVE_BUFFERED` | panel → background | `{ index, time }` | "Bekleyen aksiyonlar"dan bir aksiyonu siler. `index` sırasındaki aksiyonun zamanı `time` değilse (liste bu arada değişti) ya da "aynı node mu?" sorusu bekliyorsa reddeder. Geri al yığınına girmez. Bkz. [Bekleyen aksiyonları silme](#bekleyen-aksiyonları-silme) |
 | `UNDO` | panel → background | (boş) | Son silmeyi ya da birleştirmeyi geri alır; ne geri getirildiğini `{ notice }` ile bildirir. Bkz. [Geri al](#geri-al) |
 | `MERGE_NODES` | panel → background | `{ keepId, removeId }` | `removeId` node'unu `keepId`'ye birleştirir. URL şablonu ya da edge set'i farklıysa ya da bekleyen bir soru varsa reddeder. Bkz. [Node birleştirme](#node-birleştirme) |
 | `CANCEL_PENDING` | panel → background | (boş) | Şu anki node seçilip "Node oluşturma, aksiyonlara devam et" denince: bekleyen karar atılır, kesilen aksiyonlar buffer'a geri döner (karar beklerken yapılanların önüne). |
@@ -299,6 +300,18 @@ node (S0) ── tıkla ── duruldu: S1 ── zoom ── duruldu: S2 ──
 - Sayfanın aksiyonsuz değişimleri (durulduktan sonra gelen yükleme, hover) "Beklemeleri kaydet" kapalıyken izlenmez; bir sonraki aksiyonun etkisine karışır. Açıkken ekranı değiştiren bir bekleme olarak kaydedilir (aşağıda).
 
 Bu bir **ipucudur, kesin doğrulama değil**: bir aksiyon edge set'i değiştirmeden de önemli olabilir (sunucuda bir şeyi değiştirmek gibi). Kesin doğrulamayı runner yapar: yolu tekrar oynatıp her edge'in hedef ekrana vardığını kontrol eder ([runner/README.md](../runner/README.md)).
+
+### Bekleyen aksiyonları silme
+
+Edge oluşmadan önce de yanlışlıkla yapılan bir aksiyon (fazladan bir tıklama, gereksiz bir odak) "Bekleyen aksiyonlar"dan silinebilir; her satırda ✕ vardır. Kurallar edge düzenlemeyle aynı kanıta dayanır:
+
+- **Yalnızca silme.** Aksiyon eklenmez, sırası değişmez (yukarıdaki gerekçe).
+- *Ekranı değiştirmedi* işaretli aksiyon uyarısız silinir. Ekranı değiştiren, etkisi bilinmeyen ya da sonrası henüz görülmemiş (sayfa durulmamış) aksiyonda ve sekme aksiyonunda gerekçeli uyarı çıkar: silinirse oluşacak edge tekrar oynatılınca node'un ekranına varmayabilir ya da sonraki aksiyonlar başka sekmede yapılır.
+- **Geri alınmaz.** Aksiyon sayfada yeniden yapılabilir; geri al yığını graph'taki silmeler içindir.
+- **Karar beklerken ve oynatma sürerken kapalı.** "Aynı node mu?" sorusu beklerken bekleyen aksiyonların bir kısmı kararın içindedir.
+- Panel aksiyonu sırası ve zamanıyla gösterir (`REMOVE_BUFFERED { index, time }`); liste bu arada değiştiyse (yeni aksiyon geldi) background başka bir aksiyonu silmez, reddeder.
+- Silinen aksiyon açıksa (sonrası henüz görülmediyse) sayfa durulunca gelen ekran aksiyonsuz bir değişim gibi işlenir; "Beklemeleri kaydet" açıksa bile bekleme eklenmez (boşluk o anda başlar).
+- Yazma (`input`) silinince alandaki yazı sayfada kalır: alana yazmaya devam edilirse alanın o anki tam değeriyle yeni bir `input` aksiyonu oluşur.
 
 ---
 

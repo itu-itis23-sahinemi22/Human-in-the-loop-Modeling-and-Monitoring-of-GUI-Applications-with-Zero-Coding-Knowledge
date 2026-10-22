@@ -109,6 +109,7 @@ async function handle(message, sender) {
     case 'RESET':       return reset(state);
     case 'SET_SETTINGS': return setSettings(state, message.settings);
     case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
+    case 'REMOVE_BUFFERED': return removeBuffered(state, message.index, message.time);
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO':        return undo(state);
     case 'REPLAY':      return setReplay(state, message);
@@ -797,6 +798,20 @@ function removeAction(state, edgeId, index) {
   edge.recordedActions ??= [...edge.actions];
   const [action] = edge.actions.splice(index, 1);
   pushUndo(state, { kind: 'action', edgeId, index, action });
+  return save(state);
+}
+
+// BEKLEYEN AKSİYONU SİLME: node oluşturulmadan önce yanlışlıkla yapılan bir aksiyon
+// "Bekleyen aksiyonlar"dan silinebilir. Yalnızca silme: aksiyon eklenmez, sırası değişmez.
+// Silme geri alınmaz; aksiyon sayfada yeniden yapılabilir. Karar beklerken silinmez: o
+// sırada bekleyen aksiyonların bir kısmı kararın içindedir. Aksiyon sırası ve zamanıyla
+// bulunur: panel listeyi çizdikten sonra buffer değiştiyse (yeni aksiyon, yazmanın
+// birleşmesi) başka bir aksiyon silinmez. Silinen aksiyon açıksa (sonrası henüz
+// görülmediyse) sayfa durulunca gelen ekran aksiyonsuz bir değişim gibi işlenir (observeIdle).
+function removeBuffered(state, index, time) {
+  if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
+  if (state.buffer[index]?.time !== time) throw new Error('Bekleyen aksiyonlar bu arada değişti. Listeye bakıp tekrar deneyin.');
+  state.buffer.splice(index, 1);
   return save(state);
 }
 

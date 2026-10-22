@@ -553,11 +553,13 @@ function editableActionItems(edge) {
 // Silme isteği: ekranı değiştirmemiş aksiyon doğrudan silinir (geri alınabilir). Ekranı
 // değiştirmiş ya da etkisi bilinmeyen aksiyon için önce gerekçeli uyarı gösterilir.
 function requestRemoveAction(edge, i) {
-  const remove = () => send({ type: 'REMOVE_ACTION', edgeId: edge.id, index: i });
-  const reasons = removalRisks(edge, i);
-  if (!reasons.length) return remove();
+  confirmRemoval(`"${edge.actions[i].label}" aksiyonu silinirse edge tekrar oynatılamayabilir:`, removalRisks(edge, i),
+    () => send({ type: 'REMOVE_ACTION', edgeId: edge.id, index: i }));
+}
 
-  $('delete-action-text').textContent = `"${edge.actions[i].label}" aksiyonu silinirse edge tekrar oynatılamayabilir:`;
+function confirmRemoval(text, reasons, remove) {
+  if (!reasons.length) return remove();
+  $('delete-action-text').textContent = text;
   $('delete-action-reasons').replaceChildren(...reasons.map((text) => Object.assign(document.createElement('li'), { textContent: text })));
   $('btn-delete-action-confirm').onclick = () => {
     $('delete-action-dialog').close();
@@ -611,9 +613,35 @@ document.addEventListener('keydown', (event) => {
   if (state.undo?.length) send({ type: 'UNDO' });
 });
 
+// Bekleyen aksiyon node oluşturulmadan silinebilir (yalnızca silme; geri alınmaz). Karar
+// beklerken ve oynatma sürerken silinmez (background.js > removeBuffered).
 function renderBuffer() {
   $('buffer-count').textContent = state.buffer.length;
-  $('buffer').replaceChildren(...state.buffer.map(actionItem));
+  const locked = Boolean(state.pending) || Boolean(replay);
+  $('buffer').replaceChildren(...state.buffer.map((action, i) => {
+    const li = actionItem(action);
+    if (locked) return li;
+    li.classList.add('editable');
+    const remove = document.createElement('button');
+    remove.className = 'icon delete-action';
+    remove.textContent = '✕';
+    remove.title = 'Aksiyonu sil';
+    remove.setAttribute('aria-label', remove.title);
+    remove.onclick = () => confirmRemoval(`"${action.label}" aksiyonu silinirse oluşturulacak edge tekrar oynatılamayabilir:`,
+      bufferRemovalRisks(action), () => send({ type: 'REMOVE_BUFFERED', index: i, time: action.time }));
+    li.append(remove);
+    return li;
+  }));
+}
+
+// Ekranı değiştirmemiş aksiyon doğrudan silinir; diğerlerinde gerekçeli uyarı (edge düzenleme gibi).
+function bufferRemovalRisks(action) {
+  const reasons = [];
+  if (action.changed === true) reasons.push("Bu aksiyon ekranı (etkileşimli element kümesini) değiştirmişti. Silinirse edge tekrar oynatılınca oluşturulacak node'un ekranına varmayabilir.");
+  else if (action.changed === undefined) reasons.push('Bu aksiyonun ekrana etkisi henüz görülmedi (sayfa durulmadı).');
+  else if (action.changed === null) reasons.push('Bu aksiyonun ekrana etkisi bilinmiyor (aksiyonun sonrası görülmeden başka bir aksiyon yapıldı).');
+  if (action.type === 'tab') reasons.push('Sekme aksiyonu: silinirse oynatma sonraki aksiyonları başka bir sekmede yapabilir.');
+  return reasons;
 }
 
 // Tek bir aksiyonu liste satırı olarak gösterir: "Tıkla  Login   #login-button"
