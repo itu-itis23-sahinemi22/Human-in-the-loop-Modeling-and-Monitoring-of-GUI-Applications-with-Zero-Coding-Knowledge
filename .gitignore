@@ -14,3 +14,6 @@ secrets*.json
 
 # Haftalık plan dokümanları (yerel)
 /docs/*-plan.md
+
+# Uçtan uca testlerin çıktıları
+/tests/out/

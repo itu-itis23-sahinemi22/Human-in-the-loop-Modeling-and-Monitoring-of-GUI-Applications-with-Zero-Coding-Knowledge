@@ -134,10 +134,16 @@ bitirme_demo/
 │   └── lib/
 │       └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)
 │
-└── runner/                      ← kaydedilen yolu tarayıcıda tekrar oynatır ve doğrular (Node.js + Playwright)
-    ├── README.md                ← kurulum, kullanım, nasıl çalışır
-    ├── run.js                   ← komut satırı ve akış
-    └── lib/                     ← model ve yol, sayfa, aksiyonlar, doğrulama
+├── runner/                      ← kaydedilen yolu tarayıcıda tekrar oynatır ve doğrular (Node.js + Playwright)
+│   ├── README.md                ← kurulum, kullanım, nasıl çalışır
+│   ├── run.js                   ← komut satırı ve akış
+│   └── lib/                     ← model ve yol, sayfa, aksiyonlar, doğrulama
+│
+├── tests/                       ← uçtan uca testler: eklenti gerçek Chromium'da, runner dahil
+│   ├── README.md                ← çalıştırma ve test listesi
+│   └── e2e/                     ← <ad>.test.js, ortak ortam (env.js), hepsini çalıştıran run-all.js
+│
+└── demo/                        ← elle test ve sunum için yerel sayfalar (demo-server.js)
 ```
 
 Eklenti yaklaşık **4750 satır** (yorumlar dahil): `panel.js` ~1320, `background.js` ~970, `content.js` ~850, `replay.js` ~470, `fingerprint.js` ~180, `compare.js` ~170, `settings.js` ~150; geri kalanı HTML/CSS/manifest. Kütüphane hariç tek bir dış bağımlılık yoktur. Runner yaklaşık 870 satırdır; tek bağımlılığı Playwright'tır ve yalnızca `runner/` klasöründedir.
@@ -224,3 +230,4 @@ Okuma sırası önerisi:
 4. **[04-veri-modeli.md](docs/04-veri-modeli.md):** Kaydedilen verinin tam şeması ve GraphWalker'a nasıl aktarılacağı
 5. **[05-gelistirme.md](docs/05-gelistirme.md):** Kodu değiştirme, hata ayıklama, yeni özellik ekleme ve yol haritası
 6. **[runner/README.md](runner/README.md):** Kaydedilen yolu tarayıcıda tekrar oynatmak ve her adımı doğrulamak
+7. **[tests/README.md](tests/README.md):** Uçtan uca testleri çalıştırmak

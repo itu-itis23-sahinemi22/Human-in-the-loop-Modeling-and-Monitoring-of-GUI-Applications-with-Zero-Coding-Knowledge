@@ -123,6 +123,8 @@ Dışa aktarım `sidepanel/panel.js > graphWalkerModel()` içindedir. Yeni bir b
 
 ## Test
 
+**Otomatik uçtan uca testler.** `tests/e2e/` altındaki testler eklentiyi gerçek bir Chromium'a yükler, yerel sayfalarda kayıt yapar, paneli ve background'ı mesajlarla sürer, gerekirse modeli runner'da oynatır. Hepsi: `node tests/e2e/run-all.js` (yaklaşık 10 dakika; `--offline` internet isteyeni atlar). Kurulum runner'ınkiyle aynıdır. Liste ve yeni test ekleme: [tests/README.md](../tests/README.md). Aşağıdaki test sonuçları bu testlerden gelir.
+
 **Manuel duman testi (smoke test).** Her değişiklikten sonra 3 dakikada yapılabilir. Adımlar [README > Kullanım](../README.md#3-kullanım-örnek-senaryo) bölümündeki saucedemo senaryosudur. Kontrol listesi:
 
 - [ ] İlk node oluşuyor ve içinde ekran görüntüsü var. Graph'lar kartında aktif graph'ın adı "Swag Labs" oluyor.
