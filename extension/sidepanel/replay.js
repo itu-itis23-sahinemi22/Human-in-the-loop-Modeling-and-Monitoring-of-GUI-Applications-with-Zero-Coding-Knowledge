@@ -5,7 +5,9 @@
 // kullanıcı her adımı görür. Runner'ın (runner/run.js) aynı işi Playwright'la ve temiz bir
 // tarayıcıda yapar; burada:
 //   - Başlangıç sayfası kullanıcının sorumluluğudur: oynatma sayfaya kendisi gitmez. Panel
-//     önce ekranı koşunun ilk node'uyla karşılaştırır, farklıysa uyarır.
+//     önce ekranı koşunun ilk node'uyla karşılaştırır, farklıysa uyarır; uyarı kartındaki
+//     buton sekmeyi başlangıç node'unun adresine ve görünen alanına getirir (goToAddress,
+//     fitViewport). Ekranın tutması yine kullanıcıya kalır (giriş gerektiren sayfa gibi).
 //   - Fare ve klavye DevTools protokolüyle (chrome.debugger) gönderilir: gerçek kullanıcı
 //     olayı gibidir (isTrusted), CSS :hover ve sayfanın tuş dinleyicileri çalışır. Chrome
 //     oynatma boyunca üstte "hata ayıklama başlatıldı" çubuğu gösterir; çubukta "İptal"e
@@ -194,6 +196,38 @@ async function fitViewport(tabId, target) {
   }
   if (same(now)) return { viewport: now, short: null };
   return { viewport: now, short: { width: Math.max(0, Math.round((target.width - now.width) * zoom)), height: Math.max(0, Math.round((target.height - now.height) * zoom)) } };
+}
+
+// BAŞLANGIÇ NODE'UNUN ADRESİNE GİTMEK (uyarı kartındaki "Başlangıç node'una dön"). Sekme adrese
+// gider, yeni sayfa durulunca ekranı döner. Site başka bir adrese yönlendirebilir (giriş
+// gerektiren sayfa); varılan adres ekranda (url) döner, karşılaştırmayı panel yapar. Gezinme
+// kayıt sekmesindeyse adres çubuğuna yazmak gibi kaydedilir (background.js > navigateAction).
+async function goToAddress(tabId, url) {
+  await chrome.runtime.sendMessage({ type: 'RECORD_NAVIGATE', tabId, url });
+  const committed = new Promise((resolve) => {
+    const timer = setTimeout(done, REPLAY_TIMEOUT_MS);
+    function done() {
+      clearTimeout(timer);
+      chrome.webNavigation.onCommitted.removeListener(onCommitted);
+      resolve();
+    }
+    function onCommitted(details) {
+      if (details.tabId === tabId && details.frameId === 0) done();
+    }
+    chrome.webNavigation.onCommitted.addListener(onCommitted);
+  });
+  await chrome.tabs.update(tabId, { url });
+  await committed; // eski sayfanın content.js'i artık cevap vermez
+  const deadline = Date.now() + REPLAY_TIMEOUT_MS;
+  for (;;) {
+    const tab = await chrome.tabs.get(tabId);
+    const screen = tab.status === 'complete'
+      ? await chrome.tabs.sendMessage(tabId, { type: 'REPLAY', op: 'settled' }, { frameId: 0 }).catch(() => null)
+      : null;
+    if (screen && !screen.error) return screen;
+    if (Date.now() > deadline) throw new Error('sayfa yüklenmedi ya da sayfaya ulaşılamadı.');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
 }
 
 // Koşudaki maskeli (******) alanların anahtarları: oynatmadan önce kullanıcıya sorulur.

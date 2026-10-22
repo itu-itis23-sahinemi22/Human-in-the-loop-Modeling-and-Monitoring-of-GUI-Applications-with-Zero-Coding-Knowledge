@@ -113,6 +113,7 @@ async function handle(message, sender) {
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO':        return undo(state);
     case 'REPLAY':      return setReplay(state, message);
+    case 'RECORD_NAVIGATE': return addAction(state, message.tabId, navigateAction(message.url, Date.now()));
   }
 }
 
@@ -357,10 +358,15 @@ function navigationAction({ url, transitionType, transitionQualifiers, timeStamp
   const base = { url, selector: null, time: Math.round(timeStamp) };
   if (transitionQualifiers.includes('forward_back')) return { ...base, type: 'history', label: 'Back' };
   if (transitionType === 'reload') return { ...base, type: 'reload', label: 'Reload' };
-  if (['typed', 'auto_bookmark', 'generated'].includes(transitionType)) {
-    return { ...base, type: 'navigate', label: 'GoTo ' + lastPathSegment(url) };
-  }
+  if (['typed', 'auto_bookmark', 'generated'].includes(transitionType)) return navigateAction(url, timeStamp);
   return null; // Link tıklaması / form gönderimi: content.js zaten 'click' / 'enter' olarak kaydetti.
+}
+
+// Adrese gitme. Panelin açtığı gezinme (oynatmadan önce "Başlangıç node'una dön") de böyle
+// kaydedilir (RECORD_NAVIGATE): Chrome eklentinin açtığı gezinmeyi bağlantı sayar, burada
+// görülmez; ama tarayıcı gerçekten gitti, kayıt sürerse edge'e girmelidir.
+function navigateAction(url, time) {
+  return { type: 'navigate', label: 'GoTo ' + (lastPathSegment(url) || new URL(url).hostname), url, selector: null, time: Math.round(time) };
 }
 
 // Tarayıcı yakınlaştırması (Ctrl + / Ctrl -, Ctrl + tekerlek, menü) da sayfanın içinde
