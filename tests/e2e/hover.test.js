@@ -90,17 +90,19 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'hover' ? `($
     let s = await getState();
     check('sade butonun üzerine gelme kaydedilmedi', s.buffer.length === 0, types(s.buffer));
 
-    // 3) CSS :hover menü: üzerine gelme + alt menüye tıklama
+    // 3) CSS :hover menü: üzerine gelme + alt menüye tıklama. Node'dan beri 1 sn'den uzun
+    // geçti: edge'in ilk aksiyonu ekranı değiştirmeyen bekleme.
     await page.hover('#products');
     await sleep(800);
     s = await getState();
-    check('CSS menü: hover kaydedildi, ekranı değiştirdi', s.buffer.length === 1 && s.buffer[0].type === 'hover' && s.buffer[0].selector === '#products' && s.buffer[0].changed === true, types(s.buffer));
-    check('hedef kayıttaki düzeyde', s.buffer[0]?.target?.key === 'a:products', JSON.stringify(s.buffer[0]?.target));
+    const hover = s.buffer.at(-1);
+    check('CSS menü: hover kaydedildi, ekranı değiştirdi', types(s.buffer) === 'wait(false), hover(#products,true)', types(s.buffer));
+    check('hedef kayıttaki düzeyde', hover?.target?.key === 'a:products', JSON.stringify(hover?.target));
     await page.click('#item1');
     await sleep(600);
     s = await createNode();
     let edge = s.edges.at(-1);
-    check('edge: hover, click → e_Bir', types(edge.actions) === 'hover(#products,true), click' && edge.name === 'e_Bir', `${edge.name}: ${types(edge.actions)}`);
+    check('edge: wait, hover, click → e_Bir', types(edge.actions) === 'wait(false), hover(#products,true), click' && edge.name === 'e_Bir', `${edge.name}: ${types(edge.actions)}`);
 
     // 4) JS mouseenter kartı (etkileşimli olmayan tetikleyici)
     await page.hover('#card');

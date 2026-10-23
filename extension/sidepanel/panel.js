@@ -552,21 +552,28 @@ $('btn-merge-confirm').onclick = () => {
 // background.js > observeScreen). İşaret yoksa (bu özellikten önce kaydedilmiş edge) ya da
 // aksiyonun sonrası görülemediyse (null) etki "bilinmiyor"dur.
 
-const EFFECT_TEXT = { changed: 'ekranı değiştirdi', unchanged: 'ekranı değiştirmedi', unknown: 'etkisi bilinmiyor' };
+const EFFECT_TEXT = { changed: 'ekranı değiştirdi', unchanged: 'ekranı değiştirmedi', unknown: 'etkisi bilinmiyor', waiting: 'etkisi bekleniyor' };
 
 function effectOf(action) {
   return action.changed === true ? 'changed' : action.changed === false ? 'unchanged' : 'unknown';
+}
+
+// Aksiyon satırına etki işaretini ekler: "ekranı değiştirdi" gibi
+function addEffectBadge(li, effect) {
+  const badge = document.createElement('span');
+  badge.className = 'effect ' + effect;
+  badge.textContent = EFFECT_TEXT[effect];
+  li.querySelector('span').after(badge);
 }
 
 function editableActionItems(edge) {
   return edge.actions.map((action, i) => {
     const li = actionItem(action);
     li.classList.add('editable');
-    const badge = document.createElement('span');
-    const effect = effectOf(action);
-    badge.className = 'effect ' + effect;
-    badge.textContent = EFFECT_TEXT[effect];
-    li.querySelector('span').after(badge);
+    addEffectBadge(li, effectOf(action));
+    if (action.type === 'wait') {
+      addWaitEdit(li, action, `edge:${edge.id}:${i}`, renderDetails, (ms) => send({ type: 'SET_WAIT', edgeId: edge.id, index: i, ms }));
+    }
 
     const remove = document.createElement('button');
     remove.className = 'icon delete-action';
@@ -578,6 +585,44 @@ function editableActionItems(edge) {
     li.append(remove);
     return li;
   });
+}
+
+// BEKLEME SÜRESİ (bekleyen aksiyonlarda ve edge'de; background.js > setWait): ✎ süreyi satırda
+// saniye kutusuna çevirir; Enter ya da odaktan çıkmak kaydeder, Esc vazgeçer. Liste düzenleme
+// sürerken yeniden çizilebilir (yeni aksiyon, ekran bildirimi): düzenlenen bekleme (key) ve
+// yazılan değer waitEdit'te durur, kutu yeniden çizilince kaldığı yerden sürer.
+let waitEdit = null; // { key, value }
+
+function addWaitEdit(li, action, key, redraw, save) {
+  const span = li.querySelector('span');
+  if (waitEdit?.key !== key) {
+    const edit = iconButton('✎', 'Bekleme süresini değiştir', () => {
+      waitEdit = { key, value: (action.ms / 1000).toFixed(1) };
+      redraw();
+    });
+    edit.classList.add('edit-wait');
+    span.after(edit);
+    return;
+  }
+  const input = Object.assign(document.createElement('input'), { type: 'number', min: '0', max: '3600', step: '0.1', value: waitEdit.value, className: 'wait-input' });
+  input.setAttribute('aria-label', 'Bekleme süresi (sn)');
+  let done = false;
+  const finish = (keep) => {
+    if (done) return;
+    done = true;
+    waitEdit = null;
+    const ms = Math.round(Number(input.value) * 1000);
+    if (keep && input.value !== '' && ms !== action.ms) save(ms);
+    redraw();
+  };
+  input.oninput = () => { if (waitEdit?.key === key) waitEdit.value = input.value; };
+  input.onkeydown = (event) => {
+    if (event.key === 'Enter') finish(true);
+    if (event.key === 'Escape') finish(false);
+  };
+  input.onblur = () => input.isConnected && finish(true); // yeniden çizilirken kaldırılan kutu kaydetmez
+  span.replaceChildren(`${action.label} → `, input, ' sn');
+  queueMicrotask(() => input.focus());
 }
 
 // Silme isteği: ekranı değiştirmemiş aksiyon doğrudan silinir (geri alınabilir). Ekranı
@@ -623,6 +668,7 @@ function undoText(entry) {
   if (entry.kind === 'node') return `"${entry.node.name}" node'unun silinmesini geri al`;
   if (entry.kind === 'edge') return `"${entry.edge.name}" edge'inin silinmesini geri al`;
   if (entry.kind === 'merge') return `"${entry.node.name}" node'unun birleştirilmesini geri al`;
+  if (entry.kind === 'wait') return `Bekleme süresinin değişmesini geri al (${seconds(entry.action.ms)})`;
   return `"${entry.action.label}" aksiyonunun silinmesini geri al`;
 }
 
@@ -645,13 +691,18 @@ document.addEventListener('keydown', (event) => {
 
 // Bekleyen aksiyon node oluşturulmadan silinebilir (yalnızca silme; geri alınmaz). Karar
 // beklerken ve oynatma sürerken silinmez (background.js > removeBuffered).
+// Etki işareti edge'dekiyle aynıdır; sayfa henüz durulmadıysa (changed yok) "etkisi bekleniyor".
 function renderBuffer() {
   $('buffer-count').textContent = state.buffer.length;
   const locked = Boolean(state.pending) || Boolean(replay);
   $('buffer').replaceChildren(...state.buffer.map((action, i) => {
     const li = actionItem(action);
+    addEffectBadge(li, action.changed === undefined ? 'waiting' : effectOf(action));
     if (locked) return li;
     li.classList.add('editable');
+    if (action.type === 'wait') {
+      addWaitEdit(li, action, `buffer:${action.time}`, renderBuffer, (ms) => send({ type: 'SET_BUFFERED_WAIT', index: i, time: action.time, ms }));
+    }
     const remove = document.createElement('button');
     remove.className = 'icon delete-action';
     remove.textContent = '✕';
@@ -1025,10 +1076,10 @@ function graphWalkerModel() {
   };
 }
 
-// Dışa aktarılan aksiyon: "state'i değiştirdi mi?" işareti (changed) yalnızca paneldeki silme
-// uyarısı içindir, dışarı çıkmaz. screenBefore/screenAfter önceki sürümlerle kaydedilmiş
-// aksiyonlarda kalmış olabilir.
-function replayAction({ changed, screenBefore, screenAfter, ...action }) {
+// Dışa aktarılan aksiyon. "State'i değiştirdi mi?" işareti (changed) de çıkar: runner bir adım
+// kalınca her aksiyonun oynatmadaki etkisini kayıttakiyle karşılaştırır (runner/run.js >
+// traceOf). screenBefore/screenAfter önceki sürümlerle kaydedilmiş aksiyonlarda kalmış olabilir.
+function replayAction({ screenBefore, screenAfter, ...action }) {
   return action;
 }
 

@@ -377,6 +377,8 @@ async function handle(message, sender) {
     case 'SET_SETTINGS': return setSettings(state, message.settings);
     case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
     case 'REMOVE_BUFFERED': return removeBuffered(state, message.index, message.time);
+    case 'SET_WAIT':    return setWait(state, message.edgeId, message.index, message.ms);
+    case 'SET_BUFFERED_WAIT': return setBufferedWait(state, message.index, message.time, message.ms);
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO':        return undo(state);
     case 'REPLAY':      return setReplay(state, message);
@@ -575,9 +577,11 @@ function observeScreen(state, screen, settings, viewport = null) {
 //     işaretini alır; süresi değişime kadar geçen süredir, ne kadar kısa olursa olsun
 //     kaydedilir. Sonraki boşluk yeni bir beklemedir.
 //   - Ekran değişmediyse iki aksiyon arasındaki boşluk en az minWaitSeconds sürdüyse
-//     "ekranı değiştirmedi" bekleme olarak ikinci aksiyondan önce eklenir.
-//   - Node oluşturduktan sonra ilk aksiyona ve son aksiyondan "Node oluştur"a kadar geçen
-//     süre aksiyonlar arasında değildir; ekran değişmediyse kaydedilmez.
+//     "ekranı değiştirmedi" bekleme olarak ikinci aksiyondan önce eklenir. Node oluştuktan
+//     (ya da "Buradan devam et"ten) sonraki ilk aksiyona kadar geçen süre de böyledir: bekleme
+//     edge'in ilk aksiyonu olur.
+//   - Son aksiyondan "Node oluştur"a kadar geçen süre aksiyonlar arasında değildir; ekran
+//     değişmediyse kaydedilmez.
 
 // Açık aksiyon yokken görülen ekran: önceki ekrandan farklıysa aradaki bekleme ekranı
 // değiştirmiştir. Ayar kapalıyken yalnızca ekranı "hemen önceki state" yapar.
@@ -596,17 +600,19 @@ function observeIdle(state, settings, screen, now, url) {
 // henüz bildirmediği bir değişim vardır. Boşluk alt sınırdan uzunsa bu, ekranı değiştiren bir
 // beklemedir; kısaysa değişim aksiyona yaklaşırken olmuştur (ör. fare tıklanacak butona
 // giderken bir menüden çıktı) ve aksiyonun öncesine katılır. Yazmada aksiyonun ekranı
-// yazılanın sonrasıdır, karşılaştırılmaz; bekleme yazmaya başlanan anda biter.
+// yazılanın sonrasıdır, karşılaştırılmaz; bekleme yazmaya başlanan anda biter. Kaydırmada da
+// öyle: ekran kaydırma başladıktan sonra alınır (content.js > onScroll); karşılaştırılsa
+// kaydırma "ekranı değiştirmedi" görünürdü.
 function waitBefore(state, settings, action, screen, typingSince) {
   const end = typingSince ?? action.time;
   const long = state.idleSince !== null && end - state.idleSince >= settings.minWaitSeconds * 1000;
-  if (screen && action.type !== 'input' && !typingSince) {
+  if (screen && action.type !== 'input' && action.type !== 'scroll' && !typingSince) {
     if (long) observeIdle(state, settings, screen, end, action.url);
     else state.screen = screen;
   }
   const previous = state.buffer.at(-1);
-  const between = previous && previous.type !== 'wait'; // iki aksiyonun arası
-  if (settings.recordWaits && between && long) {
+  const counts = !previous || previous.type !== 'wait'; // node'dan sonraki ilk aksiyon ya da iki aksiyonun arası
+  if (settings.recordWaits && counts && long) {
     state.buffer.push(waitAction(state.idleSince, end, action.url, false));
   }
 }
@@ -956,6 +962,8 @@ function resolvePending(state, targetId) {
   if (!pending) return;
   if (targetId && !pending.candidateIds.includes(targetId)) return; // aday olmayan node'a bağlanmaz
   state.pending = null;
+  // Node şimdi oluştu: karar beklerken aksiyon yapılmadıysa bekleme buradan başlar.
+  if (!state.buffer.length) state.idleSince = Date.now();
   commit(state, pending.capture, pending.actions, targetId ?? null);
   return save(state);
 }
@@ -1090,10 +1098,47 @@ function removeAction(state, edgeId, index) {
 // birleşmesi) başka bir aksiyon silinmez. Silinen aksiyon açıksa (sonrası henüz
 // görülmediyse) sayfa durulunca gelen ekran aksiyonsuz bir değişim gibi işlenir (observeIdle).
 function removeBuffered(state, index, time) {
-  if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
-  if (state.buffer[index]?.time !== time) throw new Error('Bekleyen aksiyonlar bu arada değişti. Listeye bakıp tekrar deneyin.');
+  checkBuffered(state, index, time);
   state.buffer.splice(index, 1);
   return save(state);
+}
+
+function checkBuffered(state, index, time) {
+  if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
+  if (state.buffer[index]?.time !== time) throw new Error('Bekleyen aksiyonlar bu arada değişti. Listeye bakıp tekrar deneyin.');
+}
+
+// BEKLEME SÜRESİ: kaydedilen beklemenin süresi elle değiştirilebilir (ör. düşünme süresinden
+// doğan uzun bir beklemeyi kısaltmak). Yalnızca süre değişir: bekleme yine gözlenmiş bir
+// aksiyondur, tipi, sırası ve "ekranı değiştirdi mi?" işareti kalır. Edge'de ilk değişiklikte
+// kayıttaki orijinal liste recordedActions'ta saklanır ve değişiklik geri alınabilir (silme
+// gibi); aksiyon nesnesi değiştirilmez, yenisiyle yer değiştirir (orijinal listede kalsın).
+// Bekleyen aksiyonda geri alma yoktur (silme gibi); süre yeniden değiştirilebilir.
+const MAX_WAIT_MS = 3600 * 1000;
+
+function setWait(state, edgeId, index, ms) {
+  const edge = state.edges.find((e) => e.id === edgeId);
+  const action = edge?.actions[index];
+  if (action?.type !== 'wait') return;
+  checkWaitMs(ms);
+  if (ms === action.ms) return;
+  edge.recordedActions ??= [...edge.actions];
+  pushUndo(state, { kind: 'wait', edgeId, index, action });
+  edge.actions[index] = { ...action, ms };
+  return save(state);
+}
+
+function setBufferedWait(state, index, time, ms) {
+  checkBuffered(state, index, time);
+  const action = state.buffer[index];
+  if (action.type !== 'wait') return;
+  checkWaitMs(ms);
+  state.buffer[index] = { ...action, ms };
+  return save(state);
+}
+
+function checkWaitMs(ms) {
+  if (!(Number.isInteger(ms) && ms >= 0 && ms <= MAX_WAIT_MS)) throw new Error(`Bekleme süresi 0 ile ${MAX_WAIT_MS / 1000} sn arasında olmalı.`);
 }
 
 
@@ -1137,16 +1182,28 @@ async function undo(state) {
     if (!ends) return save(state).then(() => ({ notice: `"${entry.edge.name}" geri getirilemedi: uçlarındaki node artık yok.` }));
     insert(state.edges, entry.index, entry.edge);
     notice = `"${entry.edge.name}" edge'i geri getirildi.`;
+  } else if (entry.kind === 'wait') {
+    // Bekleme süresi değişikliği: eski aksiyon yerine döner.
+    const edge = state.edges.find((e) => e.id === entry.edgeId);
+    if (edge?.actions[entry.index]?.type !== 'wait') return save(state).then(() => ({ notice: 'Bekleme süresi geri alınamadı: edge ya da bekleme artık yok.' }));
+    edge.actions[entry.index] = entry.action;
+    dropRecordedIfSame(edge);
+    notice = `"${edge.name}" edge'indeki bekleme ${(entry.action.ms / 1000).toFixed(1).replace('.', ',')} sn'ye döndü.`;
   } else {
-    // Edge'den silinen aksiyon. Tüm silmeler geri alınınca edge kayıttaki haline döner.
+    // Edge'den silinen aksiyon. Tüm düzenlemeler geri alınınca edge kayıttaki haline döner.
     const edge = state.edges.find((e) => e.id === entry.edgeId);
     if (!edge) return save(state).then(() => ({ notice: 'Aksiyon geri getirilemedi: edge artık yok.' }));
     insert(edge.actions, entry.index, entry.action);
-    if (edge.recordedActions?.length === edge.actions.length) delete edge.recordedActions;
+    dropRecordedIfSame(edge);
     notice = `"${entry.action.label}" aksiyonu "${edge.name}" edge'ine geri getirildi.`;
   }
   await save(state);
   return { notice };
+}
+
+// Edge kayıttaki haline döndüyse (silmeler ve süre değişiklikleri geri alındı) orijinal liste düşer.
+function dropRecordedIfSame(edge) {
+  if (edge.recordedActions && JSON.stringify(edge.recordedActions) === JSON.stringify(edge.actions)) delete edge.recordedActions;
 }
 
 // NODE BİRLEŞTİRME: removeId node'u keepId'ye katılır. Ona bağlı tüm edge'ler keepId'ye

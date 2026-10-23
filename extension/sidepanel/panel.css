@@ -164,10 +164,13 @@ dialog.compare { width: min(96vw, 960px); }
 /* Edge detayındaki aksiyon: etki işareti ve sil butonu */
 .actions li.editable { position: relative; padding-right: 24px; }
 .actions li.editable .delete-action { position: absolute; top: 0; right: 0; }
+.actions .edit-wait { margin-left: 2px; }
+.actions .wait-input { width: 64px; font: inherit; }
 .effect { margin-left: 4px; padding: 0 5px; border-radius: 8px; border: 1px solid currentColor; font-size: 10px; white-space: nowrap; }
 .effect.changed { color: var(--warn); }
 .effect.unchanged { color: var(--ok); }
-.effect.unknown { color: var(--muted); }
+.effect.unknown, .effect.waiting { color: var(--muted); }
+.effect.waiting { border-style: dashed; }
 /* Birleştirme penceresi: aday node listesi (küçük ekran görüntüsü + isim + uygunluk) */
 .merge-options { display: grid; gap: 6px; margin: 8px 0; max-height: 40vh; overflow: auto; }
 .merge-option { display: flex; align-items: center; gap: 8px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }

@@ -73,9 +73,10 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'wait' ? `(${
     const status = await panel.textContent('#status');
     check('durum satırı', status.includes('Beklemeler kaydediliyor (en az 1,0 sn)'), JSON.stringify(status));
 
-    // 2) Aksiyonlar arası bekleme, kısa boşluk, yazma
+    // 2) Node'dan sonraki ilk aksiyondan önce bekleme, aksiyonlar arası bekleme, kısa boşluk, yazma
     await createNode();
     await page.bringToFront();
+    await sleep(1500);            // node'dan sonra ≥ 1 sn: edge'in ilk aksiyonu bekleme
     await page.click('#a');
     await sleep(1500);            // ≥ 1 sn: bekleme
     await page.click('#b');
@@ -90,8 +91,9 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'wait' ? `(${
     let { s } = await createNode();
     let edge = s.edges.at(-1);
     const acts = edge.actions;
-    check('edge aksiyonları', types(acts).replace(/\(\d+ms,false\)/, '(…,false)') === 'click, wait(…,false), click, click, input, click', types(acts));
-    const w = acts.find((a) => a.type === 'wait');
+    check('edge aksiyonları', types(acts).replace(/\(\d+ms,false\)/g, '(…,false)') === 'wait(…,false), click, wait(…,false), click, click, input, click', types(acts));
+    const [first, w] = acts.filter((a) => a.type === 'wait');
+    check('node\'dan sonraki bekleme en az 1,4 sn, ekranı değiştirmedi', first && first.ms >= 1400 && first.changed === false, JSON.stringify(first));
     check('bekleme süresi 0,9–1,6 sn, ekranı değiştirmedi', w && w.ms >= 900 && w.ms <= 1600 && w.changed === false, JSON.stringify(w));
     check('yazma kendiliğinden değişim sayılmadı', !acts.some((a) => a.type === 'wait' && a.changed === true));
 
@@ -102,9 +104,27 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'wait' ? `(${
     check('süresi değişime kadar (2,5–5 sn)', s.buffer[0]?.ms >= 2500 && s.buffer[0]?.ms <= 5000, String(s.buffer[0]?.ms));
     const row = await panel.evaluate(() => document.querySelector('#buffer').innerText);
     check('panel satırı', /Bekle\s+Wait → \d,\d sn/.test(row), JSON.stringify(row));
+    // Bekleyen beklemenin süresi panelde ✎ ile değiştirilir
+    await panel.click('#buffer .edit-wait');
+    await panel.fill('#buffer .wait-input', '2.5');
+    await panel.press('#buffer .wait-input', 'Enter');
+    await sleep(300);
+    s = await getState();
+    check('bekleyen beklemenin süresi değişti', s.buffer[0]?.ms === 2500 && s.buffer[0]?.changed === true, JSON.stringify(s.buffer[0]));
     ({ s } = await createNode());
     edge = s.edges.at(-1);
-    check('e_Wait edge\'i', edge.name === 'e_Wait' && edge.actions.length === 1, `${edge.name}: ${types(edge.actions)}`);
+    check('e_Wait edge\'i', edge.name === 'e_Wait' && edge.actions.length === 1 && edge.actions[0].ms === 2500, `${edge.name}: ${types(edge.actions)}`);
+    // Edge'deki beklemenin süresi değişir, orijinal saklanır, geri alınır
+    await send({ type: 'SET_WAIT', edgeId: edge.id, index: 0, ms: 1000 });
+    s = await getState();
+    let e = s.edges.find((x) => x.id === edge.id);
+    check('edge beklemesi 1 sn, orijinal saklandı', e.actions[0].ms === 1000 && e.recordedActions?.[0]?.ms === 2500, JSON.stringify([e.actions[0].ms, e.recordedActions?.[0]?.ms]));
+    const bad = await send({ type: 'SET_WAIT', edgeId: edge.id, index: 0, ms: -5 });
+    check('negatif süre reddedildi', Boolean(bad?.error), JSON.stringify(bad));
+    await send({ type: 'UNDO' });
+    s = await getState();
+    e = s.edges.find((x) => x.id === edge.id);
+    check('geri al: 2,5 sn ve orijinal liste düştü', e.actions[0].ms === 2500 && !e.recordedActions, JSON.stringify(e.actions[0]));
 
     // 4) Anahtar kapalı: bekleme kaydedilmez
     await send({ type: 'SET_SETTINGS', settings: { ...stored, recordWaits: false } });

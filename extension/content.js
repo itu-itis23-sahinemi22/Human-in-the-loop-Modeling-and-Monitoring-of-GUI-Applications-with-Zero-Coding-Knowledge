@@ -390,8 +390,11 @@ function isSingleLineText(el) {
 // Not: Kaydırma olaylarını tarayıcı ürettiği için sayfanın kendi kaydırmaları da (ör. bir
 // link sayfayı başa kaydırdığında) isTrusted=true gelir ve kaydedilir. Konum mutlak
 // olduğu için bu, tekrar oynatmada zararsızdır.
-// Kaydırma hareketinin ilk 'scroll' olayında ekranın edge set'i alınır (kaydırmanın öncesi).
-// İlk olay konum biraz değiştikten sonra gelir; bu yüzden "öncesi" yaklaşıktır.
+// Kaydırma hareketinin ilk 'scroll' olayında ekranın edge set'i alınır. İlk olay konum
+// değiştikten sonra gelir (tekerlek ve kaydırma çubuğunu tarayıcının compositor'ı sayfadan
+// bağımsız kaydırır; 'wheel' olayı bile kaymış sayfada gelir): bu ekran kaydırmanın öncesi
+// değildir. Background onu yalnızca açık kalmış önceki aksiyonun sonrası olarak kullanır;
+// kaydırmanın öncesi background'da bilinen son ekrandır (bkz. background.js > waitBefore).
 function onScroll(event) {
   if (!event.isTrusted) return;
   if (pendingKey) pendingKey.scrolled = true; // tuş sayfayı kaydırdı (bkz. finishPendingKey)

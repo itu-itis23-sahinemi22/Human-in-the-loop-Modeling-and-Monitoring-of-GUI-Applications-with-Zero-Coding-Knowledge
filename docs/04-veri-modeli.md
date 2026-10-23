@@ -98,7 +98,7 @@ Kullanıcının tek bir hareketi. Ortak alanlar:
 |---|---|---|
 | `type` | `string` | Aksiyon tipi (aşağıdaki tablo) |
 | `target` | `{ key, index }` | Sadece `click`, `input`, `enter`, odakta bir element varken `key`, etkileşimli elementteki `contextmenu` / `focus` ve form alanındaki `select` / `clipboard`: hedef element, state ile aynı düzeyde. `key` elementin türü, `index` ekranda görünen aynı türdekiler arasındaki DOM sırası (1'den). Örnek: `{ "key": "button:Sil", "index": 2 }` = "ekrandaki 2. Sil". Element o an ekranda tıklanabilir değilse `index` `null`. Tekrar oynatırken önce bu kullanılır ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)). |
-| `changed` | `boolean \| null` | Aksiyon state'i (edge set'i) değiştirdi mi: hemen önceki state ile aksiyondan sonra sayfa durulunca görülen state karşılaştırılır. `null` ya da yok: bilinmiyor. Yalnızca edge düzenlemedeki silme uyarısı için; GraphWalker çıktısına girmez. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
+| `changed` | `boolean \| null` | Aksiyon state'i (edge set'i) değiştirdi mi: hemen önceki state ile aksiyondan sonra sayfa durulunca görülen state karşılaştırılır. `null` ya da yok: bilinmiyor. Edge düzenlemedeki silme uyarısı ve runner'ın aksiyon izi (adım kalınca her aksiyonun oynatmadaki etkisi kayıttakiyle karşılaştırılır) için; GraphWalker çıktısında da vardır. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
 | `selector` | `string \| null` | Elementi bulan CSS selector (yedek; `target` bulunamazsa). Tarayıcı seviyesindeki gezinmelerde, yakınlaştırmada, pencere boyutu değişiminde ve sayfanın kendisi kaydırıldığında `null`. |
 | `label` | `string` | İnsan tarafından okunabilir açıklama. Edge isimleri buradan türetilir. |
 | `url` | `string` | Aksiyonun yapıldığı sayfanın adresi |
@@ -235,7 +235,7 @@ Kayda özel bilgiler (URL, parmak izi, ekran görüntüsü, kaydedilen tarayıc�
 - `selectedModelIndex` / `selectedElementId`: GraphWalker Studio'nun kendi dosyalarında bulunan alanlar. CLI bunları yok sayar.
 - `properties.graphRecorder.format`: şema değişince eski dosyaları tanımak için. `v5` = GraphWalker formatı, `elements` sayılı küme, aksiyonlarda `target`, vertex'lerde `viewport`. (`v4`: viewport'suz; `v3`: sayısız küme; `v2` ve öncesi eklentiye özel formattı.) `v5` dosyasında `viewport`'u olmayan vertex, bu alan eklenmeden önce kaydedilmiştir.
 - `properties.graphRecorder.settings`: `elements`'ın hangi türlerinin state'i oluşturduğunu gösterir.
-- Edge panelde düzenlendiyse `properties` ayrıca `edited: true` ve kayıttaki orijinal aksiyonları (`recordedActions`) taşır. `uiActions` ve `recordedActions` içinde `changed` işareti bulunmaz; o yalnızca paneldeki silme uyarısı içindir.
+- Edge panelde düzenlendiyse `properties` ayrıca `edited: true` ve kayıttaki orijinal aksiyonları (`recordedActions`) taşır. `uiActions` ve `recordedActions` içinde `changed` işareti de bulunur: runner bir adım kalınca her aksiyonun oynatmadaki etkisini bununla karşılaştırır ([runner/README.md](../runner/README.md)).
 - Chrome storage nesne anahtarlarını alfabetik sıraladığı için `elements` içindeki türlerin sırası `settings.js`'teki sıradan farklı olabilir.
 
 ### GraphWalker ile doğrulama

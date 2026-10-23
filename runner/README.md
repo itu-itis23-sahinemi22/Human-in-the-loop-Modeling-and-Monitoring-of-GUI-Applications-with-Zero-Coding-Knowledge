@@ -65,14 +65,19 @@ Sonuç: GEÇTİ · 9/9 adım · 1 koşu · 8,5 sn
 Rapor: runner/out/SwagLabs-2026-10-18T15-00-00-000Z/report.html (ayrıca report.json, junit.xml)
 ```
 
-Bir adım başarısız olursa beklenen node ile ekranın farkı yazılır; o koşunun kalan adımları atlanır, sonraki koşu yine çalışır:
+Bir adım başarısız olursa beklenen node ile ekranın farkı ve edge'in **aksiyon izi** yazılır; o koşunun kalan adımları atlanır, sonraki koşu yine çalışır:
 
 ```
-✗ e_AddToCart → v_Inventory            1 aksiyon    10,5 sn
-    Beklenen ekrana (v_Inventory) varılmadı:
-      button:add-to-cart-sauce-labs-backpack: beklenen 1, ekranda 0
-      button:remove-sauce-labs-backpack: beklenen 0, ekranda 1
+✗ e_ScrollDown → v_Liste_2             1 aksiyon    10,8 sn
+    Beklenen ekrana (v_Liste_2) varılmadı:
+      button:add13: beklenen 1, ekranda 0
+      button:add29: beklenen 0, ekranda 1
+    Aksiyonlar:
+      1/1 ⚠ Scroll down · ekranı değiştirdi · kaydırma 0, 1029 konumunda kaldı, kayıtta 0, 5000 (sayfa en fazla 0, 1029 kayabiliyor)
+    İlk sapma: 1. aksiyon "Scroll down"
 ```
+
+Aksiyon izi: runner her aksiyondan sonra ekrana bakar. Bir aksiyon şu durumlarda ⚠ alır: ekranı kayıttakinden farklı etkiledi (kayıtta "ekranı değiştirdi", oynatmada değiştirmedi ya da tersi; eklentinin dışa aktardığı `changed` işaretiyle), kaydırma kayıttaki konuma varamadı, yakınlaştırma ya da pencere boyutundan sonra görünen alan kayıttakinden farklı. Oynatılamayan aksiyon ✗ alır. Kayıttan ilk sapan aksiyon "İlk sapma" olarak yazılır. Sapma yoksa fark edge'in sonunda ortaya çıkmıştır. İz `report.html`'de, `report.json`'da (`trail`) ve `junit.xml`'de de vardır.
 
 **Çıkış kodu:** `0` bütün adımlar geçti, `1` en az bir adım başarısız, `2` kullanım ya da girdi hatası (ör. yolda olmayan bir edge, modelle uyuşmayan senaryo).
 
