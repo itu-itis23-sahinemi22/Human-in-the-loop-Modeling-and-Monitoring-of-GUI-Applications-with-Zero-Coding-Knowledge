@@ -360,9 +360,11 @@
   <script src="compare.js"></script>
   <script src="replay.js"></script>
   <script src="panel.js"></script>
-  <!-- Monitörler (run-time monitoring): panel.js'ten sonra yüklenir, kendi bölümlerini kendisi ekler ve
-       graph state'inden ayrı bir anahtarda ('monitors:<graph id>') saklanır. Bkz. docs/07-monitorler.md -->
+  <!-- Monitörler (run-time monitoring): panel.js ve replay.js'ten sonra yüklenir, kendi bölümlerini
+       kendisi ekler, graph state'inden ayrı bir anahtarda ('monitors:<graph id>') saklanır ve oynatmada
+       kontrol eder. Bkz. docs/07-monitorler.md -->
   <script src="monitor-types.js"></script>
   <script src="monitors.js"></script>
+  <script src="monitor-run.js"></script>
 </body>
 </html>
