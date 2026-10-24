@@ -77,7 +77,7 @@ Türler `extension/sidepanel/monitor-types.js`'tedir; eklemek / çıkarmak için
 |---|---|---|---|---|---|---|
 | `inputValidation` | Input Validation | İşlevsel izleme | aksiyon | tüm model / node / aksiyon | alan, desen (hazır çipler), uymalı / uymamalı, boşken | Alanın değeri desene uyuyor mu? Her aksiyondan sonra alana bakılır; yazılan değer o anda alandadır. Örnek: telefon `^0?5` ile başlamalı; e-postada birden fazla `@` görülürse (`@.*@`, "uymamalı") kırmızı. |
 | `errorText` | Error Text | Hata izleme | state | tüm model / node / aksiyon | hata kalıbı (varsayılan: 404, 500, internal server error, something went wrong, bir hata oluştu) | Sayfanın görünen metninde (`document.body.innerText`) hata kalıbı geçiyor mu? Geçiyorsa bulunduğu yerin çevresiyle kırmızı. |
-| `fontSize` | Font Size | Erişilebilirlik | state | tüm model / node / aksiyon | alt sınır (4), birim (pt / px) | Görünen her metin parçasının `getComputedStyle(...).fontSize` değeri alt sınırın altında mı? (1 pt = 4/3 px; en fazla 5000 parça.) Küçük olanlar metinleriyle listelenir. |
+| `fontSize` | Font Size | Erişilebilirlik | state | tüm model / node / aksiyon | alt sınır (4), birim (pt / px) | Görünen her metin parçasının `getComputedStyle(...).fontSize` değeri alt sınırın altında mı? (1 pt = 4/3 px; en fazla 5000 parça.) Çizilmeyen metin sayılmaz: simge düğmelerinde yazı boyutu 0 yapılıp yerine simge gösterilen yazılar ("Open Menu") ekranda olmadığı için küçük de sayılmaz. Küçük olanlar metinleriyle listelenir. |
 
 Element seçimi: önce parmak izi anahtarı (`input:phone`, ekrandaki etkileşimli elementler arasında, [03](03-state-eslestirme.md)'teki tanımla), uymazsa CSS selector.
 

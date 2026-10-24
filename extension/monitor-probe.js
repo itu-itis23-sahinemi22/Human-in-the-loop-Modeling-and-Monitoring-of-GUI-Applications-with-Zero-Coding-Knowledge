@@ -71,7 +71,9 @@ const MONITOR_PROBES = {
     return probeFail(`hata metni bulundu: "${match[0]}" (…${context}…)`);
   },
 
-  // Görünen hiçbir metin alt sınırdan küçük olmamalı (1 pt = 4/3 px)
+  // Görünen hiçbir metin alt sınırdan küçük olmamalı (1 pt = 4/3 px). Çizilmeyen metin sayılmaz:
+  // simge düğmelerinde yazı boyutu 0 yapılıp yerine simge gösterilen yazılar ("Open Menu") ekranda
+  // yok, dolayısıyla "küçük" de değil; bunların kutusu 0×0 çıkar.
   fontSize({ min, unit }) {
     const limitPx = unit === 'pt' ? Number(min) / 0.75 : Number(min);
     const format = (px) => (unit === 'pt' ? `${trimNumber(px * 0.75)} pt` : `${trimNumber(px)} px`);
@@ -86,10 +88,10 @@ const MONITOR_PROBES = {
       const el = node.parentElement;
       if (!isRendered(el)) continue;
       range.selectNodeContents(node);
-      if (!range.getClientRects().length) continue; // çizilmeyen metin
-      seen++;
+      if (![...range.getClientRects()].some((rect) => rect.width > 0 && rect.height > 0)) continue; // çizilmeyen metin
       const px = parseFloat(getComputedStyle(el).fontSize);
-      if (!Number.isFinite(px)) continue;
+      if (!Number.isFinite(px) || px <= 0) continue;
+      seen++;
       smallest = Math.min(smallest, px);
       if (px < limitPx - 0.01) small.push(`"${node.nodeValue.trim().slice(0, 25)}" ${format(px)}`);
     }
