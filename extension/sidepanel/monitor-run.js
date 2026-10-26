@@ -10,6 +10,9 @@
 //     doğrulandıktan sonra sayfada kontrol edilir (monitor-probe.js, MONITOR_PROBE).
 //   - Aksiyon tabanlı Input Validation her aksiyondan sonra alana bakar (yazılan değer o anda
 //     alandadır).
+//   - Edge'in belirli bir aksiyonuna bağlı monitör (m.action, monitors.js) hangi türden olursa
+//     olsun yalnızca o aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan);
+//     adımın sonunda yeniden kontrol edilmez. Aksiyon edge'de artık yoksa "kontrol edilemedi".
 // Bir monitör bozulduğu AN ekran görüntüsü alınır ve uyarı olarak monitörün kendi yapısına yazılır
 // (monitors.js > UYARILAR): aksiyon tabanlı monitörde alana yazıldıktan hemen sonra (bir sonraki
 // aksiyon, ör. Login tıklaması, oynatılmadan önce), state tabanlı monitörde varılan ekranda. Adımın
@@ -123,10 +126,19 @@ verify = async (replay, node) => {
   return result;
 };
 
+// Bu aksiyondan hemen sonra kontrol edilecek monitörler: edge'in bu aksiyonuna bağlı olanlar (her
+// tür) + aksiyona bağlı olmayan aksiyon tabanlı monitörler (Input Validation: her aksiyondan sonra).
+function monitorsAfterAction(run, step, edge, actionIndex) {
+  return stepMonitors(run, step).filter((m) => (m.action
+    ? m.scope === step.edgeId && resolveMonitorAction(m.action, edge?.actions) === actionIndex
+    : m.type === 'inputValidation'));
+}
+
 // afterAction sarmalanır: bir aksiyon oynatıldı ve sayfa duruldu. Aksiyon tabanlı Input Validation
-// alana şimdi bakar (yazılan değer alanda). Alan ekranda yoksa önceki sonuç korunur. Bozulduysa
-// görüntü bu anda alınır: oynatma bir sonraki aksiyona (Login tıklaması gibi) bu kontrol bitmeden
-// geçmez (await). Adımda ilk bozulma anı kalır; sonraki aksiyonlar sonucu değiştirmez.
+// alana şimdi bakar (yazılan değer alanda); edge'in bu aksiyonuna bağlı monitörler de şimdi kontrol
+// edilir. Alan ekranda yoksa önceki sonuç korunur. Bozulduysa görüntü bu anda alınır: oynatma bir
+// sonraki aksiyona (Login tıklaması gibi) bu kontrol bitmeden geçmez (await). Adımda ilk bozulma
+// anı kalır; sonraki aksiyonlar sonucu değiştirmez.
 const afterActionWithoutMonitors = afterAction; // replay.js
 afterAction = async (replay) => {
   await afterActionWithoutMonitors(replay);
@@ -134,7 +146,8 @@ afterAction = async (replay) => {
   if (!run || run.replay !== replay || replay.stopped) return;
   const step = run.steps[replay.step];
   if (!step) return;
-  const list = stepMonitors(run, step).filter((m) => m.type === 'inputValidation');
+  const edge = run.edges[step.index];
+  const list = monitorsAfterAction(run, step, edge, replay.action);
   if (!list.length) return;
   try {
     const results = await probeMonitors(replay.tabId, list, replay);
@@ -147,7 +160,6 @@ afterAction = async (replay) => {
       step.verdicts.set(m.id, now);
       if (now.status === 'fail') failing.push(m);
     }
-    const edge = run.edges[step.index];
     await raiseAlarms(run, replay, step, failing, { index: replay.action, count: edge?.actions?.length ?? 0, label: replay.actionLabel });
     renderMonitorRun();
   } catch (error) {
@@ -162,9 +174,14 @@ async function checkStepMonitors(run, replay, verdict) {
   if (!step) return;
   const arrived = Boolean(verdict?.ok);
   const toProbe = [];
+  const edge = run.edges[step.index];
   for (const m of stepMonitors(run, step)) {
-    if (step.verdicts.has(m.id)) continue; // aksiyon sırasında kontrol edildi (Input Validation)
+    if (step.verdicts.has(m.id)) continue; // aksiyon sırasında kontrol edildi (Input Validation, aksiyona bağlı monitör)
     if (!monitorType(m.type)) { step.verdicts.set(m.id, verdictSkip('tür tanımlı değil')); continue; }
+    if (m.action) { // yalnızca kendi aksiyonundan sonra kontrol edilir; buraya geldiyse o aksiyon oynatılmadı
+      step.verdicts.set(m.id, verdictSkip(resolveMonitorAction(m.action, edge?.actions) < 0 ? `aksiyon edge'de bulunamadı (${m.action.index + 1}. ${m.action.label})` : 'aksiyonu bu adımda oynatılmadı'));
+      continue;
+    }
     if (m.scope === step.target && !arrived) { step.verdicts.set(m.id, verdictSkip('node\'a varılamadı: ekran beklenen node değil')); continue; }
     toProbe.push(m);
   }
@@ -286,7 +303,7 @@ function aggregateStatus(run, m) {
 function aggregateText(run, m) {
   const steps = run.steps.filter((s) => appliesTo(m, s));
   const failed = steps.find((s) => s.verdicts.get(m.id)?.status === 'fail');
-  if (failed) return `${stepLabel(run, failed)}: ${failed.verdicts.get(m.id).text}`;
+  if (failed) return `${failed.verdicts.get(m.id).where ?? stepLabel(run, failed)}: ${failed.verdicts.get(m.id).text}`; // where: bozulma anı (adım + varsa aksiyon)
   const checked = steps.filter((s) => s.verdicts.get(m.id)?.status === 'ok');
   if (checked.length) {
     const last = checked.at(-1);

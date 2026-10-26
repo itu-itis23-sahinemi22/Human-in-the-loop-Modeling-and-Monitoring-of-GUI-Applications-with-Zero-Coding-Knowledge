@@ -83,6 +83,7 @@ function check(name, ok, detail = '') {
     await page.click('#login');
     await page.waitForURL(base + '/telefon');
     await createNode();
+    await page.fill('#phone', '05321234567'); // Telefon edge'i iki aksiyon: yaz + tıkla (aksiyon katmanı için)
     await page.click('#next');
     await page.waitForURL(base + '/sepet');
     await createNode();
@@ -119,7 +120,7 @@ function check(name, ok, detail = '') {
       && (await text('#details-monitors-title')).startsWith('Bu node\'un monitörleri'));
     await $('#btn-node-monitor-add').click();
     await pickType('inputValidation');
-    check('2. adım: başlıkta tür, kontrol biçimi, kapsam node ve Telefon seçili', (await text('#monitor-type-name')) === 'Input Validation' && (await text('#monitor-type-hint')).includes('aksiyondan (edge) sonra')
+    check('2. adım: başlıkta tür, kontrol biçimi, kapsam node ve Telefon seçili', (await text('#monitor-type-name')) === 'Input Validation' && (await text('#monitor-type-hint')).includes('aksiyondan hemen sonra')
       && (await $('input[name="monitor-scope"][value="node"]').isChecked()) && (await $('#monitor-node').inputValue()) === telefon.id);
     check('edge seçeneği var ve açık (graph\'ta edge var)', !(await $('input[name="monitor-scope"][value="edge"]').isDisabled()) && (await $('#monitor-edge option').count()) === 2);
     const picks = await $('[data-key="selector"] .element-pick option').allTextContents();
@@ -186,7 +187,7 @@ function check(name, ok, detail = '') {
     const cxttap = async (id) => { await panel.evaluate((i) => { const t = i ? cy.getElementById(i) : cy; t.emit('cxttap', [{ originalEvent: { clientX: 200, clientY: 200 } }]); }, id); await sleep(150); };
     const menuTexts = () => panel.$$eval('#monitor-context-menu button', (bs) => bs.map((b) => b.textContent));
     await cxttap(eTelefonEdge.id);
-    check('edge\'e sağ tık: menü açık, "aksiyonuna monitör ekle"', !(await $('#monitor-context-menu').isHidden()) && (await menuTexts())[0] === `"${eTelefonEdge.name}" aksiyonuna monitör ekle` && (await menuTexts())[1].startsWith('Monitörlerini göster (0)'), (await menuTexts()).join(' | '));
+    check('edge\'e sağ tık: menü açık, "edge\'ine monitör ekle"', !(await $('#monitor-context-menu').isHidden()) && (await menuTexts())[0] === `"${eTelefonEdge.name}" edge'ine monitör ekle` && (await menuTexts())[1].startsWith('Monitörlerini göster (0)'), (await menuTexts()).join(' | '));
     await shot('sag-tik-edge', '#graph');
     await $('#monitor-context-menu button').first().click();
     await sleep(200);
@@ -195,18 +196,29 @@ function check(name, ok, detail = '') {
       && (await $('#monitor-context-menu').isHidden()) && (await $('#monitor-edge option').allTextContents()).includes(`${eTelefonEdge.name} (v_Telefon → v_Sepet)`), (await $('#monitor-edge option').allTextContents()).join(' | '));
     const edgePicks = await $('[data-key="selector"] .element-pick option').allTextContents();
     check('edge kapsamında element listesi: çıkış ve varış ekranları', edgePicks.includes('input:phone') && !edgePicks.includes('input:user-name'), edgePicks.join(' | '));
-    await $('[data-key="selector"] > label input').fill('input:phone');
+    // İkinci katman: edge'in aksiyon listesi
+    const actionOptions = await $('#monitor-action option').allTextContents();
+    check('edge seçilince aksiyon listesi: "tamamı" + edge\'in 2 aksiyonu (yaz, tıkla)', !(await $('#monitor-action-row').isHidden()) && actionOptions.length === 3 && actionOptions[0].startsWith("Edge'in tamamı") && actionOptions[1] === '1. Yaz Fill Telefon (input:phone)' && actionOptions[2].startsWith('2. Tıkla'), actionOptions.join(' | '));
+    check('özet (tamamı): "her aksiyonundan sonra"', (await summary()).includes(`${eTelefonEdge.name} edge'inin her aksiyonundan sonra`), await summary());
+    await $('#monitor-action').selectOption('0');
+    check('aksiyon seçilince alan aksiyonun hedefiyle doldu, ipucu aksiyonu söylüyor', (await $('[data-key="selector"] > label input').inputValue()) === 'input:phone' && (await text('#monitor-action-hint')).includes('hemen sonra') && (await text('#monitor-action-hint')).includes('input:phone'), await text('#monitor-action-hint'));
     await $('[data-key="pattern"] > label input').fill('^0?5');
-    check('edge özet cümlesi', (await summary()).includes(`${eTelefonEdge.name} aksiyonundan sonra`), await summary());
+    check('edge özet cümlesi: aksiyondan hemen sonra', (await summary()).includes(`${eTelefonEdge.name} edge'inin 1. Yaz Fill Telefon aksiyonundan hemen sonra`), await summary());
+    await shot('form-edge-aksiyon', '#monitor-dialog');
     await save();
     await sleep(300);
     m = await stored();
-    check('3 monitör; üçüncüsü edge kapsamlı', m.items.length === 3 && m.items[2].scope === eTelefonEdge.id, JSON.stringify(m.items[2]));
-    check('liste: kapsam "Aksiyon: e_Telefon"; edge graph\'ta haleli', (await text('#monitors-list .monitor:nth-child(3) .scope')) === `Aksiyon: ${eTelefonEdge.name}`
-      && await panel.evaluate((id) => cy.getElementById(id).hasClass('monitored') && cy.getElementById(id).style('underlay-opacity') > 0, eTelefonEdge.id));
+    check('3 monitör; üçüncüsü edge kapsamlı, 1. aksiyona bağlı (tür + hedef + etiket saklanır)', m.items.length === 3 && m.items[2].scope === eTelefonEdge.id && m.items[2].action?.index === 0 && m.items[2].action.type === 'input' && m.items[2].action.target === 'input:phone' && m.items[2].action.label === 'Fill Telefon', JSON.stringify(m.items[2]));
+    check('liste: kapsam "Edge: e_Telefon · 1. Yaz Fill Telefon"; edge graph\'ta haleli', (await text('#monitors-list .monitor:nth-child(3) .scope')) === `Edge: ${eTelefonEdge.name} · 1. Yaz Fill Telefon`
+      && await panel.evaluate((id) => cy.getElementById(id).hasClass('monitored') && cy.getElementById(id).style('underlay-opacity') > 0, eTelefonEdge.id), await text('#monitors-list .monitor:nth-child(3) .scope'));
+    await $('#monitors-list .monitor:nth-child(3) .edit').click();
+    await sleep(200);
+    check('düzenle: aksiyon listede yeniden seçili geliyor', (await $('#monitor-action').inputValue()) === '0' && (await $('[data-key="selector"] > label input').inputValue()) === 'input:phone');
+    await $('#btn-monitor-cancel').click();
+    await sleep(100);
     await tap(eTelefonEdge.id);
-    check('edge seçili: alt bölüm "Bu aksiyonun monitörleri", 1 satır, buton metni', (await text('#details-monitors-title')).startsWith('Bu aksiyonun monitörleri') && (await $('#details-monitors-list .monitor').count()) === 1
-      && (await text('#btn-node-monitor-add')) === 'Bu aksiyona monitör ekle');
+    check('edge seçili: alt bölüm "Bu edge\'in monitörleri", 1 satır, buton metni', (await text('#details-monitors-title')).startsWith('Bu edge\'in monitörleri') && (await $('#details-monitors-list .monitor').count()) === 1
+      && (await text('#btn-node-monitor-add')) === 'Bu edge\'e monitör ekle');
     await cxttap(null);
     check('boş alana sağ tık: "Tüm modele monitör ekle"', (await menuTexts())[0] === 'Tüm modele monitör ekle' && (await menuTexts())[1] === 'Tüm model monitörlerini göster (1)', (await menuTexts()).join(' | '));
     await panel.keyboard.press('Escape');

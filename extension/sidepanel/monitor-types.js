@@ -42,7 +42,7 @@ const MONITOR_GROUPS = [
 // Kontrol biçimi: ne zaman değerlendirilir? (tür kartındaki etiket)
 const MONITOR_WHEN = {
   state: { text: 'State tabanlı', hint: 'İlgili node\'a (ekrana) varıldığında kontrol edilir.' },
-  action: { text: 'Aksiyon tabanlı', hint: 'İlgili aksiyondan (edge) sonra kontrol edilir.' },
+  action: { text: 'Aksiyon tabanlı', hint: 'İlgili aksiyondan hemen sonra kontrol edilir: edge\'in seçilen aksiyonu (ör. kullanıcı adı yazılınca); aksiyon seçilmezse edge\'in her aksiyonundan sonra.' },
   event: { text: 'Olay tabanlı', hint: 'Hata ya da yanıt olayı gerçekleştiğinde kontrol edilir.' },
   temporal: { text: 'Zamansal', hint: 'Koşul gerçekleşene ya da süre dolana kadar beklenir.' },
 };
@@ -156,8 +156,11 @@ function monitorAutoName(type, params) {
 function monitorSentence(type, params, scope, enabled) {
   const v = (value, fallback = '…') => ({ b: value === '' || value === null || value === undefined ? fallback : String(value) });
   const rx = (value) => v(value === '' || value == null ? '' : `/${value}/`);
+  // scope: { kind: 'global' } | { kind: 'node', name } | { kind: 'edge', name, action?: '1. Yaz Fill Username' }
   const head = scope.kind === 'node' ? ['Testte ', v(scope.name), ' node\'una her varıldığında: ']
-    : scope.kind === 'edge' ? ['Testte ', v(scope.name), ' aksiyonundan sonra: ']
+    : scope.kind === 'edge' ? (scope.action
+      ? ['Testte ', v(scope.name), ' edge\'inin ', v(scope.action), ' aksiyonundan hemen sonra: ']
+      : ['Testte ', v(scope.name), ' edge\'inin her aksiyonundan sonra: '])
       : ['Testte her adımdan sonra, her node\'da: '];
   const body = (() => {
     switch (type.id) {

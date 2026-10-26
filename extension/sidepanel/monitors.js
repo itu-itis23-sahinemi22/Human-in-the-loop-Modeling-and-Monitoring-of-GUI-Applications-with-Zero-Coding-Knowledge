@@ -7,8 +7,12 @@
 //   - "Tüm model": kural her node'da kontrol edilir (ör. 4 pt'den küçük yazı yok).
 //   - Tek node  : kural yalnızca o node'a varılınca kontrol edilir (ör. "Telefon" ekranında
 //                 telefon alanı 5 ile başlamalı).
-//   - Tek edge  : kural yalnızca o aksiyondan sonra kontrol edilir (aksiyon tabanlı
-//                 monitörler: girilen değer, adım süresi, tıklama aralığı).
+//   - Tek edge  : kural o edge oynatılırken kontrol edilir. Edge birden fazla aksiyondan oluşur
+//                 (kullanıcı adı yaz, şifre yaz, Login'e tıkla); monitör edge'in SEÇİLEN
+//                 aksiyonuna bağlanabilir (m.action: o aksiyondan hemen sonra kontrol; ör. kullanıcı
+//                 adı deseni 1. aksiyona, şifre deseni 2. aksiyona) ya da edge'in tamamına
+//                 (action = null: her aksiyondan sonra). Form iki katmanlıdır: önce edge, sonra
+//                 edge'deki aksiyon.
 // Türler ve parametreleri monitor-types.js'tedir; tür kartları ve form oradaki tanımdan
 // üretilir. Kontrolün kendisi monitor-probe.js (sayfada) + monitor-run.js'tedir (panelde oynatma
 // ve "şimdi kontrol et"); runner tarafı sonraki adım.
@@ -78,6 +82,7 @@ function normalizeMonitors(raw) {
       severity: severities.has(m.severity) ? m.severity : 'error',
       enabled: m.enabled !== false,
       name: typeof m.name === 'string' && m.name.trim() ? m.name.trim() : null,
+      action: normalizeActionRef(m.action),
       createdAt: m.createdAt ?? null,
     })),
   };
@@ -241,11 +246,58 @@ function edgeLabel(edge) {
   return `${edge.name} (${nodeById(edge.source)?.name ?? edge.source} → ${nodeById(edge.target)?.name ?? edge.target})`;
 }
 
+// EDGE'DEKİ AKSİYON (m.action): edge'in bir aksiyonuna bağlı monitör. Aksiyon, kayıttaki
+// sırasıyla (index) değil, yeniden bulunabilecek bilgiyle saklanır: tür + hedef anahtarı
+// ("input:user-name") + etiket ("Fill Username"); Emir aksiyon silince sıra kayar, eşleştirme
+// resolveMonitorAction ile yapılır (önce sıra + etiket, sonra tür + hedef, en son etiket).
+function monitorActionRef(action, index) {
+  if (!action) return null;
+  return { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: action.target?.key ?? action.selector ?? null };
+}
+
+function normalizeActionRef(raw) {
+  if (!raw || typeof raw !== 'object' || !Number.isInteger(raw.index) || raw.index < 0) return null;
+  return { index: raw.index, type: String(raw.type ?? ''), label: String(raw.label ?? ''), target: raw.target == null ? null : String(raw.target) };
+}
+
+// Edge'in aksiyonları içinde monitörün aksiyonu: index ya da -1 (aksiyon artık yok)
+function resolveMonitorAction(ref, actions) {
+  if (!ref || !Array.isArray(actions)) return -1;
+  const sameTarget = (a) => a && a.type === ref.type && (a.target?.key ?? a.selector ?? null) === ref.target;
+  const at = actions[ref.index];
+  if (at && at.type === ref.type && at.label === ref.label) return ref.index;
+  let i = actions.findIndex((a) => sameTarget(a) && a.label === ref.label);
+  if (i < 0) i = actions.findIndex(sameTarget);
+  if (i < 0) i = actions.findIndex((a) => a && a.type === ref.type && a.label === ref.label);
+  return i;
+}
+
+// "1. Yaz Fill Username" (Emir'in edge kartındaki satırla aynı: ACTION_TEXT panel.js'te)
+function actionText(action, index) {
+  const verb = (typeof ACTION_TEXT !== 'undefined' && ACTION_TEXT[action?.type]) || action?.type || '';
+  return `${index + 1}. ${verb} ${action?.label ?? ''}`.trim();
+}
+
+// Monitörün aksiyon metni; aksiyon edge'de bulunamıyorsa kayıttaki bilgiyle ve uyarıyla
+function monitorActionText(m) {
+  if (!m.action) return '';
+  const edge = edgeById(m.scope);
+  const i = edge ? resolveMonitorAction(m.action, edge.actions) : -1;
+  if (i >= 0) return actionText(edge.actions[i], i);
+  return `aksiyon bulunamadı (${m.action.index + 1}. ${m.action.label})`;
+}
+
+function isActionMissing(m) {
+  if (!m.action) return false;
+  const edge = edgeById(m.scope);
+  return !edge || resolveMonitorAction(m.action, edge.actions) < 0;
+}
+
 function scopeText(m) {
   switch (scopeKind(m.scope)) {
     case 'global': return 'Tüm model';
     case 'node': return `Node: ${nodeById(m.scope).name}`;
-    case 'edge': return `Aksiyon: ${edgeById(m.scope).name}`;
+    case 'edge': return `Edge: ${edgeById(m.scope).name}` + (m.action ? ` · ${monitorActionText(m)}` : '');
     default: return `Sahipsiz: öğe (${m.scope}) artık yok`;
   }
 }
@@ -277,7 +329,7 @@ function iconElement(group, small = false) {
 
 const MONITORS_SECTION_HTML = `
   <summary>Monitörler <span id="monitors-badge" class="badge"></span></summary>
-  <p class="hint">Monitör: test her adımdan sonra kontrol edilen bir kural. Koşu oynatılırken her monitör yeşil (kural bozulmadı) ya da kırmızı (bozuldu: adım numarası ve ekran görüntüsüyle) yanar. "Tüm model" monitörleri her node'da, node monitörleri o node'a varılınca, aksiyon monitörleri o edge oynatılınca kontrol edilir. Graph'ta bir node'a ya da edge'e sağ tıklayıp "Monitör ekle" diyebilirsiniz.</p>
+  <p class="hint">Monitör: test her adımdan sonra kontrol edilen bir kural. Koşu oynatılırken her monitör yeşil (kural bozulmadı) ya da kırmızı (bozuldu: adım numarası ve ekran görüntüsüyle) yanar. "Tüm model" monitörleri her node'da, node monitörleri o node'a varılınca, edge monitörleri o edge oynatılınca (istenirse edge'in seçilen aksiyonundan hemen sonra) kontrol edilir. Graph'ta bir node'a ya da edge'e sağ tıklayıp "Monitör ekle" diyebilirsiniz.</p>
   <div id="monitors-filter" class="segmented" role="group" aria-label="Kapsam">
     <button data-filter="all">Tümü</button>
     <button data-filter="global">Tüm model</button>
@@ -330,7 +382,9 @@ const MONITOR_DIALOG_HTML = `
         <legend>Kapsam</legend>
         <label class="option"><input type="radio" name="monitor-scope" value="global"> <span>Tüm model: her node'da kontrol edilir</span></label>
         <label class="option"><input type="radio" name="monitor-scope" value="node"> <span>Yalnızca bu node:</span> <select id="monitor-node" aria-label="Node"></select></label>
-        <label class="option"><input type="radio" name="monitor-scope" value="edge"> <span>Yalnızca bu aksiyon:</span> <select id="monitor-edge" aria-label="Edge"></select></label>
+        <label class="option"><input type="radio" name="monitor-scope" value="edge"> <span>Yalnızca bu edge:</span> <select id="monitor-edge" aria-label="Edge"></select></label>
+        <label class="option action-row" id="monitor-action-row"><span>Edge'deki aksiyon:</span> <select id="monitor-action" aria-label="Edge'deki aksiyon"></select></label>
+        <p class="hint action-hint" id="monitor-action-hint"></p>
         <p id="monitor-scope-hint" class="hint" hidden></p>
       </fieldset>
       <fieldset id="monitor-params-set">
@@ -485,7 +539,7 @@ function renderMonitorsNow() {
     if (button.dataset.filter === 'selected') {
       button.disabled = !selected;
       button.title = selected ? '' : 'Önce graph\'ta bir node ya da edge seçin';
-      button.textContent = selected ? `Seçili ${selected.kind === 'node' ? 'node' : 'aksiyon'} (${selected.item.name})` : 'Seçili öğe';
+      button.textContent = selected ? `Seçili ${selected.kind === 'node' ? 'node' : 'edge'} (${selected.item.name})` : 'Seçili öğe';
     }
   }
   const shown = items.filter((m) => monitorFilter === 'all' || (monitorFilter === 'global' ? m.scope === 'global' : m.scope === selected?.item.id));
@@ -515,13 +569,13 @@ function renderDetailsMonitors(selected) {
   const readOnly = Boolean(scenarioView);
   const own = monitors.items.filter((m) => m.scope === item.id);
   const global = monitors.items.filter((m) => m.scope === 'global' && m.enabled).length;
-  $('details-monitors-title').firstChild.textContent = kind === 'node' ? 'Bu node\'un monitörleri ' : 'Bu aksiyonun monitörleri ';
+  $('details-monitors-title').firstChild.textContent = kind === 'node' ? 'Bu node\'un monitörleri ' : 'Bu edge\'in monitörleri ';
   $('details-monitors-badge').textContent = own.length || '';
   $('details-monitors-list').replaceChildren(...own.map((m) => monitorItem(m)));
-  $('details-monitors-hint').textContent = (own.length ? '' : `Bu ${kind === 'node' ? 'node' : 'aksiyon'}a özel monitör yok. `)
+  $('details-monitors-hint').textContent = (own.length ? '' : `Bu ${kind === 'node' ? 'node' : 'edge'}'e özel monitör yok. `)
     + (global && kind === 'node' ? `Tüm model için tanımlı ${global} etkin monitör bu node'da da kontrol edilir. ` : '')
     + (readOnly ? 'Monitörler ana graph görünümünde eklenir ve düzenlenir.' : '');
-  $('btn-node-monitor-add').textContent = kind === 'node' ? 'Bu node\'a monitör ekle' : 'Bu aksiyona monitör ekle';
+  $('btn-node-monitor-add').textContent = kind === 'node' ? 'Bu node\'a monitör ekle' : 'Bu edge\'e monitör ekle';
   $('btn-node-monitor-add').hidden = readOnly;
   for (const button of $('details-monitors-list').querySelectorAll('button, input')) button.disabled = readOnly;
 }
@@ -547,7 +601,7 @@ function monitorItem(m) {
   if (type) li.querySelector('b').append(iconElement(monitorGroup(type), true));
   li.querySelector('b').append(monitorName(m));
   li.querySelector('.scope').textContent = scopeText(m);
-  li.querySelector('.scope').classList.toggle('orphan', orphan);
+  li.querySelector('.scope').classList.toggle('orphan', orphan || isActionMissing(m));
   li.querySelector('.params').textContent = paramsText(m);
   const verdict = monitorVerdicts.get(m.id);
   if (verdict) {
@@ -648,7 +702,7 @@ function openContextMenu(event) {
   const name = target?.data('label') ?? '';
   const items = [
     ...(readOnly || !exists ? [] : [{
-      text: kind === 'node' ? `"${name}" node'una monitör ekle` : kind === 'edge' ? `"${name}" aksiyonuna monitör ekle` : 'Tüm modele monitör ekle',
+      text: kind === 'node' ? `"${name}" node'una monitör ekle` : kind === 'edge' ? `"${name}" edge'ine monitör ekle` : 'Tüm modele monitör ekle',
       primary: true,
       onclick: () => { if (target) selectInGraph(id); openMonitorDialog({ scope: id ?? 'global' }); },
     }]),
@@ -802,6 +856,7 @@ function showParamsStep(typeId, existing = null) {
   $('monitor-enabled').checked = existing?.enabled ?? true;
   $('monitor-name').value = existing?.name ?? '';
   renderScopeState();
+  renderActionPicks(existing?.action ?? null);
   renderElementPicks();
   renderSummary();
   showDialogError(null);
@@ -832,12 +887,14 @@ function renderScopeState() {
   }
   $('monitor-node').disabled = scopeRadio() !== 'node' || radios.node.disabled;
   $('monitor-edge').disabled = scopeRadio() !== 'edge' || radios.edge.disabled;
-  const names = { global: 'tüm model', node: 'tek node', edge: 'tek aksiyon' };
+  $('monitor-action-row').hidden = scopeRadio() !== 'edge' || radios.edge.disabled;
+  $('monitor-action-hint').hidden = $('monitor-action-row').hidden;
+  const names = { global: 'tüm model', node: 'tek node', edge: 'tek edge' };
   const allowedNames = Object.keys(allowed).filter((k) => allowed[k]).map((k) => names[k]);
   const hint = [
     allowedNames.length < 3 ? `Bu tür yalnızca ${allowedNames.join(' ya da ')} için tanımlanır.` : '',
-    !state.nodes.length ? 'Graph\'ta henüz node yok; node ya da aksiyon monitörü için önce kayıt yapın.' : '',
-    editingOrphan ? 'Bu monitörün öğesi artık yok (sahipsiz): listeden yeni bir node ya da aksiyon seçin ya da tüm modele alın.' : '',
+    !state.nodes.length ? 'Graph\'ta henüz node yok; node ya da edge monitörü için önce kayıt yapın.' : '',
+    editingOrphan ? 'Bu monitörün öğesi artık yok (sahipsiz): listeden yeni bir node ya da edge seçin ya da tüm modele alın.' : '',
   ].filter(Boolean).join(' ');
   $('monitor-scope-hint').textContent = hint;
   $('monitor-scope-hint').hidden = !hint;
@@ -946,7 +1003,55 @@ function updateTester(wrap) {
   }
 }
 
-// Kapsamdaki ekranlar: node ise o node; aksiyon ise edge'in çıktığı ve vardığı node'lar; tüm
+// İKİNCİ KATMAN: seçili edge'in aksiyon listesi. "" = edge'in tamamı (her aksiyondan sonra);
+// değer = aksiyonun sırası. Düzenlemede kayıtlı aksiyon edge'de yeniden bulunur (resolveMonitorAction).
+function renderActionPicks(ref = undefined) {
+  const select = $('monitor-action');
+  const previous = select.value;
+  const edge = edgeById($('monitor-edge').value);
+  const actions = edge?.actions ?? [];
+  select.replaceChildren(new Option(actions.length ? 'Edge\'in tamamı (her aksiyondan sonra)' : 'Edge\'de aksiyon yok', ''));
+  select.append(...actions.map((a, i) => new Option(actionText(a, i) + (a.target?.key ? ` (${a.target.key})` : ''), String(i))));
+  if (ref !== undefined) {
+    const i = ref ? resolveMonitorAction(ref, actions) : -1;
+    select.value = i >= 0 ? String(i) : '';
+    if (ref && i < 0) showDialogError(`Monitörün aksiyonu (${ref.index + 1}. ${ref.label}) bu edge'de artık yok; listeden yeniden seçin.`);
+  } else {
+    select.value = [...select.options].some((o) => o.value === previous) ? previous : '';
+  }
+  renderActionHint();
+}
+
+function renderActionHint() {
+  const edge = edgeById($('monitor-edge').value);
+  const i = $('monitor-action').value === '' ? -1 : Number($('monitor-action').value);
+  const action = edge?.actions?.[i];
+  $('monitor-action-hint').textContent = !edge?.actions?.length ? ''
+    : i < 0 ? `Bu edge'de ${edge.actions.length} aksiyon var. Belirli bir aksiyondan hemen sonra kontrol için (ör. kullanıcı adı yazılınca) listeden seçin; seçilmezse her aksiyondan sonra kontrol edilir.`
+      : `Yalnızca bu aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan).${action.type === 'input' && action.target?.key ? ` Alan: ${action.target.key}` : ''}`;
+}
+
+// Aksiyon seçilince: Input Validation gibi alan isteyen türde alan, aksiyonun hedefiyle dolar
+// (kullanıcı kendi yazdıysa dokunulmaz; data-auto ile ayırt edilir).
+function fillSelectorFromAction() {
+  const edge = edgeById($('monitor-edge').value);
+  const i = $('monitor-action').value === '' ? -1 : Number($('monitor-action').value);
+  const action = edge?.actions?.[i];
+  const key = action?.type === 'input' ? action.target?.key ?? action.selector ?? '' : '';
+  for (const wrap of $('monitor-params').querySelectorAll('.monitor-param')) {
+    const param = monitorType(dialogTypeId)?.params.find((p) => p.key === wrap.dataset.key);
+    if (!param?.element) continue;
+    const input = wrap.querySelector('label input');
+    if (!input) continue;
+    if (input.value.trim() && input.value !== input.dataset.auto) continue; // kullanıcının kendi değeri
+    if (!key) continue;
+    input.value = key;
+    input.dataset.auto = key;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+// Kapsamdaki ekranlar: node ise o node; edge ise edge'in çıktığı ve vardığı node'lar; tüm
 // model ise bütün node'lar.
 function scopeNodes() {
   if (scopeRadio() === 'node') return [nodeById($('monitor-node').value)].filter(Boolean);
@@ -993,9 +1098,12 @@ function draftMonitor() {
         : field.value.trim();
   }
   const radio = scopeRadio();
+  const edge = radio === 'edge' ? edgeById($('monitor-edge').value) : null;
+  const actionIndex = edge && $('monitor-action').value !== '' ? Number($('monitor-action').value) : -1;
   return {
     type: type.id,
     scope: radio === 'node' ? $('monitor-node').value : radio === 'edge' ? $('monitor-edge').value : 'global',
+    action: actionIndex >= 0 ? monitorActionRef(edge.actions?.[actionIndex], actionIndex) : null,
     params,
     severity: 'error', // arayüzde önem seçilmez: her bozulma kırmızı (monitor-types.js > MONITOR_SEVERITIES)
     enabled: $('monitor-enabled').checked,
@@ -1009,9 +1117,10 @@ function renderSummary() {
   const draft = draftMonitor();
   const type = monitorType(draft.type);
   const kind = scopeRadio();
+  const edge = kind === 'edge' ? edgeById(draft.scope) : null;
   const scope = kind === 'global' ? { kind: 'global' }
     : kind === 'node' ? { kind: 'node', name: nodeById(draft.scope)?.name ?? '…' }
-      : { kind: 'edge', name: edgeById(draft.scope)?.name ?? '…' };
+      : { kind: 'edge', name: edge?.name ?? '…', action: draft.action ? actionText(edge.actions[draft.action.index], draft.action.index) : null };
   $('monitor-summary').replaceChildren(...monitorSentence(type, draft.params, scope, draft.enabled).map((part) => {
     if (typeof part === 'string') return part;
     const b = document.createElement('b');
@@ -1033,8 +1142,9 @@ function validateDraft(draft) {
   }
   if (problems) return 'Parametrelerde sorun var; işaretli alanları düzeltin.';
   const kind = scopeKind(draft.scope);
-  if (kind === 'orphan') return scopeRadio() === 'edge' ? 'Bir aksiyon (edge) seçin.' : 'Bir node seçin (graph\'ta node yoksa "Tüm model" seçin).';
-  if (!monitorScopes(type)[kind]) return `Bu tür ${{ global: 'tüm model', node: 'tek node', edge: 'tek aksiyon' }[kind]} için tanımlanamaz.`;
+  if (kind === 'orphan') return scopeRadio() === 'edge' ? 'Bir edge seçin.' : 'Bir node seçin (graph\'ta node yoksa "Tüm model" seçin).';
+  if (!monitorScopes(type)[kind]) return `Bu tür ${{ global: 'tüm model', node: 'tek node', edge: 'tek edge' }[kind]} için tanımlanamaz.`;
+  if (kind === 'edge' && $('monitor-action').value !== '' && !draft.action) return 'Seçilen aksiyon bu edge\'de yok; listeden yeniden seçin.';
   return null;
 }
 
@@ -1084,7 +1194,12 @@ $('monitor-step-params').addEventListener('input', renderSummary);
 $('monitor-step-params').addEventListener('change', (event) => {
   if (event.target.name === 'monitor-scope' || event.target.id === 'monitor-node' || event.target.id === 'monitor-edge') {
     renderScopeState();
+    if (event.target.id === 'monitor-edge') renderActionPicks();
     renderElementPicks();
+  }
+  if (event.target.id === 'monitor-action') {
+    renderActionHint();
+    fillSelectorFromAction();
   }
   renderSummary();
 });
@@ -1180,7 +1295,7 @@ function disarmClear() {
 // "GraphWalker JSON" butonu onu adıyla çağırdığı için sarmalanan sürümü kullanır.
 
 function exportMonitor(m) {
-  return { id: m.id, type: m.type, name: monitorName(m), scope: m.scope, params: m.params, severity: m.severity, enabled: m.enabled };
+  return { id: m.id, type: m.type, name: monitorName(m), scope: m.scope, ...(m.action ? { action: m.action } : {}), params: m.params, severity: m.severity, enabled: m.enabled };
 }
 
 function withMonitors(data) {
@@ -1211,7 +1326,7 @@ function importMonitorItems(list) {
     const name = typeof raw.name === 'string' && raw.name.trim() && raw.name.trim() !== monitorAutoName(type, params) ? raw.name.trim() : null;
     added.push({
       id: 'm' + monitors.nextId++, type: type.id, scope: raw.scope === 'global' ? 'global' : String(raw.scope ?? 'global'),
-      params, severity: severities.has(raw.severity) ? raw.severity : 'error', enabled: raw.enabled !== false, name, createdAt: new Date().toISOString(),
+      action: normalizeActionRef(raw.action), params, severity: severities.has(raw.severity) ? raw.severity : 'error', enabled: raw.enabled !== false, name, createdAt: new Date().toISOString(),
     });
   }
   monitors.items.push(...added);

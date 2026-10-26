@@ -130,6 +130,9 @@ dialog.monitor-dialog { width: min(96vw, 560px); }
 .monitor-dialog .option select { flex: 1; min-width: 0; } /* uzun edge adı etiketi satırlara bölmesin, liste kısalsın */
 .monitor-dialog .option input[type="radio"] { margin: 0; }
 #monitor-scope-set .option > span { white-space: nowrap; }
+#monitor-scope-set .action-row { margin-left: 22px; } /* ikinci katman: edge'in altında, edge'deki aksiyon */
+#monitor-scope-set .action-row[hidden], #monitor-scope-set .action-hint[hidden] { display: none; }
+#monitor-scope-set .action-hint { margin: 0 0 4px 22px; }
 .monitor-param { margin: 8px 0; }
 .monitor-param .field, .monitor-param .option { margin: 0; }
 .monitor-param .field > span, .monitor-param .option > span { flex: none; max-width: 45%; }

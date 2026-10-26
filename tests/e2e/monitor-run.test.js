@@ -100,12 +100,19 @@ function check(name, ok, detail = '') {
       { id: 'm3', type: 'inputValidation', scope: eDevam.id, params: { selector: 'input:phone', pattern: '^0?5', mode: 'match', whenEmpty: 'skip' }, severity: 'error', enabled: true, name: 'Telefon 5 ile başlamalı' },
       { id: 'm4', type: 'errorText', scope: telefon.id, params: { pattern: 'hata oluştu' }, severity: 'warning', enabled: true, name: 'Telefon ekranında hata yok' }, // eski kayıt biçimi: 'warning' da kabul edilir
       { id: 'm5', type: 'fontSize', scope: 'global', params: { min: 12, unit: 'pt' }, severity: 'error', enabled: false, name: 'kapalı monitör' },
+      // Edge'in belirli aksiyonuna bağlı monitörler (iki katman: edge → aksiyon)
+      { id: 'm6', type: 'inputValidation', scope: eDevam.id, action: { index: 0, type: 'input', label: 'Fill Telefon', target: 'input:phone' }, params: { selector: 'input:phone', pattern: '^0?5', mode: 'match', whenEmpty: 'skip' }, severity: 'error', enabled: true, name: 'Yazınca telefon 5 ile' },
+      { id: 'm7', type: 'errorText', scope: eDevam.id, action: { index: 9, type: 'click', label: 'Devam', target: 'button:next' }, params: { pattern: '500' }, severity: 'error', enabled: true, name: 'Devam tıklanınca hata yok' }, // sıra yanlış (9): tür + hedefle bulunur
+      { id: 'm8', type: 'errorText', scope: eDevam.id, action: { index: 5, type: 'click', label: 'Yok', target: 'button:yok' }, params: { pattern: '500' }, severity: 'error', enabled: true, name: 'aksiyonu silinmiş monitör' },
     ];
     const graphId = await activeId();
     await panel.evaluate(([key, items]) => chrome.storage.local.set({ [key]: { format: 'graph-recorder-monitors/v1', nextId: 100, items } }), ['monitors:' + graphId, M]);
     await sleep(400);
     await panel.evaluate(() => { document.getElementById('monitors').open = true; });
-    check('5 monitör yüklendi (1 kapalı)', (await text('#monitors-badge')) === '5' && (await $('#monitors-list .monitor.disabled').count()) === 1);
+    check('8 monitör yüklendi (1 kapalı); aksiyona bağlı olanların kapsamı aksiyonu söylüyor, silinmiş aksiyon işaretli', (await text('#monitors-badge')) === '8' && (await $('#monitors-list .monitor.disabled').count()) === 1
+      && (await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent))).some((t) => t === `Edge: ${eDevam.name} · 1. Yaz Fill Telefon`)
+      && (await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent))).some((t) => t === `Edge: ${eDevam.name} · 2. Tıkla Devam`)
+      && (await panel.$$eval('#monitors-list .monitor .scope.orphan', (els) => els.map((e) => e.textContent))).some((t) => t.includes('aksiyon bulunamadı (6. Yok)')), (await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent))).join(' | '));
 
     // ---- Senaryo: iki edge tek koşu ----
     await panel.evaluate(async (ids) => {
@@ -126,7 +133,7 @@ function check(name, ok, detail = '') {
     if (await panel.evaluate(() => !document.getElementById('replay-check').hidden)) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
     await sleep(900);
     const during = await panel.evaluate(() => ({ hidden: document.getElementById('monitor-run').hidden, rows: document.querySelectorAll('#monitor-run-list .led-row').length, summary: document.getElementById('monitor-run-summary').textContent, running: document.getElementById('monitor-run-summary').classList.contains('running') }));
-    check('oynatma sürerken ışık listesi açık: 4 etkin monitör, "kontrol ediliyor"', !during.hidden && during.rows === 4 && during.summary.includes('kontrol ediliyor') && during.running, during.summary);
+    check('oynatma sürerken ışık listesi açık: 7 etkin monitör, "kontrol ediliyor"', !during.hidden && during.rows === 7 && during.summary.includes('kontrol ediliyor') && during.running, during.summary);
     await shot('oynatma-sirasinda', '#replay');
     await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 90000 });
     await sleep(300);
@@ -144,14 +151,17 @@ function check(name, ok, detail = '') {
       shot: Boolean(li.querySelector('img.shot')),
     })));
     const row = (name) => rows.find((r) => r.name.includes(name));
-    check('liste 4 satır (kapalı monitör yok), özet yalnızca kırmızı / yeşil sayar', rows.length === 4 && !rows.some((r) => r.name.includes('kapalı')) && (await text('#monitor-run-summary')) === '4 monitör · 3 kırmızı · 1 yeşil' && rows.every((r) => r.status === 'ok' || r.status === 'fail'), await text('#monitor-run-summary'));
+    check('liste 7 satır (kapalı monitör yok), özet yalnızca kırmızı / yeşil sayar', rows.length === 7 && !rows.some((r) => r.name.includes('kapalı')) && (await text('#monitor-run-summary')) === '7 monitör · 5 kırmızı · 2 yeşil' && rows.every((r) => r.status === 'ok' || r.status === 'fail'), await text('#monitor-run-summary'));
     check('Font Size: kırmızı; adım izi [kırmızı, yeşil]; ayrıntı 3 pt metin; ekran görüntüsü', row('Font Size').status === 'fail' && row('Font Size').trail.join(',') === 'fail,ok' && row('Font Size').detail.includes('Adım 1') && row('Font Size').detail.includes('3 pt') && row('Font Size').shot, row('Font Size').detail);
     check('Error Text (tüm model): adım 2\'de kırmızı (500 metni)', row('Error Text · /').status === 'fail' && row('Error Text · /').trail.join(',') === 'ok,fail' && row('Error Text · /').detail.includes('Adım 2') && row('Error Text · /').detail.includes('500'), row('Error Text · /').detail);
-    check('Input Validation (aksiyon): yalnızca Devam adımında, kırmızı, yazılan değer', row('Telefon 5 ile').status === 'fail' && row('Telefon 5 ile').trail.join(',') === 'fail' && row('Telefon 5 ile').scope === `Aksiyon: ${eDevam.name}` && row('Telefon 5 ile').detail.includes('03121234567'), row('Telefon 5 ile').detail);
+    check('Input Validation (edge\'in tamamı): yalnızca Devam adımında, kırmızı, yazılan değer', row('Telefon 5 ile').status === 'fail' && row('Telefon 5 ile').trail.join(',') === 'fail' && row('Telefon 5 ile').scope === `Edge: ${eDevam.name}` && row('Telefon 5 ile').detail.includes('03121234567'), row('Telefon 5 ile').detail);
+    check('aksiyona bağlı Input Validation (1. aksiyon): kırmızı, kapsamda aksiyon, ayrıntıda aksiyon 1/N', row('Yazınca telefon').status === 'fail' && row('Yazınca telefon').scope === `Edge: ${eDevam.name} · 1. Yaz Fill Telefon` && /aksiyon 1\/\d+: Fill Telefon/.test(row('Yazınca telefon').detail) && row('Yazınca telefon').shot, row('Yazınca telefon').detail);
+    check('aksiyona bağlı Error Text (Devam tıklanınca; sıra yanlış kaydedilmiş, hedefle bulundu): kırmızı, 500 metni, aksiyon 2/N', row('Devam tıklanınca').status === 'fail' && row('Devam tıklanınca').scope === `Edge: ${eDevam.name} · 2. Tıkla Devam` && /aksiyon 2\/\d+: Devam/.test(row('Devam tıklanınca').detail) && row('Devam tıklanınca').detail.includes('500'), row('Devam tıklanınca').detail);
+    check('aksiyonu silinmiş monitör: yeşil (kırmızı değil), "aksiyon edge\'de bulunamadı"', row('aksiyonu silinmiş').status === 'ok' && row('aksiyonu silinmiş').detail.includes("aksiyon edge'de bulunamadı") && row('aksiyonu silinmiş').scope.includes('aksiyon bulunamadı'), row('aksiyonu silinmiş').detail);
     check('Error Text (node Telefon, eski kayıtta "warning"): tek adım, yeşil', row('Telefon ekranında').status === 'ok' && row('Telefon ekranında').trail.join(',') === 'ok' && row('Telefon ekranında').scope === 'Node: v_Telefon' && row('Telefon ekranında').detail.includes('bozulma yok'), row('Telefon ekranında').detail);
     check('adım izi başlıkları adım ve edge adını söylüyor', row('Font Size').titles[0].startsWith(`Adım 1 (${eLogin.name} → v_Telefon)`) && row('Font Size').titles[1].startsWith(`Adım 2 (${eDevam.name} → v_Sepet)`), row('Font Size').titles.join(' | '));
     const shots = await panel.$$eval('#monitor-run-list img.shot', (imgs) => imgs.map((i) => i.src.slice(0, 22)));
-    check('bozulan monitörlerin ekran görüntüsü var (jpeg data URL)', shots.length === 3 && shots.every((x) => x.startsWith('data:image/jpeg')), shots.join(','));
+    check('bozulan monitörlerin ekran görüntüsü var (jpeg data URL)', shots.length === 5 && shots.every((x) => x.startsWith('data:image/jpeg')), shots.join(','));
     await panel.click('#monitor-run-list img.shot');
     await sleep(200);
     check('küçük resme tıklayınca büyük görüntü penceresi', await panel.evaluate(() => document.getElementById('monitor-shot-dialog').open && document.getElementById('monitor-shot-image').naturalWidth > 100 && document.getElementById('monitor-shot-text').textContent.includes('Adım 1')));
@@ -163,7 +173,8 @@ function check(name, ok, detail = '') {
     // sayfasındayken alınmalı (adımın sonunda ekran Sepet olurdu). Error Text ise varılan Sepet ekranında.
     const alarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
     const alarmOf = (id) => alarms?.items.find((a) => a.monitorId === id);
-    check('uyarılar storage\'da (monitor-alarms:<graph>): 3 uyarı, her biri görüntülü', alarms?.format === 'graph-recorder-monitor-alarms/v1' && alarms.items.length === 3 && alarms.items.every((a) => a.screenshot?.startsWith('data:image/jpeg') && a.source === 'replay'), JSON.stringify(alarms?.items.map((a) => [a.monitorId, a.where, a.url])));
+    check('uyarılar storage\'da (monitor-alarms:<graph>): 5 uyarı, her biri görüntülü', alarms?.format === 'graph-recorder-monitor-alarms/v1' && alarms.items.length === 5 && alarms.items.every((a) => a.screenshot?.startsWith('data:image/jpeg') && a.source === 'replay'), JSON.stringify(alarms?.items.map((a) => [a.monitorId, a.where, a.url])));
+    check('aksiyona bağlı uyarılar doğru anda: yazınca Telefon sayfasında, Devam tıklanınca Sepet sayfasında', alarmOf('m6')?.url === base + '/telefon' && alarmOf('m6').where.includes('aksiyon 1/') && alarmOf('m7')?.url === base + '/sepet' && alarmOf('m7').where.includes('aksiyon 2/') && !alarmOf('m8'), JSON.stringify([alarmOf('m6')?.where, alarmOf('m7')?.where]));
     check('Input Validation uyarısı: Telefon sayfasında, "Devam" tıklanmadan (aksiyon bilgisiyle)', alarmOf('m3')?.url === base + '/telefon' && alarmOf('m3').where.startsWith('Adım 2') && /aksiyon \d+\/\d+: /.test(alarmOf('m3').where) && alarmOf('m3').text.includes('03121234567'), JSON.stringify([alarmOf('m3')?.where, alarmOf('m3')?.url]));
     check('Font Size uyarısı Telefon ekranında (adım 1), Error Text uyarısı Sepet ekranında (adım 2)', alarmOf('m1')?.url === base + '/telefon' && alarmOf('m1').where.startsWith('Adım 1') && alarmOf('m2')?.url === base + '/sepet' && alarmOf('m2').where.startsWith('Adım 2') && alarmOf('m1').action === null, JSON.stringify([alarmOf('m1')?.url, alarmOf('m2')?.url]));
     const ivShot = await panel.evaluate(() => { const li = [...document.querySelectorAll('#monitor-run-list .led-row')].find((x) => x.textContent.includes('Telefon 5 ile')); li.querySelector('img.shot').click(); const t = document.getElementById('monitor-shot-text').textContent; document.getElementById('btn-monitor-shot-close').click(); return t; });
@@ -203,7 +214,7 @@ function check(name, ok, detail = '') {
     await shot('simdi-kontrol', '#monitors');
     const liveAlarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
     const liveAlarm = liveAlarms.items.at(-1);
-    check('şimdi kontrol: bozulan Font Size için görüntülü uyarı eklendi (kaynak "şimdi")', liveAlarms.items.length === 4 && liveAlarm.monitorId === 'm1' && liveAlarm.source === 'live' && liveAlarm.where.startsWith('Şimdi kontrol') && liveAlarm.url === base + '/telefon' && liveAlarm.screenshot?.startsWith('data:image/jpeg') && (await panel.evaluate(() => [...document.querySelectorAll('#monitors-list .monitor')].find((x) => x.textContent.includes('Font Size · ≥ 4')).querySelector('.alarms-open').textContent)) === 'Uyarılar (2)', JSON.stringify([liveAlarms.items.length, liveAlarm.where, liveAlarm.url]));
+    check('şimdi kontrol: bozulan Font Size için görüntülü uyarı eklendi (kaynak "şimdi")', liveAlarms.items.length === 6 && liveAlarm.monitorId === 'm1' && liveAlarm.source === 'live' && liveAlarm.where.startsWith('Şimdi kontrol') && liveAlarm.url === base + '/telefon' && liveAlarm.screenshot?.startsWith('data:image/jpeg') && (await panel.evaluate(() => [...document.querySelectorAll('#monitors-list .monitor')].find((x) => x.textContent.includes('Font Size · ≥ 4')).querySelector('.alarms-open').textContent)) === 'Uyarılar (2)', JSON.stringify([liveAlarms.items.length, liveAlarm.where, liveAlarm.url]));
 
     // ---- Uyarılar paneli yeniden açınca da duruyor; graph silinince anahtarıyla gidiyor ----
     await panel.reload();
@@ -216,7 +227,7 @@ function check(name, ok, detail = '') {
     await panel.click('#btn-monitor-alarms-clear'); await panel.click('#btn-monitor-alarms-clear'); // iki adımlı
     await sleep(300);
     const cleared = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
-    check('"Uyarıları temizle" (iki adımlı) yalnızca o monitörün uyarılarını siler', cleared.items.length === 3 && !cleared.items.some((a) => a.monitorId === 'm2') && (await text('#monitor-alarms-hint')).includes('henüz uyarı vermedi'), JSON.stringify(cleared.items.map((a) => a.monitorId)));
+    check('"Uyarıları temizle" (iki adımlı) yalnızca o monitörün uyarılarını siler', cleared.items.length === 5 && !cleared.items.some((a) => a.monitorId === 'm2') && (await text('#monitor-alarms-hint')).includes('henüz uyarı vermedi'), JSON.stringify(cleared.items.map((a) => a.monitorId)));
     await panel.click('#btn-monitor-alarms-done');
 
     check('konsolda hata yok', errors.length === 0, errors.join(' | '));
