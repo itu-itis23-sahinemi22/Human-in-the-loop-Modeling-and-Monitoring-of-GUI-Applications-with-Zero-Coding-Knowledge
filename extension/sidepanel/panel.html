@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Graph Recorder</title>
   <link rel="stylesheet" href="panel.css">
-  <link rel="stylesheet" href="monitors.css"> <!-- monitör menüsü (monitors.js) -->
+  <link rel="stylesheet" href="monitors.css"> <!-- monitör menüsü (monitor-*.js) -->
   <!-- Tema, sayfa çizilmeden önce uygulansın diye <head>'de yüklenir -->
   <script src="theme.js"></script>
 </head>
@@ -364,7 +364,10 @@
        kendisi ekler, graph state'inden ayrı bir anahtarda ('monitors:<graph id>') saklanır ve oynatmada
        kontrol eder. Bkz. docs/07-monitorler.md -->
   <script src="monitor-types.js"></script>
-  <script src="monitors.js"></script>
+  <script src="monitor-store.js"></script>
+  <script src="monitor-list.js"></script>
+  <script src="monitor-dialog.js"></script>
+  <script src="monitor-export.js"></script>
   <script src="monitor-run.js"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
 // görüntüsüyle birlikte kırmızı yanar, bozulmadıysa yeşil. Bu dosya menünün TANIMINI içerir:
 // hangi türler var, her türün hangi parametreleri var, parametre nasıl doğrulanır, monitör
 // kullanıcıya nasıl okunur. Kontrolün kendisi monitor-probe.js (sayfada) ve
-// sidepanel/monitor-run.js'tedir (oynatmada). monitors.js tür kartlarını ve formu bu listeden
+// sidepanel/monitor-run.js'tedir (oynatmada). monitor-dialog.js tür kartlarını ve formu bu listeden
 // üretir: yeni bir tür için buraya bir kayıt (+ otomatik ad ve özet cümlesi için aşağıdaki iki
 // switch'e birer satır) ve monitor-probe.js'e bir kontrol fonksiyonu yeter; arayüz kodu değişmez
 // (docs/07-monitorler.md > Yeni bir monitör türü eklemek).
@@ -166,7 +166,7 @@ function monitorAutoName(type, params) {
 }
 
 // Monitörün kullanıcıya okunan hali (formun altındaki özet). Parçalar dizisi döner:
-// düz metin ya da { b: 'vurgulanan değer' }; monitors.js bunları ekrana yazar.
+// düz metin ya da { b: 'vurgulanan değer' }; monitor-dialog.js bunları ekrana yazar.
 //   scope: { kind: 'global' } | { kind: 'node', name } | { kind: 'edge', name }
 function monitorSentence(type, params, scope, enabled) {
   const v = (value, fallback = '…') => ({ b: value === '' || value === null || value === undefined ? fallback : String(value) });

@@ -1,6 +1,6 @@
 // Monitör yardımcılarının birim testi (tarayıcısız; fit-unit.test.js gibi vm ile): tür kataloğu
 // (monitor-types.js: parametre doğrulama, ağır desen uyarısı, otomatik ad, özet cümlesi) ve
-// monitors.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme). Geçti / kaldı kararını
+// monitor-store.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme). Geçti / kaldı kararını
 // etkileyen mantık burada hızlıca sınanır; arayüz ve oynatma uçtan uca testlerde.
 // Kullanım: node tests/e2e/monitor-unit.test.js
 const fs = require('fs');
@@ -13,11 +13,11 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
 
 // monitor-types.js tamamen saf: olduğu gibi yüklenir
 const typesSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-types.js'), 'utf8');
-// monitors.js DOM'a bağlı; yalnızca saf fonksiyonlar adlarıyla çıkarılır
-const monitorsSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitors.js'), 'utf8');
+// monitor-store.js storage ve panel'e bağlı; yalnızca saf fonksiyonlar adlarıyla çıkarılır
+const monitorsSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-store.js'), 'utf8');
 const pick = (name) => {
   const match = monitorsSource.match(new RegExp(`\\n(?:async )?function ${name}\\([^]*?\\n}\\n`));
-  if (!match) throw new Error(`monitors.js'te ${name} bulunamadı`);
+  if (!match) throw new Error(`monitor-store.js'te ${name} bulunamadı`);
   return match[0];
 };
 const constants = monitorsSource.match(/^const (MONITORS_KEY_PREFIX|MONITORS_FORMAT|MONITOR_ALARMS_KEY_PREFIX|MONITOR_ALARMS_FORMAT|MONITOR_ALARM_LIMIT) = [^\n]*$/gm).join('\n');

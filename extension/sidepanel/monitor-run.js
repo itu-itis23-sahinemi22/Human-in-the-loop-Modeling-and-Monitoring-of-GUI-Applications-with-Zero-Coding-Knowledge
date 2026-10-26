@@ -10,11 +10,11 @@
 //     doğrulandıktan sonra sayfada kontrol edilir (monitor-probe.js, MONITOR_PROBE).
 //   - Aksiyon tabanlı Input Validation her aksiyondan sonra alana bakar (yazılan değer o anda
 //     alandadır).
-//   - Edge'in belirli bir aksiyonuna bağlı monitör (m.action, monitors.js) hangi türden olursa
+//   - Edge'in belirli bir aksiyonuna bağlı monitör (m.action, monitor-store.js) hangi türden olursa
 //     olsun yalnızca o aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan);
 //     adımın sonunda yeniden kontrol edilmez. Aksiyon edge'de artık yoksa "kontrol edilemedi".
 // Bir monitör bozulduğu AN ekran görüntüsü alınır ve uyarı olarak monitörün kendi yapısına yazılır
-// (monitors.js > UYARILAR): aksiyon tabanlı monitörde alana yazıldıktan hemen sonra (bir sonraki
+// (monitor-store.js > UYARILAR): aksiyon tabanlı monitörde alana yazıldıktan hemen sonra (bir sonraki
 // aksiyon, ör. Login tıklaması, oynatılmadan önce), state tabanlı monitörde varılan ekranda. Adımın
 // sonunu beklemek yanlış ekranı gösterirdi (Login'den sonra ürün sayfası). Küçük resim satırda,
 // tıklayınca büyür. Sonuçlar oynatma bitince Monitörler listesine de yazılır ("Son kontrol").
@@ -22,7 +22,7 @@
 // "Bu ekranda şimdi kontrol et": oynatmasız, açık sekmede, tüm model + seçili öğenin monitörleri
 // anında kontrol edilir; sonuç Monitörler listesinde görünür.
 //
-// panel.js ve replay.js değiştirilmez; onların global fonksiyonları sarmalanır (monitors.js'teki
+// panel.js ve replay.js değiştirilmez; onların global fonksiyonları sarmalanır (monitor-export.js'teki
 // graphWalkerModel gibi): startReplay (koşu başlıyor), verify (adımın sonu: varılan ekran doğrulandı),
 // afterAction (bir aksiyon bitti), renderReplay (oynatma kartı yeniden çizildi). Emir isterse bu
 // sarmalamalar o fonksiyonların içine birer satırlık çağrı olarak da konabilir.
@@ -81,7 +81,7 @@ async function monitorScreenshot(tabId) {
 }
 
 // Bozulan monitörler için uyarı: görüntü ŞİMDİ, bir kez alınır (aynı anda bozulanlar paylaşır),
-// her monitörün sonucuna iliştirilir ve uyarı olarak kaydedilir (monitors.js > addMonitorAlarms).
+// her monitörün sonucuna iliştirilir ve uyarı olarak kaydedilir (monitor-store.js > addMonitorAlarms).
 // action: aksiyon tabanlı kontrolde { index, count, label } (hangi aksiyondan hemen sonra), yoksa null.
 async function raiseAlarms(run, replay, step, failing, action = null) {
   if (!failing.length) return;
@@ -91,7 +91,7 @@ async function raiseAlarms(run, replay, step, failing, action = null) {
   const where = stepLabel(run, step) + (action ? ` · aksiyon ${action.index + 1}/${action.count}: ${action.label}` : '');
   for (const m of failing) Object.assign(step.verdicts.get(m.id), { screenshot, where });
   try {
-    const alarms = await addMonitorAlarms(failing.map((m) => ({ // tek yazım (monitors.js > UYARILAR)
+    const alarms = await addMonitorAlarms(failing.map((m) => ({ // tek yazım (monitor-store.js > UYARILAR)
       monitorId: m.id, source: 'replay', where, text: step.verdicts.get(m.id).text, url, screenshot,
       step: { index: step.index, edgeId: step.edgeId, target: step.target }, action,
     })));
@@ -360,7 +360,7 @@ function monitorLedRow(run, m, status) {
     const v = s.verdicts.get(m.id);
     square.className = v ? ledStatus(v) : 'pending';
     square.title = `${v?.where ?? stepLabel(run, s)}: ${v ? v.text : LED_TEXT.pending}`;
-    if (v?.status === 'fail' && v.screenshot) activatable(square, () => openShot(run, m, s), `${square.title}: ekranı büyüt`); // monitors.js
+    if (v?.status === 'fail' && v.screenshot) activatable(square, () => openShot(run, m, s), `${square.title}: ekranı büyüt`); // monitor-list.js
     return square;
   }));
 
@@ -378,7 +378,7 @@ function monitorLedRow(run, m, status) {
   return li;
 }
 
-// Adımdaki sonucun görüntüsü (monitors.js > openMonitorShot): bozulma anı ve nedeni
+// Adımdaki sonucun görüntüsü (monitor-list.js > openMonitorShot): bozulma anı ve nedeni
 function openShot(run, m, step) {
   const v = step.verdicts.get(m.id);
   openMonitorShot(m, { where: v?.where ?? stepLabel(run, step), text: v?.text ?? '', screenshot: v?.screenshot ?? null });
@@ -396,12 +396,12 @@ $('btn-monitor-check').onclick = async () => {
   if (replay) return showMessage({ notice: 'Oynatma sürüyor; monitörler oynatma kartında adım adım kontrol ediliyor.' });
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return showMessage({ error: 'Açık sekme bulunamadı.' });
-  const selected = selectedItem(); // monitors.js
+  const selected = selectedItem(); // monitor-list.js
   const list = monitors.items.filter((m) => m.enabled && (m.scope === 'global' || (selected && m.scope === selected.item.id)));
   if (!list.length) return showMessage({ notice: 'Kontrol edilecek etkin monitör yok: tüm model için ya da graph\'ta seçili öğe için bir monitör ekleyin.' });
   liveChecking = true;
   $('btn-monitor-check').disabled = true;
-  const graphId = monitorsGraphId; // monitors.js; kontrol sürerken graph değişirse sonuç yazılmaz
+  const graphId = monitorsGraphId; // monitor-store.js; kontrol sürerken graph değişirse sonuç yazılmaz
   try {
     const verdicts = new Map();
     const toProbe = [];

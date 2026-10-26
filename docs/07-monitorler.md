@@ -174,20 +174,23 @@ Tek doğruluk kaynağı model düzeyindeki listedir; vertex'teki ve edge'deki `m
 
 ## Eklentiyle bütünleşme
 
-Monitörler beş yeni dosyadır; eklentinin kendi dosyalarında yalnızca `panel.html`'e dört satır (stil ve üç script) ve `manifest.json`'daki content script listesine bir dosya adı eklenmiştir.
+Monitörler sekiz yeni dosyadır; eklentinin kendi dosyalarında yalnızca `panel.html`'e yedi satır (stil ve altı script) ve `manifest.json`'daki content script listesine bir dosya adı eklenmiştir. Panel tarafı tek dosya yerine göreve göre bölünmüştür; dosyalar klasik script'tir ve birbirlerinin global fonksiyonlarını çağırır (modül yok: panel.js de öyle), yükleme sırası aşağıdaki tablo sırasıdır.
 
 | Dosya | Görev |
 |---|---|
 | `sidepanel/monitor-types.js` | Tür kataloğu: gruplar ve ikonları, kontrol biçimleri, her türün parametreleri (hazır desenler, element listesi işareti), kapsam kısıtı, doğrulama (`monitorParamProblem`), otomatik ad (`monitorAutoName`), özet cümlesi (`monitorSentence`). Arayüz içermez. |
-| `sidepanel/monitors.js` | Bölüm, node / edge detayındaki alt bölüm, graph'ta sağ tık menüsü, iki adımlı form penceresi (tür kartları + ayrıntılar); storage (tanımlar ve uyarılar); uyarı listesi ve "Bozulduğu andaki ekran" pencereleri; dışa / içe aktarma; graph'taki hale. |
+| `sidepanel/monitor-store.js` | Veri: `monitors:<graph>` ve `monitor-alarms:<graph>` anahtarları (okuma, normalize, yazma), uyarı ekleme / temizleme, kapsam ve aksiyon yardımcıları (`scopeKind`, `isOrphan`, `resolveMonitorAction`, `scopeText`…), graph değişince yükleme, silinen graph'ın anahtarlarını temizleme. Arayüz içermez (hata mesajı dışında). |
+| `sidepanel/monitor-list.js` | Monitörler bölümü (liste, filtreler, Son kontrol, Uyarılar düğmesi), node / edge detayındaki alt bölüm, graph'ta sağ tık menüsü ve mor hale, silme / geri alma / tümünü silme, uyarı listesi ve "Bozulduğu andaki ekran" pencereleri. |
+| `sidepanel/monitor-dialog.js` | İki adımlı ekle / düzenle formu: tür kartları, kapsam (node / edge / edge'deki aksiyon), tanımdan üretilen parametre alanları (element listesi, hazır desenler, canlı deneme, ağır desen uyarısı), özet cümlesi, doğrulama, kaydedilmemiş değişiklik uyarısı. |
+| `sidepanel/monitor-export.js` | GraphWalker JSON'una yazma (`graphWalkerModel` sarmalanır), "Yükle…" ile içe aktarma (parametre doğrulamalı), graph yedeğine yazma ve yedekten geri yükleme. |
 | `sidepanel/monitor-run.js` | Oynatmada kontrol: koşunun monitörleri, aksiyon ve adım sonu kontrolleri, bozulma anında görüntü ve uyarı, ışık listesi; "Bu ekranda şimdi kontrol et". |
 | `monitor-probe.js` | Content script: panelden gelen kontrol listesini sayfada değerlendirir. fingerprint.js'in tanımlarını kullanır. |
 | `sidepanel/monitors.css` | Yalnızca monitörlere özgü stiller; renkler `panel.css`'teki tema değişkenlerinden gelir. |
 
-`monitors.js` ve `monitor-run.js`, `panel.js` ve `replay.js`'ten **sonra** yüklenir ve onların global'lerini okur (`state`, `activeGraph()`, `scenarioView`, `selectedId`, `renderDetails`, `cy`, `nodeById`, `showMessage`, `ACTION_TEXT`, `replay`, `shownReplay`, `capture`); `panel.js`, `replay.js`, `background.js`, `content.js` değişmez. Bağlantı noktaları:
+`monitor-*.js` dosyaları `panel.js` ve `replay.js`'ten **sonra** yüklenir ve onların global'lerini okur (`state`, `activeGraph()`, `scenarioView`, `selectedId`, `renderDetails`, `cy`, `nodeById`, `showMessage`, `ACTION_TEXT`, `replay`, `shownReplay`, `capture`); `panel.js`, `replay.js`, `background.js`, `content.js` değişmez. Bağlantı noktaları:
 
 - **Bölümler:** `#monitors` bölümü Senaryo'nun (`#scenario`) hemen altına, alt bölüm node / edge detay kartının (`#details`) sonuna, ışık listesi oynatma kartındaki adım listesinin (`#replay-steps`) altına, sağ tık menüsü ve pencereler `body`'ye script tarafından eklenir.
-- **Seçim ve sağ tık:** `cy.on('tap')` dinleyicisi panel.js'inkinden sonra çalışır (`selectedId` günceldir); sağ tık `cy.on('cxttap')` ile alınır, `#graph` üzerinde tarayıcının kendi menüsü engellenir. Menüden "ekle" seçilince öğe graph'ta seçilir (panel.js'in tap dinleyicisi tetiklenir) ve form açılır.
+- **Seçim ve sağ tık:** `cy.on('tap')` dinleyicisi panel.js'inkinden sonra çalışır (`selectedId` günceldir); sağ tık `cy.on('cxttap')` ile alınır, `#graph` üzerinde tarayıcının kendi menüsü engellenir. Menüden "ekle" seçilince öğe graph'ta doğrudan seçilir (`selectedId` + `renderDetails`; sahte bir tap olayı gönderilmez, çünkü senaryo "Elle seç"teyken panel.js tıklamayı koşuya ekleme sayar) ve form açılır.
 - **Graph yeniden çizimi:** panel.js elementleri silip yeniden eklediğinde (`cy` `add` olayı) ve tema değişince (`themechange`; panel.js stil setini baştan yükler) mor hale yeniden uygulanır (node'da ve edge'de `underlay`).
 - **Sarmalanan global fonksiyonlar** (`x = () => … orijinal() …`; fonksiyonlar adlarıyla çağrıldığı için sarmalanan sürüm kullanılır). İstenirse her biri ilgili fonksiyonun içine tek satırlık bir çağrı olarak da alınabilir:
   - `graphWalkerModel` (panel.js): dışa aktarıma monitörler eklenir.
@@ -197,9 +200,9 @@ Monitörler beş yeni dosyadır; eklentinin kendi dosyalarında yalnızca `panel
   - `afterAction` (replay.js): aksiyon bitince aksiyon tabanlı Input Validation ve edge'in o aksiyonuna bağlı monitörler kontrol edilir.
   - `renderReplay` (panel.js): oynatma kartı her çizildiğinde ışık listesi de çizilir / gizlenir (başka koşuya geçilince gizlenir).
 - **Sayfa:** `MONITOR_PROBE` mesajı content.js'in dinleyicisinde tanınmaz (cevap vermez), monitor-probe.js cevaplar. content.js'in kendi `MONITOR` mesajıyla (ekranı izleme) ilgisi yoktur. monitor-probe.js'in tamamı bir kapanış içindedir: aynı dünyada çalıştığı için yardımcı adları content.js'in fonksiyonlarını ezmesin.
-- **Tek yazar kuralı** ([01 > Kural 1](01-mimari.md#kural-1-statei-yalnızca-backgroundjs-değiştirir-tek-yazar)) korunur: graph state'ini yine yalnızca background yazar. Monitörler ayrı anahtardadır ve tek yazarı `monitors.js`'tir; background bu anahtarı bilmez.
-- **Node / edge silme, birleştirme, sıfırlama** için özel bir mesaj yoktur: `monitors.js` storage'daki `graph:<id>` değişikliğini dinler, öğesi kaybolan monitörü "sahipsiz" gösterir; öğe geri gelirse (Geri al) işaret kendiliğinden kalkar.
-- **Graph'lar:** `activeGraph` değişince o graph'ın `monitors:<id>` ve `monitor-alarms:<id>` anahtarları okunur. panel.js yeni graph'ı ayrı bir okumayla yüklediği için `monitors.js`, `state.id` yeni graph'a geçene kadar çizimi erteler (kısa aralıklarla yeniden dener). `graphs` listesinden düşen graph'ların monitör ve uyarı anahtarları silinir.
+- **Tek yazar kuralı** ([01 > Kural 1](01-mimari.md#kural-1-statei-yalnızca-backgroundjs-değiştirir-tek-yazar)) korunur: graph state'ini yine yalnızca background yazar. Monitörler ayrı anahtardadır ve tek yazarı `monitor-store.js`'tir; background bu anahtarı bilmez.
+- **Node / edge silme, birleştirme, sıfırlama** için özel bir mesaj yoktur: `monitor-store.js` storage'daki `graph:<id>` değişikliğini dinler, öğesi kaybolan monitörü "sahipsiz" gösterir; öğe geri gelirse (Geri al) işaret kendiliğinden kalkar.
+- **Graph'lar:** `activeGraph` değişince o graph'ın `monitors:<id>` ve `monitor-alarms:<id>` anahtarları okunur. panel.js yeni graph'ı ayrı bir okumayla yüklediği için `monitor-list.js`, `state.id` yeni graph'a geçene kadar çizimi erteler (kısa aralıklarla yeniden dener). `graphs` listesinden düşen graph'ların monitör ve uyarı anahtarları silinir.
 - **Yedek:** yüklemede panel.js'in dosya kutusu (`#graph-file`) capture aşamasında okunur; yedekteki monitörler bekletilir ve yalnızca yedek seçildikten sonra oluşmuş, yedekteki tüm node'ları içeren ve henüz monitörü olmayan graph aktif olunca yazılır (vazgeçilen ya da başka bir graph'a geçilen durumda uygulanmaz; 2 dakika sonra düşer).
 - **Senaryo görünümü** (`scenarioView`): kopyadaki node ve edge'ler aynı id'yi taşıdığı için hale ve liste aynen görünür; ekleme butonu gizlenir, satırlar pasiftir, sağ tık menüsünde yalnızca "göster" vardır (panel.js'in salt okunur görünüm kuralı).
 
