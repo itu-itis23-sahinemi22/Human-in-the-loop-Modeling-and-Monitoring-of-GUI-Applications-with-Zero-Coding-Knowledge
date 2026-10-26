@@ -53,7 +53,7 @@ function ledStatus(verdict) {
 // koşunun vardığı bir node).
 function beginMonitorRun(edges) {
   const run = {
-    edges, replay: null, finished: false, result: null,
+    edges, replay: null, finished: false,
     steps: edges.map((edge, index) => ({ index, edgeId: edge.id, target: edge.target, verdicts: new Map() })),
     monitors: monitors.items.filter((m) => m.enabled && edges.some((e) => m.scope === 'global' || m.scope === e.id || m.scope === e.target)),
   };
@@ -62,17 +62,26 @@ function beginMonitorRun(edges) {
 }
 
 // Açık sekmenin görünen kısmı (Emir'in node görüntüleriyle aynı biçim: jpeg, kalite 40); alınamazsa null.
+// Chrome görüntü almayı saniyede 2 ile sınırlar (MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND); art arda
+// bozulmalarda (Emir'in kendi görüntüsü de dahil) sınır aşılırsa kısa bekleyip bir kez daha denenir.
 async function monitorScreenshot(tabId) {
+  const options = { format: 'jpeg', quality: 40 };
   try {
     const { windowId } = await chrome.tabs.get(tabId);
-    return await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 40 });
+    try {
+      return await chrome.tabs.captureVisibleTab(windowId, options);
+    } catch (error) {
+      if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota|exceed/i.test(error?.message ?? '')) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return await chrome.tabs.captureVisibleTab(windowId, options);
+    }
   } catch {
     return null;
   }
 }
 
 // Bozulan monitörler için uyarı: görüntü ŞİMDİ, bir kez alınır (aynı anda bozulanlar paylaşır),
-// her monitörün sonucuna iliştirilir ve uyarı olarak kaydedilir (monitors.js > addMonitorAlarm).
+// her monitörün sonucuna iliştirilir ve uyarı olarak kaydedilir (monitors.js > addMonitorAlarms).
 // action: aksiyon tabanlı kontrolde { index, count, label } (hangi aksiyondan hemen sonra), yoksa null.
 async function raiseAlarms(run, replay, step, failing, action = null) {
   if (!failing.length) return;
@@ -80,20 +89,20 @@ async function raiseAlarms(run, replay, step, failing, action = null) {
   let url = '';
   try { url = (await chrome.tabs.get(replay.tabId)).url ?? ''; } catch { /* sekme kapandı */ }
   const where = stepLabel(run, step) + (action ? ` · aksiyon ${action.index + 1}/${action.count}: ${action.label}` : '');
-  for (const m of failing) {
-    const verdict = step.verdicts.get(m.id);
-    Object.assign(verdict, { screenshot, where });
-    try {
-      const alarm = await addMonitorAlarm({ monitorId: m.id, source: 'replay', where, text: verdict.text, url, screenshot, step: { index: step.index, edgeId: step.edgeId, target: step.target }, action });
-      verdict.alarmId = alarm.id;
-    } catch (error) {
-      console.warn('Monitör uyarısı kaydedilemedi:', error);
-    }
+  for (const m of failing) Object.assign(step.verdicts.get(m.id), { screenshot, where });
+  try {
+    const alarms = await addMonitorAlarms(failing.map((m) => ({ // tek yazım (monitors.js > UYARILAR)
+      monitorId: m.id, source: 'replay', where, text: step.verdicts.get(m.id).text, url, screenshot,
+      step: { index: step.index, edgeId: step.edgeId, target: step.target }, action,
+    })));
+    failing.forEach((m, i) => { step.verdicts.get(m.id).alarmId = alarms[i].id; });
+  } catch (error) {
+    console.warn('Monitör uyarıları kaydedilemedi:', error);
   }
 }
 
 function stepMonitors(run, step) {
-  return run.monitors.filter((m) => m.scope === 'global' || m.scope === step.edgeId || m.scope === step.target);
+  return run.monitors.filter((m) => appliesTo(m, step));
 }
 
 function appliesTo(m, step) {
@@ -127,11 +136,12 @@ verify = async (replay, node) => {
 };
 
 // Bu aksiyondan hemen sonra kontrol edilecek monitörler: edge'in bu aksiyonuna bağlı olanlar (her
-// tür) + aksiyona bağlı olmayan aksiyon tabanlı monitörler (Input Validation: her aksiyondan sonra).
+// tür) + aksiyona bağlı olmayan, kontrol biçimi "aksiyon tabanlı" olan türler (monitor-types.js >
+// when: 'action'; bugün Input Validation): her aksiyondan sonra.
 function monitorsAfterAction(run, step, edge, actionIndex) {
   return stepMonitors(run, step).filter((m) => (m.action
     ? m.scope === step.edgeId && resolveMonitorAction(m.action, edge?.actions) === actionIndex
-    : m.type === 'inputValidation'));
+    : monitorType(m.type)?.when === 'action'));
 }
 
 // afterAction sarmalanır: bir aksiyon oynatıldı ve sayfa duruldu. Aksiyon tabanlı Input Validation
@@ -176,7 +186,7 @@ async function checkStepMonitors(run, replay, verdict) {
   const toProbe = [];
   const edge = run.edges[step.index];
   for (const m of stepMonitors(run, step)) {
-    if (step.verdicts.has(m.id)) continue; // aksiyon sırasında kontrol edildi (Input Validation, aksiyona bağlı monitör)
+    if (step.verdicts.has(m.id)) continue; // aksiyon sırasında kontrol edildi (aksiyon tabanlı tür, aksiyona bağlı monitör)
     if (!monitorType(m.type)) { step.verdicts.set(m.id, verdictSkip('tür tanımlı değil')); continue; }
     if (m.action) { // yalnızca kendi aksiyonundan sonra kontrol edilir; buraya geldiyse o aksiyon oynatılmadı
       step.verdicts.set(m.id, verdictSkip(resolveMonitorAction(m.action, edge?.actions) < 0 ? `aksiyon edge'de bulunamadı (${m.action.index + 1}. ${m.action.label})` : 'aksiyonu bu adımda oynatılmadı'));
@@ -197,7 +207,6 @@ async function checkStepMonitors(run, replay, verdict) {
 // Monitörler listesine yazılır.
 function finishMonitorRun(run, result) {
   run.finished = true;
-  run.result = result;
   for (const step of run.steps) {
     const status = result?.steps[step.index]?.status ?? 'skipped';
     for (const m of stepMonitors(run, step)) {
@@ -217,23 +226,31 @@ function finishMonitorRun(run, result) {
 
 // Sayfaya ulaşılamazsa (eklenti yüklenmeden önce açılmış sayfa, tarayıcının kendi sayfası)
 // hepsi 'skip'. Oynatma "Durdur" ile durdurulursa cevap beklenmez, kalanlar 'skip' olur.
+// Cevap MONITOR_PROBE_TIMEOUT_MS içinde gelmezse (sayfa donmuş, ağır bir desen sayfayı
+// kilitlemiş) beklemek bırakılır: ne "şimdi kontrol et" ne oynatma süresiz askıda kalır.
+const MONITOR_PROBE_TIMEOUT_MS = 10000;
+
 async function probeMonitors(tabId, list, replay = null) {
   const checks = list.map((m) => ({ id: m.id, type: m.type, params: m.params }));
   const skipAll = (text) => Object.fromEntries(list.map((m) => [m.id, verdictSkip(text)]));
-  let timer = null;
+  let stopTimer = null;
+  let timeout = null;
   const stopped = new Promise((resolve) => {
-    if (replay) timer = setInterval(() => { if (replay.stopped) resolve(null); }, 200);
+    if (replay) stopTimer = setInterval(() => { if (replay.stopped) resolve(null); }, 200);
   });
+  const timedOut = new Promise((resolve) => { timeout = setTimeout(() => resolve('timeout'), MONITOR_PROBE_TIMEOUT_MS); });
   try {
-    const response = await Promise.race([chrome.tabs.sendMessage(tabId, { type: 'MONITOR_PROBE', checks }, { frameId: 0 }), stopped]);
+    const response = await Promise.race([chrome.tabs.sendMessage(tabId, { type: 'MONITOR_PROBE', checks }, { frameId: 0 }), stopped, timedOut]);
     if (response === null) return skipAll('oynatma durduruldu');
+    if (response === 'timeout') return skipAll(`sayfa ${MONITOR_PROBE_TIMEOUT_MS / 1000} sn içinde cevap vermedi (sayfa donmuş ya da desen çok ağır olabilir)`);
     if (!response) throw new Error('sayfa cevap vermedi');
     if (response.error) throw new Error(response.error);
     return Object.fromEntries(list.map((m) => [m.id, response.results[m.id] ?? verdictSkip('sonuç gelmedi')]));
   } catch (error) {
     return skipAll(`sayfaya ulaşılamadı (${error.message}). Sayfa eklenti yüklenmeden önce açıldıysa yenileyin.`);
   } finally {
-    clearInterval(timer);
+    clearInterval(stopTimer);
+    clearTimeout(timeout);
   }
 }
 
@@ -327,6 +344,7 @@ function monitorLedRow(run, m, status) {
   const led = li.querySelector('.led');
   led.classList.add(status);
   led.title = LED_TEXT[status];
+  led.setAttribute('role', 'img'); // aria-label düz bir span'da okunmaz
   led.setAttribute('aria-label', LED_TEXT[status]);
   const type = monitorType(m.type);
   if (type) li.querySelector('b').append(iconElement(monitorGroup(type), true));
@@ -342,7 +360,7 @@ function monitorLedRow(run, m, status) {
     const v = s.verdicts.get(m.id);
     square.className = v ? ledStatus(v) : 'pending';
     square.title = `${v?.where ?? stepLabel(run, s)}: ${v ? v.text : LED_TEXT.pending}`;
-    if (v?.status === 'fail' && v.screenshot) square.onclick = () => openShot(run, m, s);
+    if (v?.status === 'fail' && v.screenshot) activatable(square, () => openShot(run, m, s), `${square.title}: ekranı büyüt`); // monitors.js
     return square;
   }));
 
@@ -354,7 +372,7 @@ function monitorLedRow(run, m, status) {
     img.src = failed.verdicts.get(m.id).screenshot;
     img.alt = 'Bozulduğu andaki ekran';
     img.title = 'Bozulduğu andaki ekran: büyütmek için tıklayın';
-    img.onclick = () => openShot(run, m, failed);
+    activatable(img, () => openShot(run, m, failed), 'Bozulduğu andaki ekranı büyüt');
     li.append(img);
   }
   return li;
@@ -371,7 +389,7 @@ function openShot(run, m, step) {
 // "BU EKRANDA ŞİMDİ KONTROL ET" (Monitörler bölümü): oynatmasız, açık sekmede
 // -----------------------------------------------------------------------------
 // Tüm model monitörleri + graph'ta seçili node ya da edge'in monitörleri sayfada kontrol edilir.
-// Olay tabanlılar ve adım süresi yalnızca oynatmada anlamlıdır; gri kalır.
+// Sonuç yine ikili (yeşil / kırmızı); kontrol edilemeyen monitörün nedeni satırında yazar.
 
 $('btn-monitor-check').onclick = async () => {
   if (liveChecking) return;
@@ -383,6 +401,7 @@ $('btn-monitor-check').onclick = async () => {
   if (!list.length) return showMessage({ notice: 'Kontrol edilecek etkin monitör yok: tüm model için ya da graph\'ta seçili öğe için bir monitör ekleyin.' });
   liveChecking = true;
   $('btn-monitor-check').disabled = true;
+  const graphId = monitorsGraphId; // monitors.js; kontrol sürerken graph değişirse sonuç yazılmaz
   try {
     const verdicts = new Map();
     const toProbe = [];
@@ -391,6 +410,7 @@ $('btn-monitor-check').onclick = async () => {
       else verdicts.set(m.id, verdictSkip('tür tanımlı değil'));
     }
     if (toProbe.length) for (const [id, v] of Object.entries(await probeMonitors(tab.id, toProbe))) verdicts.set(id, v);
+    if (graphId !== monitorsGraphId) return showMessage({ notice: 'Kontrol sürerken graph değişti; sonuç yazılmadı.' });
     let host = '';
     try { host = new URL(tab.url).host; } catch { /* chrome:// vb. */ }
     const counts = { ok: 0, fail: 0, skip: 0 };
@@ -404,11 +424,11 @@ $('btn-monitor-check').onclick = async () => {
     if (failing.length) {
       const screenshot = await monitorScreenshot(tab.id);
       const where = `Şimdi kontrol${host ? ` (${host})` : ''}`;
-      for (const m of failing) {
+      if (graphId === monitorsGraphId) {
         try {
-          await addMonitorAlarm({ monitorId: m.id, source: 'live', where, text: verdicts.get(m.id).text, url: tab.url ?? '', screenshot });
+          await addMonitorAlarms(failing.map((m) => ({ monitorId: m.id, source: 'live', where, text: verdicts.get(m.id).text, url: tab.url ?? '', screenshot })));
         } catch (error) {
-          console.warn('Monitör uyarısı kaydedilemedi:', error);
+          console.warn('Monitör uyarıları kaydedilemedi:', error);
         }
       }
     }

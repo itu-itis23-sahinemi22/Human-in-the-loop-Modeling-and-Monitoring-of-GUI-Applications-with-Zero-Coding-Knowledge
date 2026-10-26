@@ -7,7 +7,8 @@
 // hangi türler var, her türün hangi parametreleri var, parametre nasıl doğrulanır, monitör
 // kullanıcıya nasıl okunur. Kontrolün kendisi monitor-probe.js (sayfada) ve
 // sidepanel/monitor-run.js'tedir (oynatmada). monitors.js tür kartlarını ve formu bu listeden
-// üretir: yeni bir tür eklemek için buraya bir kayıt eklemek yeter, arayüzde değişiklik gerekmez
+// üretir: yeni bir tür için buraya bir kayıt (+ otomatik ad ve özet cümlesi için aşağıdaki iki
+// switch'e birer satır) ve monitor-probe.js'e bir kontrol fonksiyonu yeter; arayüz kodu değişmez
 // (docs/07-monitorler.md > Yeni bir monitör türü eklemek).
 //
 // Her türün:
@@ -43,6 +44,7 @@ const MONITOR_GROUPS = [
 const MONITOR_WHEN = {
   state: { text: 'State tabanlı', hint: 'İlgili node\'a (ekrana) varıldığında kontrol edilir.' },
   action: { text: 'Aksiyon tabanlı', hint: 'İlgili aksiyondan hemen sonra kontrol edilir: edge\'in seçilen aksiyonu (ör. kullanıcı adı yazılınca); aksiyon seçilmezse edge\'in her aksiyonundan sonra.' },
+  // event / temporal: henüz bu biçimde tür yok; ileride olay (hata / yanıt) ve süre tabanlı türler için
   event: { text: 'Olay tabanlı', hint: 'Hata ya da yanıt olayı gerçekleştiğinde kontrol edilir.' },
   temporal: { text: 'Zamansal', hint: 'Koşul gerçekleşene ya da süre dolana kadar beklenir.' },
 };
@@ -133,6 +135,19 @@ function monitorParamProblem(param, value) {
     }
   }
   if (param.kind === 'select' && !param.options.some((o) => o.value === value)) return 'Listeden bir seçenek seçin.';
+  return null;
+}
+
+// Ağır desen uyarısı (engellemez): iç içe tekrar, ör. (\w+\s?)+ ya da (a*)* — uymayan uzun bir
+// metinde üstel sürede çalışır (catastrophic backtracking) ve kontrol edilen sayfayı kilitleyebilir.
+// Kullanıcı regex bilmeyebilir; formda ve "Dene" kutusunda uyarı olarak gösterilir.
+function monitorPatternWarning(pattern) {
+  const text = String(pattern ?? '');
+  if (!text) return null;
+  // Bir grup içinde + * {n,} ile tekrar eden bir parça ve grubun kendisi de + * {n,} ile tekrarlı
+  const piece = '(?:[^()\\\\]|\\\\.|\\([^()]*\\))';
+  const nested = new RegExp(`\\(${piece}*?(?:[+*]|\\{\\d*,\\d*\\})${piece}*\\)(?:[+*]|\\{\\d*,\\d*\\})`);
+  if (nested.test(text)) return 'Desen ağır olabilir (iç içe tekrar, ör. (…+)+): uzun bir sayfada kontrol gecikebilir ya da sayfayı yavaşlatabilir.';
   return null;
 }
 

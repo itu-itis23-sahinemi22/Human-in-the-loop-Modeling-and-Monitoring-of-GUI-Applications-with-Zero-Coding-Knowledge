@@ -22,12 +22,15 @@
 // =============================================================================
 
 (() => {
-const MONITOR_PROBE_TEXT_NODES = 5000; // yazı boyutu kontrolünde en fazla bu kadar metin parçasına bakılır
+const MONITOR_PROBE_TEXT_NODES = 5000;   // yazı boyutu kontrolünde en fazla bu kadar metin parçasına bakılır (çizilen)
+const MONITOR_PROBE_WALK_NODES = 20000;  // … ve en fazla bu kadar metin düğümü gezilir (gizli metni çok olan sayfa)
+const MONITOR_PROBE_TEXT_CHARS = 200000; // hata metni aramasında sayfanın görünen metninin en fazla bu kadar karakteri
+const MONITOR_PROBE_VALUE_CHARS = 10000; // alan değeri kontrolünde değerin en fazla bu kadar karakteri
 
 // Kontrol listesini değerlendirir; her kontrolün sonucu id'siyle döner. Bir kontrolün hatası
 // diğerlerini etkilemez (sonucu 'skip' olur).
 async function monitorProbe(checks) {
-  const results = {};
+  const results = Object.create(null); // id'ler kullanıcı verisi ("__proto__" bile olsa zararsız)
   for (const check of Array.isArray(checks) ? checks : []) {
     try {
       const evaluate = MONITOR_PROBES[check.type];
@@ -51,7 +54,7 @@ const MONITOR_PROBES = {
     if (!re) return probeSkip('desen geçersiz');
     const el = resolveElements(selector).find((e) => isFieldLike(e)) ?? null;
     if (!el) return probeSkip(`alan ekranda yok (${selector})`);
-    const value = fieldValue(el);
+    const value = fieldValue(el).slice(0, MONITOR_PROBE_VALUE_CHARS);
     if (value === '' && whenEmpty !== 'check') return probeSkip('alan boş, kontrol edilmedi');
     const matched = re.test(value);
     const shown = el.type === 'password' ? '******' : JSON.stringify(value.length > 40 ? value.slice(0, 40) + '…' : value);
@@ -63,7 +66,7 @@ const MONITOR_PROBES = {
   errorText({ pattern }) {
     const re = probeRegex(pattern, 'i');
     if (!re) return probeSkip('desen geçersiz');
-    const body = document.body?.innerText ?? '';
+    const body = (document.body?.innerText ?? '').slice(0, MONITOR_PROBE_TEXT_CHARS); // ağır desen × uzun metin sınırı
     const match = re.exec(body);
     if (!match) return probeOk('hata metni yok');
     const from = Math.max(0, match.index - 25);
@@ -82,9 +85,11 @@ const MONITOR_PROBES = {
     });
     const small = [];
     let seen = 0;
+    let walked = 0;
     let smallest = Infinity;
     const range = document.createRange();
-    for (let node = walker.nextNode(); node && seen < MONITOR_PROBE_TEXT_NODES; node = walker.nextNode()) {
+    for (let node = walker.nextNode(); node && seen < MONITOR_PROBE_TEXT_NODES && walked < MONITOR_PROBE_WALK_NODES; node = walker.nextNode()) {
+      walked++;
       const el = node.parentElement;
       if (!isRendered(el)) continue;
       range.selectNodeContents(node);
@@ -157,8 +162,8 @@ globalThis.monitorProbe = monitorProbe;
 // Panelden gelen istek (content script olarak yüklendiğinde). content.js'in dinleyicisi bu türü
 // tanımaz; başka türlere burada cevap verilmez.
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== 'MONITOR_PROBE') return undefined;
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== 'MONITOR_PROBE' || sender.id !== chrome.runtime.id) return undefined; // yalnızca bu eklentinin paneli
     monitorProbe(message.checks).then(sendResponse, (error) => sendResponse({ error: error.message }));
     return true; // cevap asenkron
   });

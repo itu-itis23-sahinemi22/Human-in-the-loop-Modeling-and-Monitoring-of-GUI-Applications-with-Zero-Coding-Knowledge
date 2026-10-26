@@ -153,6 +153,10 @@ function check(name, ok, detail = '') {
     await save();
     await sleep(100);
     check('geçersiz desen reddedildi', (await dialogOpen()) && (await text('[data-key="pattern"] .field-error')).includes('Geçersiz desen') && !(await $('#monitor-error').isHidden()));
+    await $('[data-key="pattern"] > label input').fill('(a*)*');
+    check('ağır desen uyarısı (engellemez)', !(await $('[data-key="pattern"] .field-warn').isHidden()) && (await text('[data-key="pattern"] .field-warn')).includes('ağır olabilir') && (await $('[data-key="pattern"] .tester input').getAttribute('maxlength')) === '200');
+    await $('[data-key="pattern"] > label input').fill('^abc');
+    check('sıradan desende uyarı yok', await $('[data-key="pattern"] .field-warn').isHidden());
     await $('[data-key="pattern"] > label input').fill('');
     await save();
     await sleep(100);
@@ -333,6 +337,18 @@ function check(name, ok, detail = '') {
     await tap(eLogin.id);
     await sleep(600);
     check('senaryo oluştu ve koşuda 1 edge', (await getState()).scenarios.length === 1 && (await text('#scenario-summary')).includes('1/2 edge'), await text('#scenario-summary'));
+    // Senaryo düzenlenirken (Elle seç) edge'e sağ tık → menü: koşuya adım EKLEMEMELİ (panel.js tıklamayı
+    // "koşuya ekle" sayar; menü seçimi doğrudan yapar)
+    await cxttap(eTelefonEdge.id);
+    await $('#monitor-context-menu button').first().click();
+    await sleep(300);
+    check('senaryo düzenlenirken sağ tık menüsü: form açıldı, edge seçildi, koşu değişmedi (1/2 edge)', (await dialogOpen()) && (await text('#scenario-summary')).includes('1/2 edge') && (await panel.evaluate(() => selectedId)) === eTelefonEdge.id && (await text('#details-monitors-title')).startsWith('Bu edge\'in monitörleri'), await text('#scenario-summary'));
+    await panel.keyboard.press('Escape');
+    await sleep(150);
+    await cxttap(eTelefonEdge.id);
+    await $('#monitor-context-menu button').nth(1).click(); // "Monitörlerini göster"
+    await sleep(300);
+    check('"Monitörlerini göster" de koşuyu değiştirmiyor', (await text('#scenario-summary')).includes('1/2 edge') && (await $('#monitors-filter button[data-filter="selected"]').textContent()).includes(eTelefonEdge.name));
     await panel.evaluate(() => document.querySelectorAll('#view-tabs button')[1].click());
     await sleep(500);
     await tap(telefon.id);

@@ -162,6 +162,8 @@ dialog.monitor-dialog { width: min(96vw, 560px); }
 .test-result.fail { color: var(--danger); }
 .test-result.invalid { color: var(--warn); }
 .field-error { margin: 2px 0 0; color: var(--danger); font-size: 11px; }
+.field-warn { margin: 2px 0 0; color: var(--warn); font-size: 11px; }
+.field-warn[hidden] { display: none; }
 
 /* Etkin anahtarı */
 .alarm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -284,6 +286,7 @@ dialog.monitor-dialog { width: min(96vw, 560px); }
 .trail i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border); background: transparent; }
 .trail i.ok { background: var(--ok); border-color: var(--ok); }
 .trail i.fail { background: var(--danger); border-color: var(--danger); cursor: pointer; }
+.trail i:focus-visible, .shot:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .led-row .shot {
   width: 56px;
   height: 40px;

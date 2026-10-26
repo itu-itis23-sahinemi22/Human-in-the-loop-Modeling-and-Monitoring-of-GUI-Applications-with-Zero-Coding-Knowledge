@@ -17,8 +17,8 @@
 // üretilir. Kontrolün kendisi monitor-probe.js (sayfada) + monitor-run.js'tedir (panelde oynatma
 // ve "şimdi kontrol et"); runner tarafı sonraki adım.
 //
-// Bu dosya panel.js'ten SONRA yüklenir ve onun global'lerini okur (state, graphs,
-// activeGraph, scenarioView, selectedId, cy, nodeById, showMessage, graphWalkerModel,
+// Bu dosya panel.js'ten SONRA yüklenir ve onun global'lerini okur / sarmalar (state, activeGraph,
+// scenarioView, selectedId, renderDetails, cy, nodeById, showMessage, ACTION_TEXT, graphWalkerModel,
 // graphBackup). panel.js'i değiştirmez:
 //   - Kendi bölümünü ("Monitörler") Senaryo bölümünün altına, node / edge detay kartına da
 //     "Bu öğenin monitörleri" alt bölümünü kendisi ekler; graph'ta sağ tık menüsü kurar.
@@ -88,16 +88,21 @@ function normalizeMonitors(raw) {
   };
 }
 
-function saveMonitors() {
-  if (!monitorsGraphId) return Promise.resolve(); // henüz graph yok
-  return chrome.storage.local.set({ [monitorsKey()]: monitors });
+// Kaydetme hatası (kota, storage kapalı) sessiz kalmaz: kullanıcıya söylenir, çağıran devam eder.
+async function saveMonitors() {
+  if (!monitorsGraphId) return; // henüz graph yok
+  try {
+    await chrome.storage.local.set({ [monitorsKey()]: monitors });
+  } catch (error) {
+    showMessage({ error: `Monitörler kaydedilemedi: ${error.message}` });
+  }
 }
 
 
 // -----------------------------------------------------------------------------
 // UYARILAR: monitörün kendi ekran görüntüsü yapısı
 // -----------------------------------------------------------------------------
-// Bir monitör bozulduğu anda (kontrolü yapan monitor-run.js) addMonitorAlarm() çağrılır: uyarı,
+// Bir monitör bozulduğu anda (kontrolü yapan monitor-run.js) addMonitorAlarms() çağrılır: uyarı,
 // tam o anda alınan ekran görüntüsüyle birlikte buraya yazılır. Önemli olan AN'dır: aksiyon tabanlı
 // bir monitör (Input Validation) alana yazıldıktan hemen sonra bozulur; adımın sonunda ekran
 // çoktan değişmiş olur (Login'e basılmış, ürün sayfası açılmış). Bu yüzden görüntü adımın sonunda
@@ -143,20 +148,29 @@ async function loadMonitorAlarms(graphId) {
   return normalizeAlarms(stored);
 }
 
-function saveMonitorAlarms() {
-  if (!monitorsGraphId) return Promise.resolve();
-  return chrome.storage.local.set({ [alarmsKey()]: monitorAlarms });
+async function saveMonitorAlarms() {
+  if (!monitorsGraphId) return;
+  try {
+    await chrome.storage.local.set({ [alarmsKey()]: monitorAlarms });
+  } catch (error) {
+    showMessage({ error: `Monitör uyarıları kaydedilemedi: ${error.message}` });
+  }
 }
 
-// Yeni uyarı (monitor-run.js çağırır; ekran görüntüsü çağıran tarafından o anda alınmıştır).
-// Döner: kaydedilen uyarı (id'siyle). Graph yoksa kaydedilmez, yine de uyarı nesnesi döner.
-async function addMonitorAlarm({ monitorId, source = 'replay', where = '', text = '', url = '', screenshot = null, step = null, action = null }) {
-  const alarm = { id: 'a' + monitorAlarms.nextId++, monitorId, at: Date.now(), source, where, text, url, screenshot, step, action };
+// Yeni uyarılar (monitor-run.js çağırır; ekran görüntüsü çağıran tarafından o anda alınmıştır).
+// Aynı anda bozulan monitörlerin uyarıları TEK yazımla kaydedilir (her uyarı birkaç yüz KB görüntü
+// taşır; yazım başına bütün liste yazılır). Döner: kaydedilen uyarılar (id'leriyle). Graph yoksa
+// kaydedilmez, yine de uyarı nesneleri döner.
+async function addMonitorAlarms(list) {
+  const alarms = list.map(({ monitorId, source = 'replay', where = '', text = '', url = '', screenshot = null, step = null, action = null }) => ({
+    id: 'a' + monitorAlarms.nextId++, monitorId, at: Date.now(), source, where, text, url, screenshot, step, action,
+  }));
+  if (!alarms.length) return alarms;
   const alive = new Set(monitors.items.map((m) => m.id));
-  monitorAlarms.items = [...monitorAlarms.items.filter((a) => alive.has(a.monitorId)), alarm].slice(-MONITOR_ALARM_LIMIT);
+  monitorAlarms.items = [...monitorAlarms.items.filter((a) => alive.has(a.monitorId)), ...alarms].slice(-MONITOR_ALARM_LIMIT);
   await saveMonitorAlarms();
   renderMonitors();
-  return alarm;
+  return alarms;
 }
 
 // Monitörün uyarıları, en yenisi önce.
@@ -168,6 +182,15 @@ async function clearMonitorAlarms(monitorId) {
   monitorAlarms.items = monitorAlarms.items.filter((a) => a.monitorId !== monitorId);
   await saveMonitorAlarms();
   renderMonitors();
+}
+
+// Tıklanabilir ama düğme olmayan öğe (küçük görüntü, adım karesi): klavyeyle de açılsın
+function activatable(el, onActivate, label) {
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
+  if (label) el.setAttribute('aria-label', label);
+  el.onclick = onActivate;
+  el.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onActivate(); } };
 }
 
 function alarmTime(alarm) {
@@ -186,6 +209,12 @@ function openMonitorShot(m, alarmLike) {
 
 // Monitörün uyarı listesi penceresi: her uyarı zaman · yer · neden · küçük görüntü (tıklayınca büyür).
 let alarmsClearArmed = false;
+let alarmsClearTimer = null;
+function disarmAlarmsClear() {
+  alarmsClearArmed = false;
+  clearTimeout(alarmsClearTimer);
+  $('btn-monitor-alarms-clear').textContent = 'Uyarıları temizle';
+}
 function openMonitorAlarms(m) {
   const list = alarmsOf(m.id);
   $('monitor-alarms-title').textContent = `Uyarılar · ${monitorName(m)}`;
@@ -197,17 +226,22 @@ function openMonitorAlarms(m) {
     li.className = 'alarm';
     li.innerHTML = '<img class="shot" alt="Bozulduğu andaki ekran"><div class="alarm-body"><b></b><small class="when"></small><small class="why"></small></div>';
     const img = li.querySelector('img');
-    if (a.screenshot) { img.src = a.screenshot; img.title = 'Büyütmek için tıklayın'; img.onclick = () => openMonitorShot(m, a); } else img.remove();
+    if (a.screenshot) { img.src = a.screenshot; img.title = 'Büyütmek için tıklayın'; activatable(img, () => openMonitorShot(m, a), `Bozulduğu andaki ekranı büyüt (${a.where})`); } else img.remove();
     li.querySelector('b').textContent = a.where || (a.source === 'live' ? 'Şimdi kontrol' : 'Oynatma');
     li.querySelector('.when').textContent = alarmTime(a) + (a.url ? ` · ${a.url}` : '');
     li.querySelector('.why').textContent = a.text;
     return li;
   }));
-  alarmsClearArmed = false;
-  $('btn-monitor-alarms-clear').textContent = 'Uyarıları temizle';
+  disarmAlarmsClear();
   $('btn-monitor-alarms-clear').disabled = !list.length;
-  $('btn-monitor-alarms-clear').onclick = async () => {
-    if (!alarmsClearArmed) { alarmsClearArmed = true; $('btn-monitor-alarms-clear').textContent = 'Emin misin?'; return; }
+  $('btn-monitor-alarms-clear').onclick = async () => { // iki adımlı, 3 sn içinde ikinci tıklama ("Tümünü sil" gibi)
+    if (!alarmsClearArmed) {
+      alarmsClearArmed = true;
+      $('btn-monitor-alarms-clear').textContent = 'Emin misin?';
+      alarmsClearTimer = setTimeout(disarmAlarmsClear, 3000);
+      return;
+    }
+    disarmAlarmsClear();
     await clearMonitorAlarms(m.id);
     openMonitorAlarms(m);
   };
@@ -249,26 +283,36 @@ function edgeLabel(edge) {
 // EDGE'DEKİ AKSİYON (m.action): edge'in bir aksiyonuna bağlı monitör. Aksiyon, kayıttaki
 // sırasıyla (index) değil, yeniden bulunabilecek bilgiyle saklanır: tür + hedef anahtarı
 // ("input:user-name") + etiket ("Fill Username"); Emir aksiyon silince sıra kayar, eşleştirme
-// resolveMonitorAction ile yapılır (önce sıra + etiket, sonra tür + hedef, en son etiket).
+// resolveMonitorAction ile yapılır. Hedef (alan) her kademede karşılaştırılır: aynı etiketli iki
+// alan ("Ad") varken monitör sessizce öbür alana kaymamalı.
 function monitorActionRef(action, index) {
   if (!action) return null;
-  return { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: action.target?.key ?? action.selector ?? null };
+  return { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: actionTarget(action) };
+}
+
+function actionTarget(action) {
+  return action?.target?.key ?? action?.selector ?? null;
 }
 
 function normalizeActionRef(raw) {
-  if (!raw || typeof raw !== 'object' || !Number.isInteger(raw.index) || raw.index < 0) return null;
-  return { index: raw.index, type: String(raw.type ?? ''), label: String(raw.label ?? ''), target: raw.target == null ? null : String(raw.target) };
+  if (!raw || typeof raw !== 'object') return null;
+  const index = Number(raw.index);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return { index, type: String(raw.type ?? ''), label: String(raw.label ?? ''), target: raw.target == null ? null : String(raw.target) };
 }
 
-// Edge'in aksiyonları içinde monitörün aksiyonu: index ya da -1 (aksiyon artık yok)
+// Edge'in aksiyonları içinde monitörün aksiyonu: index ya da -1 (aksiyon artık yok). Kademeler:
+// 1) kayıttaki sırada tür + etiket + hedef aynı; 2) tür + hedef + etiket; 3) tür + hedef (etiket
+// değişmiş); 4) tür + etiket, yalnızca hedefi olmayan aksiyonlar için (sayfa kaydırma gibi).
 function resolveMonitorAction(ref, actions) {
   if (!ref || !Array.isArray(actions)) return -1;
-  const sameTarget = (a) => a && a.type === ref.type && (a.target?.key ?? a.selector ?? null) === ref.target;
+  const sameType = (a) => a && a.type === ref.type;
+  const sameTarget = (a) => sameType(a) && actionTarget(a) === ref.target;
   const at = actions[ref.index];
-  if (at && at.type === ref.type && at.label === ref.label) return ref.index;
+  if (sameTarget(at) && at.label === ref.label) return ref.index;
   let i = actions.findIndex((a) => sameTarget(a) && a.label === ref.label);
   if (i < 0) i = actions.findIndex(sameTarget);
-  if (i < 0) i = actions.findIndex((a) => a && a.type === ref.type && a.label === ref.label);
+  if (i < 0 && ref.target === null) i = actions.findIndex((a) => sameType(a) && a.label === ref.label);
   return i;
 }
 
@@ -340,7 +384,7 @@ const MONITORS_SECTION_HTML = `
   <p id="monitors-orphans" class="hint warn" hidden></p>
   <div class="toolbar">
     <button id="btn-monitor-add" class="primary">Monitör ekle</button>
-    <button id="btn-monitor-check" title="Oynatma yapmadan, açık sekmedeki ekranda tüm model ve seçili öğenin monitörlerini hemen kontrol eder (olay ve süre monitörleri hariç)">Bu ekranda şimdi kontrol et</button>
+    <button id="btn-monitor-check" title="Oynatma yapmadan, açık sekmedeki ekranda tüm model ve seçili öğenin monitörlerini hemen kontrol eder">Bu ekranda şimdi kontrol et</button>
     <button id="btn-monitor-undo" disabled>Silmeyi geri al</button>
     <button id="btn-monitor-load" title="Daha önce dışa aktarılmış bir GraphWalker JSON'undaki monitörleri yükler">Yükle…</button>
     <button id="btn-monitor-orphans" class="danger" hidden>Sahipsizleri sil</button>
@@ -577,7 +621,7 @@ function renderDetailsMonitors(selected) {
     + (readOnly ? 'Monitörler ana graph görünümünde eklenir ve düzenlenir.' : '');
   $('btn-node-monitor-add').textContent = kind === 'node' ? 'Bu node\'a monitör ekle' : 'Bu edge\'e monitör ekle';
   $('btn-node-monitor-add').hidden = readOnly;
-  for (const button of $('details-monitors-list').querySelectorAll('button, input')) button.disabled = readOnly;
+  for (const button of $('details-monitors-list').querySelectorAll('button, input')) button.disabled = readOnly && !button.classList.contains('alarms-open'); // uyarılar salt okunur bilgi: görünümde de açılır
 }
 
 // Tek monitör satırı: etkin kutusu, ikon + ad / kapsam / parametreler, son kontrol sonucu (LED),
@@ -623,7 +667,7 @@ function monitorItem(m) {
       img.src = latest.screenshot;
       img.alt = 'Bozulduğu andaki ekran';
       img.title = `Bozulduğu andaki ekran (${latest.where}): büyütmek için tıklayın`;
-      img.onclick = () => openMonitorShot(m, latest);
+      activatable(img, () => openMonitorShot(m, latest), `Bozulduğu andaki ekranı büyüt (${latest.where})`);
       row.append(img);
     }
     const button = document.createElement('button');
@@ -636,7 +680,9 @@ function monitorItem(m) {
   li.querySelector('.edit').disabled = !type;
   li.querySelector('.edit').title = type ? '' : 'Bu tür artık tanımlı değil; yalnızca silinebilir.';
   li.querySelector('.edit').onclick = () => openMonitorDialog({ id: m.id });
+  li.querySelector('.edit').setAttribute('aria-label', `${monitorName(m)} düzenle`);
   li.querySelector('.delete').onclick = () => deleteMonitors([m]);
+  li.querySelector('.delete').setAttribute('aria-label', `${monitorName(m)} sil`);
   return li;
 }
 
@@ -726,12 +772,12 @@ function openContextMenu(event) {
     button.onclick = () => { closeContextMenu(); onclick(); };
     return button;
   }));
-  const { x, y } = event.originalEvent ? { x: event.originalEvent.clientX, y: event.originalEvent.clientY } : event.renderedPosition ?? { x: 0, y: 0 };
+  const { x, y } = menuPoint(event);
   menu.hidden = false;
   const width = menu.offsetWidth;
   const height = menu.offsetHeight;
-  menu.style.left = `${Math.min(x, innerWidth - width - 8)}px`;
-  menu.style.top = `${Math.min(y, innerHeight - height - 8)}px`;
+  menu.style.left = `${Math.max(8, Math.min(x, innerWidth - width - 8))}px`; // pencere içinde kalsın (graph kaydırılmış olabilir)
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - height - 8))}px`;
   menu.querySelector('button')?.focus();
 }
 
@@ -739,11 +785,27 @@ function closeContextMenu() {
   $('monitor-context-menu').hidden = true;
 }
 
-// Graph'ta öğeyi seçer (panel.js'in tap dinleyicisi gibi: selectedId + detay kartı)
+// Menünün açılacağı nokta (pencere koordinatı). Fare: olayın clientX/Y'si. Dokunmatik uzun basma
+// ve sahte olaylar: clientX yok; graph'taki çizim konumu kutunun yerine eklenir.
+function menuPoint(event) {
+  const raw = event.originalEvent;
+  const client = raw?.clientX ?? raw?.touches?.[0]?.clientX ?? raw?.changedTouches?.[0]?.clientX;
+  if (Number.isFinite(client)) return { x: client, y: raw.clientY ?? raw.touches?.[0]?.clientY ?? raw.changedTouches?.[0]?.clientY ?? 0 };
+  const box = $('graph').getBoundingClientRect();
+  const pos = event.renderedPosition ?? { x: 0, y: 0 };
+  return { x: box.left + (Number.isFinite(pos.x) ? pos.x : 0), y: box.top + (Number.isFinite(pos.y) ? pos.y : 0) };
+}
+
+// Graph'ta öğeyi seçer. Seçim doğrudan yapılır (panel.js'in tap dinleyicisindeki iki satır: selectedId + renderDetails).
+// Sahte bir 'tap' olayı göndermek YANLIŞ olurdu: Senaryo bölümü açık ve "Elle seç"teyken panel.js
+// edge'e tıklamayı "bu edge'i koşuya ekle" sayar (panel.js > cy.on('tap')); sağ tık menüsü koşuyu
+// değiştirmemeli.
 function selectInGraph(id) {
   cy.elements().unselect();
   cy.getElementById(id).select();
-  cy.getElementById(id).emit('tap'); // panel.js seçimi ve detay kartını buradan günceller
+  selectedId = id; // panel.js
+  renderDetails(); // panel.js
+  renderMonitors();
 }
 
 cy.on('cxttap', (event) => {
@@ -856,10 +918,10 @@ function showParamsStep(typeId, existing = null) {
   $('monitor-enabled').checked = existing?.enabled ?? true;
   $('monitor-name').value = existing?.name ?? '';
   renderScopeState();
+  showDialogError(null); // önce temizle: aşağıdaki aksiyon listesi "aksiyon artık yok" uyarısı koyabilir
   renderActionPicks(existing?.action ?? null);
   renderElementPicks();
   renderSummary();
-  showDialogError(null);
   dialogInitial = JSON.stringify(draftMonitor());
   ($('monitor-params').querySelector('input:not([type="checkbox"]), select') ?? $('monitor-name')).focus();
 }
@@ -971,9 +1033,13 @@ function paramField(param, value) {
     }
     const tester = document.createElement('label');
     tester.className = 'field tester';
-    tester.innerHTML = '<span>Dene</span> <input spellcheck="false" placeholder="örnek bir değer yazın"><em class="test-result"></em>';
+    tester.innerHTML = '<span>Dene</span> <input spellcheck="false" maxlength="200" placeholder="örnek bir değer yazın"><em class="test-result"></em>'; // örnek kısa: ağır desen paneli kilitlemesin
     tester.querySelector('input').oninput = () => updateTester(wrap);
     tools.append(tester);
+    const warn = document.createElement('p');
+    warn.className = 'field-warn';
+    warn.hidden = true;
+    tools.append(warn);
     wrap.append(tools);
   }
 
@@ -982,11 +1048,22 @@ function paramField(param, value) {
   error.hidden = true;
   wrap.append(error);
   wrap.addEventListener('input', () => { error.hidden = true; if (param.kind === 'regex') updateTester(wrap); });
+  if (param.kind === 'regex') updatePatternWarning(wrap);
   return wrap;
+}
+
+// Ağır desen uyarısı (monitor-types.js > monitorPatternWarning), desenin altında
+function updatePatternWarning(wrap) {
+  const warn = wrap.querySelector('.field-warn');
+  if (!warn) return;
+  const text = monitorPatternWarning(wrap.querySelector('.field:not(.tester) input').value);
+  warn.textContent = text ?? '';
+  warn.hidden = !text;
 }
 
 // Canlı deneme: desen ile örnek değer eşleşiyor mu?
 function updateTester(wrap) {
+  updatePatternWarning(wrap);
   const pattern = wrap.querySelector('.field:not(.tester) input').value;
   const sample = wrap.querySelector('.tester input').value;
   const result = wrap.querySelector('.test-result');
@@ -1315,14 +1392,18 @@ graphWalkerModel = () => withMonitors(graphWalkerModelWithoutMonitors());
 
 // Dışarıdan gelen monitör listesi (dışa aktarılmış model, yedek) mevcut listeye yeni id'lerle
 // eklenir; bilinmeyen türler atlanır, öğesi bu graph'ta olmayanlar sahipsiz gelir.
+// Dosyadan gelen parametreler de formdaki gibi doğrulanır (monitorParamProblem): "min": "abc" gibi
+// bir kayıt yeşil yanan boş bir monitör olmasın diye atlanır (invalid sayılır).
 function importMonitorItems(list) {
   const severities = new Set(MONITOR_SEVERITIES.map((s) => s.id));
   let unknown = 0;
+  let invalid = 0;
   const added = [];
   for (const raw of list) {
     const type = monitorType(raw?.type);
     if (!type) { unknown++; continue; }
     const params = { ...monitorDefaults(type), ...(raw.params && typeof raw.params === 'object' ? raw.params : {}) };
+    if (type.params.some((p) => monitorParamProblem(p, params[p.key]))) { invalid++; continue; }
     const name = typeof raw.name === 'string' && raw.name.trim() && raw.name.trim() !== monitorAutoName(type, params) ? raw.name.trim() : null;
     added.push({
       id: 'm' + monitors.nextId++, type: type.id, scope: raw.scope === 'global' ? 'global' : String(raw.scope ?? 'global'),
@@ -1330,7 +1411,14 @@ function importMonitorItems(list) {
     });
   }
   monitors.items.push(...added);
-  return { added, unknown };
+  return { added, unknown, invalid };
+}
+
+// "3 monitör yüklendi, 1 tanesi sahipsiz…; 1 bilinmeyen tür, 2 geçersiz parametre atlandı."
+function importSummary({ added, unknown, invalid }, prefix) {
+  const skipped = [unknown ? `${unknown} bilinmeyen tür` : '', invalid ? `${invalid} geçersiz parametreli kayıt` : ''].filter(Boolean).join(', ');
+  const orphans = added.filter(isOrphan).length;
+  return `${prefix}${added.length} monitör ${prefix ? 'de ' : ''}yüklendi` + (orphans ? `, ${orphans} tanesi sahipsiz (öğesi bu graph'ta yok)` : '') + (skipped ? `; ${skipped} atlandı` : '') + '.';
 }
 
 // Yükle: dışa aktarılmış GraphWalker JSON'undaki (ya da yalnızca monitör listesi içeren bir
@@ -1344,10 +1432,9 @@ $('monitor-file').onchange = async () => {
     const json = JSON.parse(await file.text());
     const list = json.models?.[0]?.properties?.graphRecorder?.monitors?.items ?? (json.format === MONITORS_FORMAT ? json.items : null);
     if (!Array.isArray(list)) throw new Error('Dosyada monitör bulunamadı. Graph Recorder\'ın dışa aktardığı bir GraphWalker JSON\'u seçin.');
-    const { added, unknown } = importMonitorItems(list);
+    const result = importMonitorItems(list);
     await saveMonitors();
-    const orphans = added.filter(isOrphan).length;
-    showMessage({ notice: `${added.length} monitör yüklendi` + (orphans ? `, ${orphans} tanesi sahipsiz (öğesi bu graph'ta yok)` : '') + (unknown ? `; ${unknown} bilinmeyen tür atlandı` : '') + '.' });
+    showMessage({ notice: importSummary(result, '') });
     $('monitors').open = true;
   } catch (error) {
     showMessage({ error: `Monitörler yüklenemedi: ${error.message}` });
@@ -1386,6 +1473,7 @@ document.addEventListener('change', async (event) => {
   } catch {
     pendingBackup = null; // bozuk dosyayı panel.js kendisi bildirir
   }
+  if (pendingBackup) renderMonitors(); // uygulanması bir çizime bağlı; yeni graph'a geçiş onu zaten tetikler, burası emniyet
 }, true);
 
 function applyPendingBackup() {
@@ -1393,23 +1481,24 @@ function applyPendingBackup() {
   if (Date.now() - pendingBackup.at > PENDING_BACKUP_MS) { pendingBackup = null; return; }
   const entry = activeGraph();
   const fresh = entry && entry.created >= pendingBackup.at - 1000 && !monitors.items.length;
-  const sameNodes = pendingBackup.nodeIds.every((id) => nodeById(id));
+  const sameNodes = pendingBackup.nodeIds.length > 0 && pendingBackup.nodeIds.every((id) => nodeById(id)); // boş yedek herhangi bir graph'a yapışmasın
   if (!fresh || !sameNodes) return;
-  const { added, unknown } = importMonitorItems(pendingBackup.items);
+  const result = importMonitorItems(pendingBackup.items);
   pendingBackup = null;
   saveMonitors().then(() => {
-    showMessage({ notice: `Yedekteki ${added.length} monitör de yüklendi` + (unknown ? ` (${unknown} bilinmeyen tür atlandı)` : '') + '.' });
+    showMessage({ notice: importSummary(result, 'Yedekteki ') });
     renderMonitors();
   });
 }
 
 // Silinen graph'ın monitörleri ve uyarıları da silinir (graph listesi değişince: panel.js > GRAPH'LAR).
-async function dropMonitorsOfDeletedGraphs(list) {
-  const alive = new Set(list.map((g) => g.id));
-  const all = await chrome.storage.local.get(null);
-  const graphOf = (key) => (key.startsWith(MONITORS_KEY_PREFIX) ? key.slice(MONITORS_KEY_PREFIX.length) : key.startsWith(MONITOR_ALARMS_KEY_PREFIX) ? key.slice(MONITOR_ALARMS_KEY_PREFIX.length) : null);
-  const stale = Object.keys(all).filter((key) => graphOf(key) !== null && !alive.has(graphOf(key)));
-  if (stale.length) await chrome.storage.local.remove(stale);
+// Yalnızca listeden düşen id'lere bakılır; storage'ın tamamı (bütün graph'lar ve ekran görüntüleri)
+// okunmaz. Liste sayı / ad değişiminde de yazıldığı için bu sık çalışır.
+async function dropMonitorsOfDeletedGraphs(before, after) {
+  const alive = new Set((after ?? []).map((g) => g.id));
+  const gone = (before ?? []).map((g) => g.id).filter((id) => !alive.has(id));
+  if (!gone.length) return;
+  await chrome.storage.local.remove(gone.flatMap((id) => [monitorsKey(id), alarmsKey(id)]));
 }
 
 
@@ -1446,5 +1535,5 @@ chrome.storage.onChanged.addListener((changes, area) => { // panel.js'in dinleyi
   if (monitorsGraphId && changes[monitorsKey()]) monitors = normalizeMonitors(changes[monitorsKey()].newValue);
   if (monitorsGraphId && changes[alarmsKey()]) monitorAlarms = normalizeAlarms(changes[alarmsKey()].newValue);
   if (monitorsGraphId && (changes[monitorsKey()] || changes[alarmsKey()] || changes['graph:' + monitorsGraphId])) renderMonitors();
-  if (changes.graphs) dropMonitorsOfDeletedGraphs(changes.graphs.newValue ?? []);
+  if (changes.graphs) dropMonitorsOfDeletedGraphs(changes.graphs.oldValue, changes.graphs.newValue);
 });

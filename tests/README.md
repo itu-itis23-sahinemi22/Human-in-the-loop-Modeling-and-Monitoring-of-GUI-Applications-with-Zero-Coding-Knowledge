@@ -45,7 +45,8 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `scenario-graphs` | Senaryo graph'ları: kopyanın içeriği, sekmeler ve listeyle eşlik, salt okunur detay, "Ana graph'ta göster", "Kullanan senaryolar", senaryo görünümünde kayıt, değişiklik uyarısı ve yenileme |
 | `scenarios` | Senaryo listesi: önce "Yeni senaryo", kendiliğinden kayıt, seçim ve hatırlama, yürünemeyen senaryo, silme, yedekte senaryolar |
 | `monitors` | Monitör menüsü ([docs/07](../docs/07-monitorler.md)): tür kartları, node / edge / tüm model monitörü, graph'ta sağ tık menüsü, form yardımcıları, graph'ta hale, GraphWalker JSON'una yazılma ve runner'ın okuması, graph başına saklama, yedekle geri yükleme, sahipsizlik, senaryo görünümü, kalıcılık |
-| `monitor-run` | Monitörlerin kontrolü ([docs/07](../docs/07-monitorler.md#oynatmada-kontrol)): kuralları bozan sayfalarda panelde oynatma, ışık listesi (yeşil / kırmızı, adım izi, ekran görüntüsü), aksiyon tabanlı Input Validation, "Bu ekranda şimdi kontrol et" |
+| `monitor-run` | Monitörlerin kontrolü ([docs/07](../docs/07-monitorler.md#oynatmada-kontrol)): kuralları bozan sayfalarda panelde oynatma, ışık listesi (yeşil / kırmızı, adım izi, ekran görüntüsü), aksiyon tabanlı Input Validation, edge'in aksiyonuna bağlı monitörler, bozulma anındaki görüntülü uyarılar, "Bu ekranda şimdi kontrol et" |
+| `monitor-unit` | Monitör yardımcılarının birim testi (tarayıcısız): parametre doğrulama, ağır desen uyarısı, otomatik ad ve özet cümlesi, aksiyon eşleştirme, storage verisinin normalize edilmesi |
 
 ## Yeni test
 
