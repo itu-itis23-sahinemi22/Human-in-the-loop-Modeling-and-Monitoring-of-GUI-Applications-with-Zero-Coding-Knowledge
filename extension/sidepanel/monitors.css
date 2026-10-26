@@ -227,6 +227,26 @@ dialog.monitor-dialog { width: min(96vw, 560px); }
 .monitor .verdict { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .monitor .verdict[hidden] { display: none; }
 .monitor .verdict .led { width: 9px; height: 9px; }
+/* Uyarılar: son uyarının görüntüsü (son kontrol kırmızıysa) + "Uyarılar (n)" */
+.monitor .alarms { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.monitor .alarms[hidden] { display: none; }
+.monitor .alarms .shot, .alarm-list .shot {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  cursor: zoom-in;
+  background: var(--card);
+}
+.alarm-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.alarm-list .alarm { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 8px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 6px; background: var(--bg); }
+.alarm-list .alarm:has(> .alarm-body:only-child) { grid-template-columns: 1fr; }
+.alarm-list .alarm-body { min-width: 0; }
+.alarm-list .alarm-body b { display: block; font-weight: 600; word-break: break-word; }
+.alarm-list .alarm-body small { display: block; color: var(--muted); font-size: 11px; word-break: break-word; }
+.alarm-list .alarm-body .why { color: var(--danger); }
 
 /* ---- Oynatma kartındaki monitör listesi (monitor-run.js) -------------------------------- */
 .monitor-run { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }

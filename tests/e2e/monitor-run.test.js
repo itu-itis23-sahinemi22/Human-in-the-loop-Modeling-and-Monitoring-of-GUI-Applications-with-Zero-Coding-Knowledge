@@ -1,7 +1,8 @@
 // Monitörlerin kontrolü (docs/07-monitorler.md > Oynatmada kontrol): kuralları bilerek bozan yerel
 // sayfalarda kayıt, dört monitör (tüm model, node, aksiyon) + bir kapalı monitör, panelde oynatma ve
 // oynatma kartındaki ışık listesi (yalnızca yeşil / kırmızı, adım izi, ayrıntı, ekran görüntüsü),
-// aksiyon tabanlı Input Validation (yazılan değer), Monitörler listesinde "Son kontrol",
+// aksiyon tabanlı Input Validation (yazılan değer), bozulma ANINDA alınan görüntülü uyarılar
+// (monitor-alarms:<graph>, Monitörler listesinde "Uyarılar (n)", yeniden açılışta duruyor), "Son kontrol",
 // "Bu ekranda şimdi kontrol et", Emir'in oynatma sonucunun bozulmaması.
 // Kullanım: node tests/e2e/monitor-run.test.js [--headed]
 const http = require('http');
@@ -150,18 +151,36 @@ function check(name, ok, detail = '') {
     check('Error Text (node Telefon, eski kayıtta "warning"): tek adım, yeşil', row('Telefon ekranında').status === 'ok' && row('Telefon ekranında').trail.join(',') === 'ok' && row('Telefon ekranında').scope === 'Node: v_Telefon' && row('Telefon ekranında').detail.includes('bozulma yok'), row('Telefon ekranında').detail);
     check('adım izi başlıkları adım ve edge adını söylüyor', row('Font Size').titles[0].startsWith(`Adım 1 (${eLogin.name} → v_Telefon)`) && row('Font Size').titles[1].startsWith(`Adım 2 (${eDevam.name} → v_Sepet)`), row('Font Size').titles.join(' | '));
     const shots = await panel.$$eval('#monitor-run-list img.shot', (imgs) => imgs.map((i) => i.src.slice(0, 22)));
-    check('bozulan adımların ekran görüntüsü var (jpeg data URL)', shots.length === 3 && shots.every((x) => x.startsWith('data:image/jpeg')), shots.join(','));
+    check('bozulan monitörlerin ekran görüntüsü var (jpeg data URL)', shots.length === 3 && shots.every((x) => x.startsWith('data:image/jpeg')), shots.join(','));
     await panel.click('#monitor-run-list img.shot');
     await sleep(200);
     check('küçük resme tıklayınca büyük görüntü penceresi', await panel.evaluate(() => document.getElementById('monitor-shot-dialog').open && document.getElementById('monitor-shot-image').naturalWidth > 100 && document.getElementById('monitor-shot-text').textContent.includes('Adım 1')));
     await shot('ekran-goruntusu');
     await panel.click('#btn-monitor-shot-close');
 
-    // ---- Monitörler listesinde "Son kontrol" ----
-    const listVerdicts = await panel.$$eval('#monitors-list .monitor', (els) => els.map((li) => ({ name: li.querySelector('b').textContent, led: li.querySelector('.verdict .led')?.className.replace('led ', '') ?? null, text: li.querySelector('.verdict')?.textContent ?? '' })));
+    // ---- Uyarılar: görüntü bozulma ANINDA alınır ve monitörün kendi yapısında saklanır ----
+    // Input Validation Devam adımında telefon yazılınca bozulur; görüntü "Devam" tıklanmadan, Telefon
+    // sayfasındayken alınmalı (adımın sonunda ekran Sepet olurdu). Error Text ise varılan Sepet ekranında.
+    const alarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
+    const alarmOf = (id) => alarms?.items.find((a) => a.monitorId === id);
+    check('uyarılar storage\'da (monitor-alarms:<graph>): 3 uyarı, her biri görüntülü', alarms?.format === 'graph-recorder-monitor-alarms/v1' && alarms.items.length === 3 && alarms.items.every((a) => a.screenshot?.startsWith('data:image/jpeg') && a.source === 'replay'), JSON.stringify(alarms?.items.map((a) => [a.monitorId, a.where, a.url])));
+    check('Input Validation uyarısı: Telefon sayfasında, "Devam" tıklanmadan (aksiyon bilgisiyle)', alarmOf('m3')?.url === base + '/telefon' && alarmOf('m3').where.startsWith('Adım 2') && /aksiyon \d+\/\d+: /.test(alarmOf('m3').where) && alarmOf('m3').text.includes('03121234567'), JSON.stringify([alarmOf('m3')?.where, alarmOf('m3')?.url]));
+    check('Font Size uyarısı Telefon ekranında (adım 1), Error Text uyarısı Sepet ekranında (adım 2)', alarmOf('m1')?.url === base + '/telefon' && alarmOf('m1').where.startsWith('Adım 1') && alarmOf('m2')?.url === base + '/sepet' && alarmOf('m2').where.startsWith('Adım 2') && alarmOf('m1').action === null, JSON.stringify([alarmOf('m1')?.url, alarmOf('m2')?.url]));
+    const ivShot = await panel.evaluate(() => { const li = [...document.querySelectorAll('#monitor-run-list .led-row')].find((x) => x.textContent.includes('Telefon 5 ile')); li.querySelector('img.shot').click(); const t = document.getElementById('monitor-shot-text').textContent; document.getElementById('btn-monitor-shot-close').click(); return t; });
+    check('ışık listesinde Input Validation görüntüsünün başlığı aksiyonu söylüyor', ivShot.includes('Adım 2') && ivShot.includes('aksiyon') && ivShot.includes('03121234567'), ivShot);
+
+    // ---- Monitörler listesinde "Son kontrol" ve uyarılar ----
+    const listVerdicts = await panel.$$eval('#monitors-list .monitor', (els) => els.map((li) => ({ name: li.querySelector('b').textContent, led: li.querySelector('.verdict .led')?.className.replace('led ', '') ?? null, text: li.querySelector('.verdict')?.textContent ?? '', alarms: li.querySelector('.alarms-open')?.textContent ?? null, shot: Boolean(li.querySelector('.alarms img.shot')) })));
     const lv = (name) => listVerdicts.find((v) => v.name.includes(name));
     check('Monitörler listesi: ışık ve "Son kontrol … (son oynatma)"', lv('Font Size · ≥ 4').led === 'fail' && lv('Font Size · ≥ 4').text.includes('Son kontrol') && lv('Font Size · ≥ 4').text.includes('(son oynatma)') && lv('Telefon ekranında').led === 'ok' && lv('kapalı').led === null, JSON.stringify(lv('Font Size · ≥ 4')));
+    check('Monitörler listesi: bozulanlarda "Uyarılar (1)" ve son uyarının görüntüsü; geçende yok', lv('Font Size · ≥ 4').alarms === 'Uyarılar (1)' && lv('Font Size · ≥ 4').shot && lv('Telefon 5 ile').alarms === 'Uyarılar (1)' && lv('Telefon 5 ile').shot && lv('Telefon ekranında').alarms === null && lv('kapalı').alarms === null, JSON.stringify(listVerdicts.map((v) => [v.name.slice(0, 14), v.alarms, v.shot])));
     await shot('monitor-listesi-sonuc', '#monitors');
+    await panel.evaluate(() => { [...document.querySelectorAll('#monitors-list .monitor')].find((x) => x.textContent.includes('Telefon 5 ile')).querySelector('.alarms-open').click(); });
+    await sleep(200);
+    const alarmsDialog = await panel.evaluate(() => ({ open: document.getElementById('monitor-alarms-dialog').open, title: document.getElementById('monitor-alarms-title').textContent, rows: [...document.querySelectorAll('#monitor-alarms-list .alarm')].map((li) => ({ where: li.querySelector('b').textContent, when: li.querySelector('.when').textContent, why: li.querySelector('.why').textContent, shot: Boolean(li.querySelector('img.shot')) })) }));
+    check('uyarı listesi penceresi: 1 uyarı, yer (adım + aksiyon), zaman + adres, neden, görüntü', alarmsDialog.open && alarmsDialog.title.includes('Telefon 5 ile') && alarmsDialog.rows.length === 1 && alarmsDialog.rows[0].where.includes('aksiyon') && alarmsDialog.rows[0].when.includes('/telefon') && alarmsDialog.rows[0].why.includes('desene uymuyor') && alarmsDialog.rows[0].shot, JSON.stringify(alarmsDialog));
+    await shot('uyari-listesi');
+    await panel.click('#btn-monitor-alarms-done');
 
     // ---- Koşu değişince ışık listesi gizlenir ----
     await panel.evaluate(async () => { await createScenario({ name: 'Boş', planner: { engine: 'manual' }, runs: [[]] }); });
@@ -182,6 +201,23 @@ function check(name, ok, detail = '') {
     check('şimdi kontrol: mesaj sayımları', liveMessage.startsWith('Şimdi kontrol edildi: 1 kırmızı, 2 yeşil'), liveMessage);
     check('şimdi kontrol: Font Size kırmızı "(şimdi, 127.0.0.1…)", Error Text (tüm model ve Telefon) yeşil, aksiyon monitörü eski sonucunda', lvv('Font Size · ≥ 4').led === 'fail' && lvv('Font Size · ≥ 4').text.includes('(şimdi, 127.0.0.1') && lvv('Error Text · /').led === 'ok' && lvv('Telefon ekranında').led === 'ok' && lvv('Telefon 5 ile').text.includes('(son oynatma)'), JSON.stringify([lvv('Font Size · ≥ 4'), lvv('Telefon 5 ile')]));
     await shot('simdi-kontrol', '#monitors');
+    const liveAlarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
+    const liveAlarm = liveAlarms.items.at(-1);
+    check('şimdi kontrol: bozulan Font Size için görüntülü uyarı eklendi (kaynak "şimdi")', liveAlarms.items.length === 4 && liveAlarm.monitorId === 'm1' && liveAlarm.source === 'live' && liveAlarm.where.startsWith('Şimdi kontrol') && liveAlarm.url === base + '/telefon' && liveAlarm.screenshot?.startsWith('data:image/jpeg') && (await panel.evaluate(() => [...document.querySelectorAll('#monitors-list .monitor')].find((x) => x.textContent.includes('Font Size · ≥ 4')).querySelector('.alarms-open').textContent)) === 'Uyarılar (2)', JSON.stringify([liveAlarms.items.length, liveAlarm.where, liveAlarm.url]));
+
+    // ---- Uyarılar paneli yeniden açınca da duruyor; graph silinince anahtarıyla gidiyor ----
+    await panel.reload();
+    await sleep(900);
+    await panel.evaluate(() => { document.getElementById('monitors').open = true; });
+    const afterReload = await panel.$$eval('#monitors-list .monitor', (els) => els.map((li) => [li.querySelector('b').textContent, li.querySelector('.alarms-open')?.textContent ?? null]));
+    check('yeniden açılış: uyarılar yerinde (Font Size 2, Error Text 1, Telefon 1)', afterReload.some((r) => r[0].startsWith('Font Size · ≥ 4') && r[1] === 'Uyarılar (2)') && afterReload.some((r) => r[0].startsWith('Error Text') && r[1] === 'Uyarılar (1)') && afterReload.some((r) => r[0].startsWith('Telefon 5 ile') && r[1] === 'Uyarılar (1)'), JSON.stringify(afterReload));
+    await panel.evaluate(() => { [...document.querySelectorAll('#monitors-list .monitor')].find((x) => x.textContent.includes('Error Text · /')).querySelector('.alarms-open').click(); });
+    await sleep(150);
+    await panel.click('#btn-monitor-alarms-clear'); await panel.click('#btn-monitor-alarms-clear'); // iki adımlı
+    await sleep(300);
+    const cleared = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
+    check('"Uyarıları temizle" (iki adımlı) yalnızca o monitörün uyarılarını siler', cleared.items.length === 3 && !cleared.items.some((a) => a.monitorId === 'm2') && (await text('#monitor-alarms-hint')).includes('henüz uyarı vermedi'), JSON.stringify(cleared.items.map((a) => a.monitorId)));
+    await panel.click('#btn-monitor-alarms-done');
 
     check('konsolda hata yok', errors.length === 0, errors.join(' | '));
   } finally {

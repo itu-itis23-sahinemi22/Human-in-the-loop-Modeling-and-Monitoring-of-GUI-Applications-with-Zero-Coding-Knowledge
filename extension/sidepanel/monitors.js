@@ -23,6 +23,11 @@
 //     monitörlerin tek yazarı bu dosyadır. Graph değişince o graph'ın monitörleri yüklenir;
 //     graph silinince anahtarı da silinir. "Sıfırla" graph'ı boşaltır, monitörlere dokunmaz
 //     (node / edge monitörleri "sahipsiz" kalır; kullanıcı taşır ya da siler).
+//   - Monitörlerin UYARILARI da graph'tan ayrı, kendi anahtarındadır: 'monitor-alarms:<graph id>'.
+//     Bir monitör bozulduğunda (oynatmada bir adımda / aksiyonda ya da "şimdi kontrol et"te) o anın
+//     ekran görüntüsü monitör tarafından alınır ve uyarıyla birlikte burada saklanır; graph'ın
+//     node ekran görüntülerine dokunulmaz, modele (GraphWalker JSON) yazılmaz. Graph başına son
+//     MONITOR_ALARM_LIMIT uyarı tutulur (bkz. UYARILAR).
 //   - Dışa aktarımda graphWalkerModel() sarmalanır: monitörler modelin
 //     properties.graphRecorder.monitors alanına, node / edge monitörleri ayrıca ilgili
 //     vertex'in / edge'in properties.monitors alanına yazılır (GraphWalker bu alanları yok sayar).
@@ -37,8 +42,12 @@
 
 const MONITORS_KEY_PREFIX = 'monitors:';            // chrome.storage.local > monitors:<graph id>
 const MONITORS_FORMAT = 'graph-recorder-monitors/v1';
+const MONITOR_ALARMS_KEY_PREFIX = 'monitor-alarms:'; // chrome.storage.local > monitor-alarms:<graph id> (bkz. UYARILAR)
+const MONITOR_ALARMS_FORMAT = 'graph-recorder-monitor-alarms/v1';
+const MONITOR_ALARM_LIMIT = 20;                     // graph başına saklanan son uyarı sayısı (her biri ekran görüntülü)
 
 let monitors = emptyMonitors();  // aktif graph'ın monitörleri: { format, nextId, items: [{ id, type, scope, params, severity, enabled, name, createdAt }] }
+let monitorAlarms = emptyAlarms(); // aktif graph'ın monitör uyarıları (ekran görüntüleriyle), bkz. UYARILAR
 let monitorsGraphId = null;      // monitörleri yüklü graph (storage > activeGraph)
 let monitorFilter = 'all';       // listede gösterilen kapsam: 'all' | 'global' | 'selected' (seçili node / edge)
 let monitorUndo = [];            // silinen monitörler, eski yerleriyle (en yenisi sonda); graph'a özel
@@ -77,6 +86,127 @@ function normalizeMonitors(raw) {
 function saveMonitors() {
   if (!monitorsGraphId) return Promise.resolve(); // henüz graph yok
   return chrome.storage.local.set({ [monitorsKey()]: monitors });
+}
+
+
+// -----------------------------------------------------------------------------
+// UYARILAR: monitörün kendi ekran görüntüsü yapısı
+// -----------------------------------------------------------------------------
+// Bir monitör bozulduğu anda (kontrolü yapan monitor-run.js) addMonitorAlarm() çağrılır: uyarı,
+// tam o anda alınan ekran görüntüsüyle birlikte buraya yazılır. Önemli olan AN'dır: aksiyon tabanlı
+// bir monitör (Input Validation) alana yazıldıktan hemen sonra bozulur; adımın sonunda ekran
+// çoktan değişmiş olur (Login'e basılmış, ürün sayfası açılmış). Bu yüzden görüntü adımın sonunda
+// değil, bozulma anında alınır ve uyarıda saklanır. Graph'ın node görüntüleriyle ilgisi yoktur.
+//   uyarı: { id, monitorId, at, source: 'replay' | 'live', where, text, url, screenshot,
+//            step: { index, edgeId, target } | null, action: { index, count, label } | null }
+//   where: "Adım 1 (e_Login → v_Inventory) · aksiyon 1/3: Fill Username" gibi, uyarı anında
+//          hesaplanmış metin (graph sonradan değişse de okunur kalsın).
+// Graph başına son MONITOR_ALARM_LIMIT uyarı kalır (eskisi silinir); silinmiş monitörlerin
+// uyarıları bir sonraki yazımda atılır. Graph silinince anahtar da silinir.
+
+function alarmsKey(graphId = monitorsGraphId) {
+  return MONITOR_ALARMS_KEY_PREFIX + graphId;
+}
+
+function emptyAlarms() {
+  return { format: MONITOR_ALARMS_FORMAT, nextId: 1, items: [] };
+}
+
+function normalizeAlarms(raw) {
+  const data = raw && typeof raw === 'object' ? raw : emptyAlarms();
+  const items = Array.isArray(data.items) ? data.items : [];
+  return {
+    format: MONITOR_ALARMS_FORMAT,
+    nextId: Number.isInteger(data.nextId) && data.nextId > 0 ? data.nextId : 1,
+    items: items.filter((a) => a && typeof a.id === 'string' && typeof a.monitorId === 'string').map((a) => ({
+      id: a.id,
+      monitorId: a.monitorId,
+      at: Number.isFinite(a.at) ? a.at : 0,
+      source: a.source === 'live' ? 'live' : 'replay',
+      where: String(a.where ?? ''),
+      text: String(a.text ?? ''),
+      url: typeof a.url === 'string' ? a.url : '',
+      screenshot: typeof a.screenshot === 'string' && a.screenshot.startsWith('data:image/') ? a.screenshot : null,
+      step: a.step && typeof a.step === 'object' ? a.step : null,
+      action: a.action && typeof a.action === 'object' ? a.action : null,
+    })),
+  };
+}
+
+async function loadMonitorAlarms(graphId) {
+  const stored = graphId ? (await chrome.storage.local.get(alarmsKey(graphId)))[alarmsKey(graphId)] : null;
+  return normalizeAlarms(stored);
+}
+
+function saveMonitorAlarms() {
+  if (!monitorsGraphId) return Promise.resolve();
+  return chrome.storage.local.set({ [alarmsKey()]: monitorAlarms });
+}
+
+// Yeni uyarı (monitor-run.js çağırır; ekran görüntüsü çağıran tarafından o anda alınmıştır).
+// Döner: kaydedilen uyarı (id'siyle). Graph yoksa kaydedilmez, yine de uyarı nesnesi döner.
+async function addMonitorAlarm({ monitorId, source = 'replay', where = '', text = '', url = '', screenshot = null, step = null, action = null }) {
+  const alarm = { id: 'a' + monitorAlarms.nextId++, monitorId, at: Date.now(), source, where, text, url, screenshot, step, action };
+  const alive = new Set(monitors.items.map((m) => m.id));
+  monitorAlarms.items = [...monitorAlarms.items.filter((a) => alive.has(a.monitorId)), alarm].slice(-MONITOR_ALARM_LIMIT);
+  await saveMonitorAlarms();
+  renderMonitors();
+  return alarm;
+}
+
+// Monitörün uyarıları, en yenisi önce.
+function alarmsOf(monitorId) {
+  return monitorAlarms.items.filter((a) => a.monitorId === monitorId).reverse();
+}
+
+async function clearMonitorAlarms(monitorId) {
+  monitorAlarms.items = monitorAlarms.items.filter((a) => a.monitorId !== monitorId);
+  await saveMonitorAlarms();
+  renderMonitors();
+}
+
+function alarmTime(alarm) {
+  const d = new Date(alarm.at);
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// "Bozulduğu andaki ekran" penceresi: başlık altındaki metin + görüntü. alarmLike: { where, text, screenshot }.
+function openMonitorShot(m, alarmLike) {
+  $('monitor-shot-text').textContent = `${monitorName(m)} · ${alarmLike.where}${alarmLike.where && alarmLike.text ? ': ' : ''}${alarmLike.text ?? ''}`;
+  $('monitor-shot-image').src = alarmLike.screenshot ?? '';
+  $('monitor-shot-image').hidden = !alarmLike.screenshot;
+  $('monitor-shot-noimage').hidden = Boolean(alarmLike.screenshot);
+  $('monitor-shot-dialog').showModal();
+}
+
+// Monitörün uyarı listesi penceresi: her uyarı zaman · yer · neden · küçük görüntü (tıklayınca büyür).
+let alarmsClearArmed = false;
+function openMonitorAlarms(m) {
+  const list = alarmsOf(m.id);
+  $('monitor-alarms-title').textContent = `Uyarılar · ${monitorName(m)}`;
+  $('monitor-alarms-hint').textContent = list.length
+    ? `${list.length} uyarı (en yenisi üstte; graph başına son ${MONITOR_ALARM_LIMIT} uyarı saklanır). Her uyarı, monitörün bozulduğu anda alınan ekran görüntüsüyle.`
+    : 'Bu monitör henüz uyarı vermedi.';
+  $('monitor-alarms-list').replaceChildren(...list.map((a) => {
+    const li = document.createElement('li');
+    li.className = 'alarm';
+    li.innerHTML = '<img class="shot" alt="Bozulduğu andaki ekran"><div class="alarm-body"><b></b><small class="when"></small><small class="why"></small></div>';
+    const img = li.querySelector('img');
+    if (a.screenshot) { img.src = a.screenshot; img.title = 'Büyütmek için tıklayın'; img.onclick = () => openMonitorShot(m, a); } else img.remove();
+    li.querySelector('b').textContent = a.where || (a.source === 'live' ? 'Şimdi kontrol' : 'Oynatma');
+    li.querySelector('.when').textContent = alarmTime(a) + (a.url ? ` · ${a.url}` : '');
+    li.querySelector('.why').textContent = a.text;
+    return li;
+  }));
+  alarmsClearArmed = false;
+  $('btn-monitor-alarms-clear').textContent = 'Uyarıları temizle';
+  $('btn-monitor-alarms-clear').disabled = !list.length;
+  $('btn-monitor-alarms-clear').onclick = async () => {
+    if (!alarmsClearArmed) { alarmsClearArmed = true; $('btn-monitor-alarms-clear').textContent = 'Emin misin?'; return; }
+    await clearMonitorAlarms(m.id);
+    openMonitorAlarms(m);
+  };
+  $('monitor-alarms-dialog').showModal();
 }
 
 function monitorById(id) {
@@ -266,6 +396,49 @@ const MONITOR_UNSAVED_HTML = `
   menu.setAttribute('role', 'menu');
   menu.hidden = true;
   document.body.append(menu);
+
+  // "Bozulduğu andaki ekran": bir uyarının ekran görüntüsü (Monitörler listesi, uyarı listesi ve
+  // oynatma kartındaki ışık listesi açar)
+  const shot = document.createElement('dialog');
+  shot.id = 'monitor-shot-dialog';
+  shot.className = 'compare monitor-shot';
+  shot.setAttribute('aria-labelledby', 'monitor-shot-title');
+  shot.innerHTML = `
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="monitor-shot-title">Bozulduğu andaki ekran</h2>
+        <button id="btn-monitor-shot-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
+      </div>
+      <p id="monitor-shot-text" class="small"></p>
+      <img id="monitor-shot-image" alt="Monitörün bozulduğu andaki ekran görüntüsü">
+      <p id="monitor-shot-noimage" class="hint" hidden>Bu uyarı için ekran görüntüsü alınamadı.</p>
+    </div>`;
+  document.body.append(shot);
+  $('btn-monitor-shot-close').onclick = () => shot.close();
+  shot.onclick = (event) => { if (event.target === shot) shot.close(); };
+
+  // Bir monitörün uyarı listesi
+  const alarms = document.createElement('dialog');
+  alarms.id = 'monitor-alarms-dialog';
+  alarms.className = 'settings monitor-alarms';
+  alarms.setAttribute('aria-labelledby', 'monitor-alarms-title');
+  alarms.innerHTML = `
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="monitor-alarms-title">Uyarılar</h2>
+        <button id="btn-monitor-alarms-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
+      </div>
+      <p id="monitor-alarms-hint" class="hint"></p>
+      <ul id="monitor-alarms-list" class="alarm-list"></ul>
+      <div class="toolbar">
+        <button id="btn-monitor-alarms-clear" class="danger">Uyarıları temizle</button>
+        <button id="btn-monitor-alarms-done">Kapat</button>
+      </div>
+    </div>`;
+  document.body.append(alarms);
+  $('btn-monitor-alarms-close').onclick = () => alarms.close();
+  $('btn-monitor-alarms-done').onclick = () => alarms.close();
+  alarms.onclick = (event) => { if (event.target === alarms) alarms.close(); };
 })();
 
 
@@ -361,7 +534,7 @@ function monitorItem(m) {
   const type = monitorType(m.type);
   li.className = 'monitor' + (m.enabled ? '' : ' disabled') + (orphan ? ' orphan' : '');
   li.innerHTML = '<input type="checkbox" class="toggle" title="Etkin">'
-    + '<div class="body"><b></b><small class="scope"></small><small class="params"></small><small class="verdict" hidden></small></div>'
+    + '<div class="body"><b></b><small class="scope"></small><small class="params"></small><small class="verdict" hidden></small><div class="alarms" hidden></div></div>'
     + '<span class="buttons"><button class="edit">Düzenle</button><button class="icon delete" title="Sil" aria-label="Sil">✕</button></span>';
   const toggle = li.querySelector('.toggle');
   toggle.checked = m.enabled;
@@ -383,6 +556,28 @@ function monitorItem(m) {
     line.innerHTML = '<span class="led"></span> ';
     line.querySelector('.led').classList.add(verdict.status);
     line.append(`Son kontrol: ${verdict.text}`);
+  }
+  // Uyarılar: son uyarının görüntüsü (son kontrol kırmızıysa; uyarı o kontrolde alındı) + liste
+  const alarms = alarmsOf(m.id);
+  if (alarms.length) {
+    const row = li.querySelector('.alarms');
+    row.hidden = false;
+    const latest = alarms[0];
+    if (verdict?.status === 'fail' && latest.screenshot) {
+      const img = document.createElement('img');
+      img.className = 'shot';
+      img.src = latest.screenshot;
+      img.alt = 'Bozulduğu andaki ekran';
+      img.title = `Bozulduğu andaki ekran (${latest.where}): büyütmek için tıklayın`;
+      img.onclick = () => openMonitorShot(m, latest);
+      row.append(img);
+    }
+    const button = document.createElement('button');
+    button.className = 'small-btn alarms-open';
+    button.textContent = `Uyarılar (${alarms.length})`;
+    button.title = 'Bu monitörün uyarıları: zaman, yer, neden ve bozulduğu andaki ekran görüntüsü';
+    button.onclick = () => openMonitorAlarms(m);
+    row.append(button);
   }
   li.querySelector('.edit').disabled = !type;
   li.querySelector('.edit').title = type ? '' : 'Bu tür artık tanımlı değil; yalnızca silinebilir.';
@@ -1093,11 +1288,12 @@ function applyPendingBackup() {
   });
 }
 
-// Silinen graph'ın monitörleri de silinir (graph listesi değişince: panel.js > GRAPH'LAR).
+// Silinen graph'ın monitörleri ve uyarıları da silinir (graph listesi değişince: panel.js > GRAPH'LAR).
 async function dropMonitorsOfDeletedGraphs(list) {
   const alive = new Set(list.map((g) => g.id));
   const all = await chrome.storage.local.get(null);
-  const stale = Object.keys(all).filter((key) => key.startsWith(MONITORS_KEY_PREFIX) && !alive.has(key.slice(MONITORS_KEY_PREFIX.length)));
+  const graphOf = (key) => (key.startsWith(MONITORS_KEY_PREFIX) ? key.slice(MONITORS_KEY_PREFIX.length) : key.startsWith(MONITOR_ALARMS_KEY_PREFIX) ? key.slice(MONITOR_ALARMS_KEY_PREFIX.length) : null);
+  const stale = Object.keys(all).filter((key) => graphOf(key) !== null && !alive.has(graphOf(key)));
   if (stale.length) await chrome.storage.local.remove(stale);
 }
 
@@ -1113,9 +1309,13 @@ async function loadMonitors(graphId) {
   monitorsGraphId = graphId ?? null;
   monitorUndo = [];
   monitorVerdicts.clear();
-  const stored = graphId ? (await chrome.storage.local.get(monitorsKey(graphId)))[monitorsKey(graphId)] : null;
+  const [stored, alarms] = await Promise.all([
+    graphId ? chrome.storage.local.get(monitorsKey(graphId)).then((r) => r[monitorsKey(graphId)]) : null,
+    loadMonitorAlarms(graphId),
+  ]);
   if (graphId !== monitorsGraphId) return; // bu arada yine değişti
   monitors = normalizeMonitors(stored);
+  monitorAlarms = alarms;
   monitorFilter = 'all';
   renderMonitors();
 }
@@ -1129,6 +1329,7 @@ chrome.storage.onChanged.addListener((changes, area) => { // panel.js'in dinleyi
     return;
   }
   if (monitorsGraphId && changes[monitorsKey()]) monitors = normalizeMonitors(changes[monitorsKey()].newValue);
-  if (monitorsGraphId && (changes[monitorsKey()] || changes['graph:' + monitorsGraphId])) renderMonitors();
+  if (monitorsGraphId && changes[alarmsKey()]) monitorAlarms = normalizeAlarms(changes[alarmsKey()].newValue);
+  if (monitorsGraphId && (changes[monitorsKey()] || changes[alarmsKey()] || changes['graph:' + monitorsGraphId])) renderMonitors();
   if (changes.graphs) dropMonitorsOfDeletedGraphs(changes.graphs.newValue ?? []);
 });
