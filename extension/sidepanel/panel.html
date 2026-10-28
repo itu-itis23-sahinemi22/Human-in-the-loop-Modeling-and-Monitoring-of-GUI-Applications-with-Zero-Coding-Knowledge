@@ -177,6 +177,11 @@
     <label class="field">İsim <input id="details-name" spellcheck="false"></label>
     <img id="details-shot" alt="">
     <p id="details-noshot" class="hint" hidden>Ekran görüntüsü yok: bu node ana graph'tan silinmiş.</p>
+    <!-- Edge'in aksiyonları; filtre işaretlenen türleri gizler (panel.js > AKSİYON FİLTRESİ) -->
+    <div id="details-actions-head" class="list-head" hidden>
+      <span class="muted small">Aksiyonlar</span>
+      <details id="details-filter" class="action-filter"><summary>Filtrele</summary><div class="filter-menu"></div></details>
+    </div>
     <ol id="details-actions" class="actions"></ol>
     <!-- Ana graph görünümünde: bu node'u / edge'i koşularında kullanan senaryolar (tıklayınca o senaryonun graph'ı) -->
     <p id="details-scenarios" class="small" hidden></p>
@@ -192,7 +197,10 @@
 
   <!-- Son node'dan beri yapılan, henüz edge'e dönüşmemiş aksiyonlar -->
   <section class="card">
-    <h2>Bekleyen aksiyonlar <span id="buffer-count" class="badge"></span></h2>
+    <div class="list-head">
+      <h2>Bekleyen aksiyonlar <span id="buffer-count" class="badge"></span></h2>
+      <details id="buffer-filter" class="action-filter"><summary>Filtrele</summary><div class="filter-menu"></div></details>
+    </div>
     <ol id="buffer" class="actions"></ol>
   </section>
 

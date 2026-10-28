@@ -36,6 +36,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `scenario-run` | Elle senaryo, indirme / yükleme, runner'da çoklu koşu, JSON / HTML / JUnit raporları, bozuk modelde atlanan adımlar |
 | `replay` | Panelde oynatma: şifre, başlangıç uyarısı, geçen ve kalan koşu, durdurma (`--zoom=1.5` ile yakınlaştırmada) |
 | `replay-start` | Senaryonun başlangıç node'u, runner'ın reddi, oynatmanın görünen alanı kayıttakine getirmesi (`--small-screen` ile pencere büyüyemezken) |
+| `filter` | Aksiyon filtresi: bekleyen ve edge listelerinde türleri gizleme, korunan sıra numaraları, ayrı filtreler, otomatik beklemenin ayrı türü, hatırlama |
 | `buffer` | Bekleyen aksiyonları silme: uyarı, bayat liste, karar beklerken kilit, runner ve panelde oynatma |
 | `return-to-start` | "Başlangıç node'una dön": adres, boyutu oynatmanın kurması, gezinmenin kayda girmesi, yönlendirme, okunamayan sayfa |
 | `saucedemo-return` | Gerçek saucedemo'da istemci tarafı yönlendirmenin söylenmesi (internet ister) |

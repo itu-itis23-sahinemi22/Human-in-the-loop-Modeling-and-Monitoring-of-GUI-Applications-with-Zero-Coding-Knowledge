@@ -453,6 +453,8 @@ function renderDetails() {
   if (shot) $('details-shot').src = shot;
   $('details-noshot').hidden = !node || Boolean(shot);
   $('details-actions').replaceChildren(...(edge ? (readOnly ? edge.actions.map(actionItem) : editableActionItems(edge)) : []));
+  $('details-actions-head').hidden = !edge;
+  if (edge) applyActionFilter($('details-actions'), edge.actions, 'details', renderDetails);
   renderDetailsScenarios(item, readOnly);
   $('btn-show-main').hidden = !readOnly;
   for (const id of ['btn-save', 'btn-delete']) $(id).hidden = readOnly;
@@ -715,7 +717,82 @@ function renderBuffer() {
     li.append(remove);
     return li;
   }));
+  applyActionFilter($('buffer'), state.buffer, 'buffer', renderBuffer);
 }
+
+// -----------------------------------------------------------------------------
+// AKSİYON FİLTRESİ: edge detayında ve "Bekleyen aksiyonlar"da işaretlenen türler gizlenir
+// -----------------------------------------------------------------------------
+// Yalnızca gösterimdir: aksiyon silinmez, oynatma ve dışa aktarma etkilenmez. Görünen satırlar
+// listedeki asıl sıra numarasını korur (1, 4, 5). Otomatik bekleme kaydedilen beklemeden ayrı
+// bir türdür. İki listenin ayrı filtresi vardır; edge filtresi bütün edge'lerde geçerlidir.
+// Seçim bu tarayıcıda hatırlanır (localStorage).
+const ACTION_FILTER_KEY = 'actionFilters';
+const actionFilters = loadActionFilters(); // { details: Set, buffer: Set } — gizlenen türler
+
+function loadActionFilters() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(ACTION_FILTER_KEY)) ?? {};
+  } catch {
+    // depolama kapalı ya da bozuk: filtre boş başlar
+  }
+  return { details: new Set(saved.details ?? []), buffer: new Set(saved.buffer ?? []) };
+}
+
+function saveActionFilters() {
+  try {
+    localStorage.setItem(ACTION_FILTER_KEY, JSON.stringify({ details: [...actionFilters.details], buffer: [...actionFilters.buffer] }));
+  } catch {
+    // depolama kapalıysa seçim sadece bu oturumda geçerli
+  }
+}
+
+function filterKey(action) {
+  return action.type === 'wait' && action.auto ? 'wait:auto' : action.type;
+}
+
+function filterText(key) {
+  return key === 'wait:auto' ? 'Bekle (otomatik)' : ACTION_TEXT[key] ?? key;
+}
+
+// list: çizilmiş liste (her aksiyona bir satır, aynı sırada); name: 'details' | 'buffer' (kutunun
+// id'si name-filter); redraw: işaret değişince listeyi yeniden çizer. Kutuda yalnızca listede
+// bulunan türler çıkar.
+function applyActionFilter(list, actions, name, redraw) {
+  const hidden = actionFilters[name];
+  [...list.children].forEach((li, i) => {
+    li.value = i + 1;
+    li.hidden = hidden.has(filterKey(actions[i]));
+  });
+  const count = actions.filter((a) => hidden.has(filterKey(a))).length;
+  const box = $(name + '-filter');
+  box.classList.toggle('active', count > 0);
+  box.querySelector('summary').textContent = count ? `Filtrele · ${count} gizli` : 'Filtrele';
+  const keys = [...new Set(actions.map(filterKey))];
+  const options = keys.map((key) => {
+    const input = Object.assign(document.createElement('input'), { type: 'checkbox', checked: hidden.has(key), value: key });
+    input.onchange = () => {
+      if (input.checked) hidden.add(key);
+      else hidden.delete(key);
+      saveActionFilters();
+      redraw();
+    };
+    const label = document.createElement('label');
+    label.append(input, filterText(key));
+    return label;
+  });
+  const hint = Object.assign(document.createElement('p'), { className: 'muted small', textContent: keys.length ? 'İşaretlenenler gizlenir:' : 'Listede aksiyon yok.' });
+  box.querySelector('.filter-menu').replaceChildren(hint, ...options);
+}
+
+// Kutu dışına tıklayınca kapanır. İşaret değişince kutu yeniden çizildiği için tıklanan satır
+// artık sayfada değildir; yol olayın başındaki haliyle (composedPath) kontrol edilir.
+document.addEventListener('click', (event) => {
+  for (const box of document.querySelectorAll('.action-filter[open]')) {
+    if (!event.composedPath().includes(box)) box.open = false;
+  }
+});
 
 // Ekranı değiştirmemiş aksiyon doğrudan silinir; diğerlerinde gerekçeli uyarı (edge düzenleme gibi).
 function bufferRemovalRisks(action) {

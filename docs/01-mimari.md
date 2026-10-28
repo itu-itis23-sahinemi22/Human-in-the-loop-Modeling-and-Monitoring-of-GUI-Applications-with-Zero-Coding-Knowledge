@@ -331,6 +331,13 @@ Edge oluşmadan önce de yanlışlıkla yapılan bir aksiyon (fazladan bir tıkl
 - Silme geri alınmaz; bazı aksiyonlar (sayfanın açtığı sekme, oturum zaman aşımı beklemesi) sayfada kolay tekrarlanmaz. İyileştirme: bekleyen aksiyon silmelerini de geri al yığınına almak.
 - Karar beklerken yapılan yanlış aksiyon önce karar verilip sonra silinir. İyileştirme: karardaki aksiyonlarla sonradan gelenleri ayırıp yalnızca sonradan gelenleri silinebilir göstermek.
 
+**Filtre** (`panel.js > AKSİYON FİLTRESİ`): edge detayındaki ve "Bekleyen aksiyonlar"daki listenin başlığında **Filtrele** kutusu vardır. Kutuda listedeki aksiyon türleri çıkar; işaretlenen türler listede gizlenir. Örnek: *Bekle, Tıkla, Tıkla, Bekle, Resize* listesinde *Tıkla* işaretlenince *1. Bekle, 4. Bekle, 5. Resize* görünür.
+
+- Yalnızca gösterimdir: aksiyon silinmez; oynatma, dışa aktarma ve edge'in adı etkilenmez. Görünen satırlar listedeki asıl sıra numarasını korur.
+- Otomatik bekleme kaydedilen beklemeden ayrı bir türdür (*Bekle (otomatik)*): yalnızca otomatik beklemeler gizlenebilir.
+- İki listenin filtresi ayrıdır; edge filtresi bütün edge'lerde geçerlidir. Başlıkta kaç aksiyonun gizlendiği yazar (*Filtrele · 3 gizli*).
+- Seçim bu tarayıcıda hatırlanır (`localStorage > actionFilters`); panel yeniden açılınca aynı türler gizli gelir.
+
 ---
 
 ## Beklemeler
