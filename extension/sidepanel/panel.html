@@ -58,7 +58,7 @@
     <!-- Son silmeyi (node, edge ya da edge'den aksiyon) geri alır; kısayolu Ctrl+Z -->
     <button id="btn-undo" disabled>Geri al</button>
     <button id="btn-export" title="Graph'ı GraphWalker JSON modeli olarak indirir (Studio'da açılır, CLI ile çalışır)">GraphWalker JSON</button>
-    <button id="btn-reset" class="danger">Sıfırla</button>
+    <button id="btn-reset" class="danger">Sıfırla</button> 
   </div>
 
   <!-- Background'dan gelen hata (kırmızı) ya da bilgi (mavi) mesajı -->
@@ -152,11 +152,9 @@
       <div id="replay-check" class="card highlight" hidden>
         <p id="replay-check-text"></p>
         <ul id="replay-check-reasons" class="reasons"></ul>
-        <!-- Pencere büyüyemediğinde: yan paneli ne kadar daraltmak gerektiği (sürükledikçe güncellenir) -->
-        <p id="replay-fit-guide" class="fit-guide" role="status" hidden></p>
         <div class="toolbar">
-          <!-- Sekme başlangıç node'unun adresinde değilse ya da görünen alan node'un kaydedildiği
-               andakinden farklıysa: sekme o adrese gider, yakınlaştırması ve pencere boyutu ona getirilir -->
+          <!-- Sekme başlangıç node'unun adresinde değilse: sekme o adrese gider (görünen alanı
+               oynatma kendisi kurar, replay.js > fitStart) -->
           <button id="btn-replay-fit" hidden>Başlangıç node'una dön</button>
           <button id="btn-replay-anyway" class="primary">Yine de oynat</button>
           <button id="btn-replay-cancel">Vazgeç</button>

@@ -283,7 +283,6 @@ dialog.alert .choice .hint { margin: 4px 2px 0; }
 .replay-steps .time { margin-left: auto; color: var(--muted); white-space: nowrap; }
 .replay-steps small { display: block; color: var(--muted); }
 #replay-secrets .field input { font-family: inherit; }
-.fit-guide { margin: 6px 0; font-size: 12px; font-weight: 600; }
 
 .badge {
   display: inline-block;

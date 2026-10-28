@@ -443,7 +443,7 @@ function renderDetails() {
   $('details-subtitle').textContent = node
     ? node.url + (node.viewport ? ' · ' + viewportText(node.viewport) : '')
     : `${nameOf(edge.source)} → ${nameOf(edge.target)} · ${edge.actions.length} aksiyon`
-      + (edge.recordedActions ? ` · düzenlendi (kayıtta ${edge.recordedActions.length})` : '');
+    + (edge.recordedActions ? ` · düzenlendi (kayıtta ${edge.recordedActions.length})` : '');
   // Kullanıcı o an yazıyorsa input'u ezme
   if (document.activeElement !== $('details-name')) $('details-name').value = item.name;
   $('details-name').readOnly = readOnly;
@@ -730,12 +730,12 @@ function actionItem(action) {
   const li = document.createElement('li');
   const value = action.type === 'input' ? ` = "${action.value}"`
     : action.type === 'scroll' ? ` → ${action.x}, ${action.y}`
-    : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
-    : action.type === 'resize' ? ` → ${viewportText(action.viewport)}`
-    : action.type === 'wait' ? ` → ${seconds(action.ms)}`
-    : action.type === 'tab' && action.by === 'page' ? ' · önceki aksiyon açtı'
-    : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
-    : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
+      : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
+        : action.type === 'resize' ? ` → ${viewportText(action.viewport)}`
+          : action.type === 'wait' ? ` → ${seconds(action.ms)}`
+            : action.type === 'tab' && action.by === 'page' ? ' · önceki aksiyon açtı'
+              : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
+                : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
   li.querySelector('b').textContent = ACTION_TEXT[action.type] ?? action.type;
   li.querySelector('span').textContent = action.label + value;
@@ -1329,7 +1329,7 @@ function renderScenario() {
   $('scenario-summary').textContent = problem
     ? `Senaryo graph'la uyuşmuyor: ${problem}`
     : `Kapsama: ${coverage.edges[0]}/${coverage.edges[1]} edge · ${coverage.nodes[0]}/${coverage.nodes[1]} node · ${filled.length} koşu`
-      + (scenario.planner?.engine === 'graphwalker' ? ` · ${plannerText(scenario.planner)}` : '');
+    + (scenario.planner?.engine === 'graphwalker' ? ` · ${plannerText(scenario.planner)}` : '');
   renderPlanner(graph, locked);
   const end = runEnd(graph, run);
   const next = problem ? [] : graph.edges.filter((e) => e.source === end);
@@ -1788,76 +1788,59 @@ $('btn-replay').onclick = async () => {
   checkReplay(tab, edges);
 };
 
-// Oynatmadan önceki kontroller: ekran senaryonun başlangıç node'u mu, görünen alan kayıttakiyle
-// aynı mı, bekleyen aksiyonlar silinecek mi. Sorun yoksa oynatma başlar (startIfClear); varsa
-// kart açılır. Sekme başlangıç node'unun adresinde (URL şablonu) değilse ya da görünen alan
-// node'un kaydedildiği andakinden farklıysa kartta "Başlangıç node'una dön" çıkar. Sayfa
+// Oynatmadan önceki kontroller: ekran senaryonun başlangıç node'u mu, bekleyen aksiyonlar
+// silinecek mi. Sorun yoksa oynatma başlar (startIfClear); varsa kart açılır. Sekme başlangıç
+// node'unun adresinde (URL şablonu) değilse kartta "Başlangıç node'una dön" çıkar. Sayfa
 // okunamıyorsa (tarayıcının kendi sayfası, eklentiden önce açılmış sayfa) adres farklıysa yine
 // kart açılır: başlangıca dönmek sayfayı da okunur yapar.
+// Görünen alan sorun değildir: oynatma onu başlangıç node'unun boyutuna kendisi getirir
+// (replay.js > fitStart). Boyut farklıysa ekran burada karşılaştırılmaz (state ekrana sığan
+// elementlerden oluşur, yanlış boyutta tutmayabilir); karşılaştırmayı oynatma boyutu kurduktan
+// sonra yapar.
 async function checkReplay(tab, edges, { startIfClear = true } = {}) {
   const start = nodeById(scenarioGraph().start);
   const page = await chrome.tabs.sendMessage(tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
   const address = page?.url ?? (await chrome.tabs.get(tab.id).catch(() => null))?.url ?? '';
   const addressDiffers = !sameAddress(address, start.url);
   if (!page && !addressDiffers) return showMessage({ error: 'Bu sekmeye erişilemedi. Sayfayı yenileyip (F5) tekrar deneyin. (chrome:// sayfaları desteklenmez.)' });
-  const check = page && compareScreen(start, page, settings);
   const viewportDiffers = Boolean(page && start.viewport) && viewportText(start.viewport) !== viewportText(page.viewport);
+  const check = page && !viewportDiffers && compareScreen(start, page, settings);
   const reasons = [
     ...(page ? [] : ['Bu sekmedeki sayfa okunamadı (tarayıcının kendi sayfası ya da eklenti yüklenmeden önce açılmış bir sayfa).']),
+    ...(page && addressDiffers && viewportDiffers ? [`Sekme başlangıç node'unun ("${start.name}") adresinde değil.`] : []),
     ...(check && !check.ok ? mismatchLines(check, start) : []),
-    ...(check?.ok && viewportDiffers ? [`Görünen alan farklı: başlangıç node'u ("${start.name}") ${viewportText(start.viewport)} boyutunda kaydedildi, sekme şu an ${viewportText(page.viewport)}. State ekrana sığan elementlerden oluştuğu için sonraki ekranlar tutmayabilir.`] : []),
     ...(state.buffer.length ? [`"Bekleyen aksiyonlar"daki ${state.buffer.length} aksiyon silinecek: oynatma kaydı durdurur.`] : []),
   ];
   if (!reasons.length) {
     closeReplayCheck();
-    return startIfClear ? runReplay(tab, edges) : showMessage({ notice: `Ekran "${start.name}" node'unun ekranı ve görünen alan kayıttakiyle aynı. "Koşuyu oynat"a basın.` });
+    return startIfClear ? runReplay(tab, edges) : showMessage({ notice: `Ekran "${start.name}" node'unun adresinde. "Koşuyu oynat"a basın.` });
   }
-  replayStart = { tab, edges, start, address: addressDiffers, viewport: viewportDiffers };
-  $('replay-check-text').textContent = check?.ok
-    ? 'Oynatmadan önce:'
-    : `Başlangıç node'ları aynı değil: bu sekme koşunun ilk node'unun ("${start.name}") ekranında değil. Koşu doğru sonuç vermeyecektir.`;
+  replayStart = { tab, edges, start };
+  $('replay-check-text').textContent = (check && !check.ok) || addressDiffers
+    ? `Başlangıç node'ları aynı değil: bu sekme koşunun ilk node'unun ("${start.name}") ekranında değil. Koşu doğru sonuç vermeyecektir.`
+    : 'Oynatmadan önce:';
   $('replay-check-reasons').replaceChildren(...reasons.map((text) => Object.assign(document.createElement('li'), { textContent: text })));
-  const canReturn = addressDiffers || viewportDiffers;
-  $('btn-replay-fit').hidden = !canReturn || Boolean(fitGuide); // yönlendirme sürerken buton bir şey değiştiremez
-  $('btn-replay-fit').textContent = "Başlangıç node'una dön (" + [
-    ...(addressDiffers ? ['adres'] : []),
-    ...(viewportDiffers ? [`boyut ${viewportText(start.viewport)}`] : []),
-  ].join(' ve ') + ')';
-  $('btn-replay-fit').title = addressDiffers ? `${start.url} adresine gider` + (start.viewport ? `, görünen alanı ${viewportText(start.viewport)} yapar` : '') : '';
-  $('btn-replay-fit').classList.toggle('primary', canReturn);
-  $('btn-replay-anyway').classList.toggle('primary', !canReturn);
+  $('btn-replay-fit').hidden = !addressDiffers;
+  $('btn-replay-fit').title = addressDiffers ? `${start.url} adresine gider` : '';
+  $('btn-replay-fit').classList.toggle('primary', addressDiffers);
+  $('btn-replay-anyway').classList.toggle('primary', !addressDiffers);
   $('btn-replay-anyway').hidden = !page; // okunamayan sayfada oynatma ilk adımda kalır
   $('replay-check').hidden = false;
   renderReplay();
 }
 
-// "Başlangıç node'una dön": sekme başlangıç node'unun adresine gider (adres farklıysa), ardından
-// yakınlaştırması ve pencere boyutu node'un kaydedildiği andakine getirilir (yakınlaştırma site
-// başına saklandığı için adres değişince görünen alan da değişebilir; yeniden ölçülür). Site
-// başka bir adrese yönlendirdiyse (giriş gerektiren sayfa) boyuta dokunulmaz, uyarı kalır.
-// Sonunda kontrol yeniden yapılır. Pencere büyüyemediği için görünen alan küçük kaldıysa
-// yönlendirme başlar.
+// "Başlangıç node'una dön": sekme başlangıç node'unun adresine gider. Site başka bir adrese
+// yönlendirdiyse (giriş gerektiren sayfa) uyarı kalır. Sonunda kontrol yeniden yapılır.
 $('btn-replay-fit').onclick = async () => {
   const pending = replayStart;
   if (!pending) return;
   const { tab, edges, start } = pending;
   $('btn-replay-fit').disabled = true;
   try {
-    if (pending.address) {
-      const screen = await goToAddress(tab.id, start.url).catch((error) => { throw new Error(`Adrese gidilemedi: ${error.message}`); });
-      if (!sameAddress(screen.url, start.url)) {
-        await checkReplay(tab, edges, { startIfClear: false });
-        return showMessage({ error: `Site başka bir adrese yönlendirdi: ${screen.url}. Başlangıç ekranına ("${start.name}") elle ulaşın (örneğin önce giriş yapın), sonra "Koşuyu oynat"a basın.` });
-      }
-    }
-    if (!start.viewport) return await checkReplay(tab, edges, { startIfClear: false });
-    const { viewport: reached, short } = await fitViewport(tab.id, start.viewport).catch((error) => { throw new Error(`Görünen alan ayarlanamadı: ${error.message}`); });
+    const screen = await goToAddress(tab.id, start.url).catch((error) => { throw new Error(`Adrese gidilemedi: ${error.message}`); });
     await checkReplay(tab, edges, { startIfClear: false });
-    if (short && (short.width > 0 || short.height > 0)) {
-      fitGuide = { tab, edges, target: start.viewport };
-      renderFitGuide(fitGuide, reached, await chrome.tabs.getZoom(tab.id));
-    } else if (viewportText(reached) !== viewportText(start.viewport)) {
-      showMessage({ error: `Görünen alan tam tutturulamadı: "${start.name}" ${viewportText(start.viewport)} boyutunda kaydedildi, ulaşılan ${viewportText(reached)}.` });
+    if (!sameAddress(screen.url, start.url)) {
+      showMessage({ error: `Site başka bir adrese yönlendirdi: ${screen.url}. Başlangıç ekranına ("${start.name}") elle ulaşın (örneğin önce giriş yapın), sonra "Koşuyu oynat"a basın.` });
     }
   } catch (error) {
     showMessage({ error: error.message });
@@ -1865,51 +1848,6 @@ $('btn-replay-fit').onclick = async () => {
     $('btn-replay-fit').disabled = false;
   }
 };
-
-// YÖNLENDİRME: pencere büyüyemediği için görünen alan küçük kaldı (pencere ekranı kaplıyor ya da
-// ekran yetmiyor). Genişlik çoğu zaman yan paneli daraltarak kazanılır; eklenti panelin genişliğini
-// değiştiremediği için kullanıcı sürükler. Panelin genişliği değiştikçe ('resize') sekmenin
-// görünen alanı yeniden ölçülür ve kalan miktar yazılır; tutunca kontrol yenilenir.
-let fitGuide = null; // { tab, edges, target }
-let fitGuideTimer = null;
-
-addEventListener('resize', () => {
-  if (!fitGuide) return;
-  clearTimeout(fitGuideTimer);
-  fitGuideTimer = setTimeout(updateFitGuide, 250);
-});
-
-async function updateFitGuide() {
-  const guide = fitGuide;
-  const page = guide && await chrome.tabs.sendMessage(guide.tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
-  if (!page || fitGuide !== guide) return;
-  if (viewportText(page.viewport) === viewportText(guide.target)) {
-    stopFitGuide();
-    return checkReplay(guide.tab, guide.edges, { startIfClear: false });
-  }
-  renderFitGuide(guide, page.viewport, await chrome.tabs.getZoom(guide.tab.id));
-}
-
-// Kalan miktar ekran pikseliyle (CSS pikseli × yakınlaştırma): kullanıcının sürüklediği birim.
-function renderFitGuide(guide, now, zoom) {
-  const width = Math.round((guide.target.width - now.width) * zoom);
-  const height = Math.round((guide.target.height - now.height) * zoom);
-  const steps = [
-    ...(width > 0 ? [`Yan paneli kenarından sürükleyerek yaklaşık ${width} piksel daraltın.`] : []),
-    ...(width < 0 ? [`${-width} piksel fazla daralttınız; yan paneli biraz genişletin.`] : []),
-    ...(height > 0 ? [`Yükseklik ${height} piksel eksik: yer imleri çubuğunu ya da altta açık DevTools'u kapatın ya da pencereyi daha büyük bir ekrana taşıyın.`] : []),
-    ...(height < 0 ? [`Yükseklik ${-height} piksel fazla.`] : []),
-  ];
-  $('replay-fit-guide').textContent = `Pencere bu ekranda daha fazla büyüyemiyor. ${steps.join(' ')} Şu an ${viewportText(now)}, hedef ${viewportText(guide.target)}.`;
-  $('replay-fit-guide').hidden = false;
-  $('btn-replay-fit').hidden = true;
-}
-
-function stopFitGuide() {
-  fitGuide = null;
-  clearTimeout(fitGuideTimer);
-  $('replay-fit-guide').hidden = true;
-}
 
 $('btn-replay-anyway').onclick = () => {
   const start = replayStart;
@@ -1921,7 +1859,6 @@ $('btn-replay-stop').onclick = () => replay?.stop();
 
 function closeReplayCheck() {
   replayStart = null;
-  stopFitGuide();
   $('replay-check').hidden = true;
   renderReplay();
 }

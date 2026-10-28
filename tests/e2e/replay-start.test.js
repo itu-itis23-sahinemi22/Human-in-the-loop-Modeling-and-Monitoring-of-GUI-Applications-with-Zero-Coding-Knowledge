@@ -1,4 +1,4 @@
-// Senaryoda başlangıç node'u seçmek ve oynatmadan önce görünen alanı kayıttakine getirmek.
+// Senaryoda başlangıç node'u seçmek ve oynatmanın görünen alanı kayıttakine getirmesi.
 // Kullanım: node tests/e2e/replay-start.test.js [--headed] [--small-screen]
 const http = require('http');
 const path = require('path');
@@ -8,8 +8,9 @@ const { spawnSync } = require('child_process');
 const { chromium, REPO, EXT, CHROME, outDir } = require('./env');
 
 const HEADED = process.argv.includes('--headed');
-const SMALL = process.argv.includes('--small-screen'); // sanal ekran kayıttaki pencereden küçük: boyut tutturulamaz
+const SMALL = process.argv.includes('--small-screen'); // sanal ekran kayıttaki pencereden küçük: pencereyle boyut tutturulamaz
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let broken = false; // true: 'Goster' bir şey göstermez, koşu kalır
 
 const PAGES = {
   '/': () => `<!doctype html><title>Giris</title><input id="user" placeholder="Kullanici"> <button id="login" type="button">Giris</button>
@@ -18,7 +19,7 @@ const PAGES = {
     <p><button id="show">Goster</button> <span id="slot"></span></p>
     <p><label><input type="checkbox" id="agree"> Onay</label> <button id="go" disabled>Devam</button></p>
     <script>
-      show.onclick = () => { slot.innerHTML = '<button id="hide">Gizle</button>'; };
+      show.onclick = () => { ${broken ? '' : "slot.innerHTML = '<button id=\"hide\">Gizle</button>';"} };
       agree.onchange = () => { go.disabled = !agree.checked; };
     </script>`,
 };
@@ -107,71 +108,56 @@ function check(name, ok, detail = '') {
     const loaded = await panel.evaluate(() => ({ start: scenarioGraph().start, runs: scenario.runs }));
     check('yüklenen senaryo başlangıcıyla geldi', loaded.start === n2 && loaded.runs[0].length === 2, JSON.stringify(loaded));
 
-    // ---- Görünen alan farklı: kayıttaki boyuta getir ----
+    // ---- Görünen alan farklı: oynatma başlangıç node'unun boyutunu kendisi kurar ----
+    // Sekme hem küçük hem yakınlaştırılmış; sonra pencere tam ekran. Pencereyle boyut tutturulamaz
+    // (--small-screen ile ekran kayıttaki pencereden de küçüktür); taklit panelden bağımsız tutar.
+    const replayAtApp = async () => {
+      await page0.goto(BASE + '/app');
+      await page0.bringToFront();
+      await sleep(800);
+      await panel.evaluate(() => { replayResult = null; document.getElementById('btn-replay').click(); });
+      await sleep(800);
+      const card = await panel.evaluate(() => ({ hidden: document.getElementById('replay-check').hidden, fit: !document.getElementById('btn-replay-fit').hidden, reasons: document.getElementById('replay-check-reasons').textContent }));
+      if (!card.hidden) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
+      let reached = null; // oynatma sürerken sekmenin görünen alanı kayıttakine geldi mi
+      for (const end = Date.now() + 30000; !reached && Date.now() < end;) {
+        const now = await page0.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })).catch(() => null);
+        if (now && now.width === recorded.width && now.height === recorded.height && Math.abs(now.devicePixelRatio - recorded.devicePixelRatio) < 0.001) reached = now;
+        else if (await panel.evaluate(() => Boolean(replayResult))) break;
+        else await sleep(50);
+      }
+      await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 60000 });
+      const result = await panel.evaluate(() => ({ status: replayResult.status, steps: replayResult.steps.map((x) => `${x.name}:${x.status}${x.error ? ' ' + x.error : ''}${x.warnings.length ? ' ' + x.warnings.join(' ') : ''}${x.mismatch ? ' ' + JSON.stringify(x.mismatch.diff) : ''}`), warnings: replayResult.steps.flatMap((x) => x.warnings) }));
+      return { card, reached, result };
+    };
     const { windowId } = await panel.evaluate((id) => chrome.tabs.get(id), T0);
     await panel.evaluate(([w, id]) => Promise.all([chrome.windows.update(w, { width: 1000, height: 720 }), chrome.tabs.setZoom(id, 1.25)]), [windowId, T0]);
-    await page0.goto(BASE + '/app');
-    await page0.bringToFront();
-    await sleep(800);
-    await panel.evaluate(() => document.getElementById('btn-replay').click());
-    await sleep(800);
-    const card = await panel.evaluate(() => ({ hidden: document.getElementById('replay-check').hidden, fit: !document.getElementById('btn-replay-fit').hidden, fitText: document.getElementById('btn-replay-fit').textContent, reasons: document.getElementById('replay-check-reasons').textContent }));
-    check('görünen alan farklı: kart ve "Kayıttaki boyuta getir"', !card.hidden && card.fit && card.reasons.includes('Görünen alan'), JSON.stringify(card));
-    await panel.evaluate(() => document.getElementById('btn-replay-fit').click());
-    await panel.waitForFunction(() => !document.getElementById('btn-replay-fit').disabled, null, { timeout: 15000 });
-    await sleep(300);
-    const fitted = await page0.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }));
-    if (SMALL) {
-      const guide = await panel.evaluate(() => ({ hidden: document.getElementById('replay-fit-guide').hidden, text: document.getElementById('replay-fit-guide').textContent }));
-      check('küçük ekran: pencereye dokunulmadı, yönlendirme, yakınlaştırma düzeldi', !guide.hidden && guide.text.includes('büyüyemiyor') && fitted.devicePixelRatio === 1 && fitted.width === 984, `${guide.text} ${JSON.stringify(fitted)}`);
-      return;
-    }
-    check('görünen alan kayıttakine getirildi', fitted.width === recorded.width && fitted.height === recorded.height && Math.abs(fitted.devicePixelRatio - recorded.devicePixelRatio) < 0.001, `${JSON.stringify(fitted)} kayıtta ${JSON.stringify(recorded)}`);
-    const after = await panel.evaluate(() => ({ hidden: document.getElementById('replay-check').hidden, fit: !document.getElementById('btn-replay-fit').hidden, reasons: document.getElementById('replay-check-reasons').textContent, message: document.getElementById('message').textContent }));
-    check('kart güncellendi: görünen alan uyarısı kalktı', after.hidden ? after.message.includes('Koşuyu oynat') : !after.fit && !after.reasons.includes('Görünen alan'), JSON.stringify(after));
-    if (!after.hidden) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
-    else await panel.evaluate(() => document.getElementById('btn-replay').click());
+    let run = await replayAtApp();
+    check('görünen alan farklı: kartta boyut uyarısı ve "Başlangıç node\'una dön" yok', run.card.hidden || (!run.card.fit && !run.card.reasons.includes('Görünen alan')), JSON.stringify(run.card));
+    check('oynatma görünen alanı kayıttakine getirdi', Boolean(run.reached), `kayıtta ${JSON.stringify(recorded)}`);
+    check('başlangıçtan oynatma geçti, uyarı yok', run.result.status === 'passed' && !run.result.warnings.length, JSON.stringify(run.result.steps));
 
-    // ---- Seçilen başlangıçtan oynatma ----
-    await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 60000 });
-    const result = await panel.evaluate(() => ({ status: replayResult.status, steps: replayResult.steps.map((x) => `${x.name}:${x.status}${x.error ? ' ' + x.error : ''}${x.mismatch ? ' ' + JSON.stringify(x.mismatch.diff) : ''}`) }));
-    check('başlangıçtan oynatma geçti', result.status === 'passed', JSON.stringify(result.steps));
-
-    // ---- Pencere tam ekran, yan panel geniş (sekmenin genişliği taklitle daraltılır): pencereye dokunulmaz, yönlendirme ----
     await panel.evaluate((w) => chrome.windows.update(w, { state: 'maximized' }), windowId);
-    await page0.goto(BASE + '/app');
-    await page0.bringToFront();
-    await sleep(800);
-    const cdp = await ctx.newCDPSession(page0);
-    const narrow = async (width) => { await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: recorded.height, deviceScaleFactor: 0, mobile: false }); await sleep(300); };
-    const guideText = () => panel.evaluate(() => (document.getElementById('replay-fit-guide').hidden ? null : document.getElementById('replay-fit-guide').textContent));
-    await narrow(recorded.width - 287);
-    await panel.evaluate(() => document.getElementById('btn-replay').click());
-    await sleep(800);
-    await panel.evaluate(() => document.getElementById('btn-replay-fit').click());
-    await panel.waitForFunction(() => !document.getElementById('btn-replay-fit').disabled, null, { timeout: 15000 });
-    await sleep(300);
-    const winState = (await panel.evaluate((w) => chrome.windows.get(w), windowId)).state;
-    let text = await guideText();
-    check('tam ekran: pencere tam ekranda kaldı, "287 piksel daraltın"', winState === 'maximized' && text?.includes('287 piksel daraltın'), `${winState} ${text}`);
-    check('yönlendirme sürerken buton gizli', await panel.evaluate(() => document.getElementById('btn-replay-fit').hidden));
-    await narrow(recorded.width - 100);
-    await panel.evaluate(() => dispatchEvent(new Event('resize')));
-    await sleep(700);
-    text = await guideText();
-    check('panel daraldıkça kalan güncellendi: "100 piksel"', text?.includes('100 piksel daraltın'), String(text));
-    await narrow(recorded.width + 10);
-    await panel.evaluate(() => dispatchEvent(new Event('resize')));
-    await sleep(700);
-    text = await guideText();
-    check('fazla daraltınca: "10 piksel fazla daralttınız"', text?.includes('10 piksel fazla daralttınız'), String(text));
-    await narrow(recorded.width);
-    await panel.evaluate(() => dispatchEvent(new Event('resize')));
-    await sleep(900);
-    const done = await panel.evaluate(() => ({ guide: document.getElementById('replay-fit-guide').hidden, reasons: document.getElementById('replay-check').hidden ? '' : document.getElementById('replay-check-reasons').textContent, message: document.getElementById('message').textContent }));
-    check('tutunca yönlendirme bitti, görünen alan uyarısı kalktı', done.guide && !done.reasons.includes('Görünen alan'), JSON.stringify(done));
-    await panel.evaluate(() => document.getElementById('btn-replay-cancel').click());
-    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    run = await replayAtApp();
+    check('tam ekran pencerede de görünen alan kayıttakine geldi', Boolean(run.reached), `kayıtta ${JSON.stringify(recorded)}`);
+    check('tam ekranda oynatma geçti, uyarı yok', run.result.status === 'passed' && !run.result.warnings.length, JSON.stringify(run.result.steps));
+    // ---- Kalan koşunun ekran görüntüsü: sekme kayıttakinden küçükken de taklidin tamamı ----
+    await panel.evaluate((w) => chrome.windows.update(w, { state: 'normal' }).then(() => chrome.windows.update(w, { width: 900, height: 600 })), windowId);
+    broken = true;
+    run = await replayAtApp();
+    broken = false;
+    const shot = await panel.evaluate(async () => {
+      const step = replayResult.steps.find((x) => x.status === 'failed');
+      if (!step?.screenshot) return null;
+      const image = new Image();
+      image.src = step.screenshot;
+      await image.decode();
+      return { width: image.naturalWidth, height: image.naturalHeight };
+    });
+    const expected = { width: Math.round(recorded.width * recorded.devicePixelRatio), height: Math.round(recorded.height * recorded.devicePixelRatio) };
+    check('kalan koşu: ekran görüntüsü kayıttaki boyutun tamamı', run.result.status === 'failed' && shot?.width === expected.width && shot?.height === expected.height, `${JSON.stringify(shot)} beklenen ${JSON.stringify(expected)} ${run.result.status}`);
+    const released = await page0.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    check('oynatma bitince taklit kalktı', released.width !== recorded.width || released.height !== recorded.height, JSON.stringify(released));
 
     // ---- Başlangıcı geri al: koşular yürünemez, temizlenir ----
     await panel.evaluate((id) => { const select = document.getElementById('scenario-start'); select.value = id; select.dispatchEvent(new Event('change')); }, n1);
