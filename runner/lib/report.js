@@ -47,15 +47,35 @@ function failureTitle(step) {
   return step.error ?? `Beklenen ekrana (${step.target}) varılmadı`;
 }
 
-// Fark satırları: URL şablonu, sayısı farklı türler, görünen alan.
+// Fark satırları: URL şablonu, sayısı farklı türler, görünen alan; ardından aksiyonların izi.
 function failureLines(step) {
   const m = step.mismatch;
-  if (!m) return [step.error ?? ''];
+  const trail = step.trail ? trailLines(step) : [];
+  if (!m) return [step.error ?? '', ...trail];
   return [
     ...(m.url !== m.expectedUrl ? [`URL şablonu: beklenen ${m.expectedUrl}, ekranda ${m.url}`] : []),
     ...m.diff.map(({ key, expected, actual }) => `${key}: beklenen ${expected}, ekranda ${actual}`),
     ...(m.viewport !== m.expectedViewport ? [`Görünen alan: kayıtta ${m.expectedViewport}, ekranda ${m.viewport}`] : []),
+    ...trail,
   ];
+}
+
+// Kalan edge'in aksiyonları sırayla: her birinin ekrana etkisi ve kayıttan sapması; sonunda
+// kaydan ilk sapan aksiyon. Sapma yoksa fark yalnızca edge'in sonunda görülmüştür.
+//   Aksiyonlar:
+//     1/2 ✓ Scroll down · ekranı değiştirdi
+//     2/2 ⚠ Zoom in · ekranı değiştirmedi · görünen alan 1075×731, kayıtta 1079×734 @1.38x
+//   İlk sapma: 2. aksiyon "Zoom in"
+export function trailLines({ trail, actions }) {
+  const lines = ['Aksiyonlar:', ...trail.map((t, i) => {
+    const mark = t.error ? '✗' : t.deviations.length ? '⚠' : '✓';
+    const effect = t.error ? t.error : t.changed === null ? 'etkisi ölçülemedi' : `ekranı ${t.changed ? 'değiştirdi' : 'değiştirmedi'}`;
+    return `  ${i + 1}/${actions} ${mark} ${t.label} · ${[effect, ...t.deviations].join(' · ')}`;
+  })];
+  const first = trail.findIndex((t) => t.error || t.deviations.length);
+  if (first >= 0) lines.push(`İlk sapma: ${first + 1}. aksiyon "${trail[first].label}"`);
+  else if (trail.length) lines.push(`Aksiyonlarda kayıttan sapma görülmedi; fark edge'in sonundaki ekranda (son aksiyon: "${trail.at(-1).label}").`);
+  return lines;
 }
 
 
@@ -106,6 +126,7 @@ function failureSection(step, model, dir) {
 ${step.mismatch && step.mismatch.url !== step.mismatch.expectedUrl ? `<p>URL şablonu: beklenen <code>${esc(step.mismatch.expectedUrl)}</code>, ekranda <code>${esc(step.mismatch.url)}</code></p>` : ''}
 ${diff.length ? `<table class="diff"><thead><tr><th>Tür</th><th>Beklenen</th><th>Ekranda</th></tr></thead><tbody>${diff.map((d) => `<tr><td><code>${esc(d.key)}</code></td><td>${d.expected}</td><td>${d.actual}</td></tr>`).join('')}</tbody></table>` : ''}
 ${step.mismatch && step.mismatch.viewport !== step.mismatch.expectedViewport ? `<p class="warn">Görünen alan: kayıtta ${esc(step.mismatch.expectedViewport)}, ekranda ${esc(step.mismatch.viewport)}</p>` : ''}
+${step.trail?.length ? `<pre class="trail">${esc(trailLines(step).join('\n'))}</pre>` : ''}
 <div class="shots">
 ${expected ? `<figure><img id="${id}-e" src="${expected}" alt=""><figcaption>Beklenen: ${esc(step.target)} (kayıttaki ekran)</figcaption></figure>` : ''}
 ${actual ? `<figure><img id="${id}-a" src="${actual}" alt=""><figcaption>Runner'ın gördüğü</figcaption></figure>` : ''}
@@ -145,6 +166,7 @@ tr.skipped td { color: var(--muted); }
 .diff { width: auto; margin: 8px 0; }
 .warn { color: #b45309; font-size: 13px; }
 .failure { margin-top: 12px; }
+.trail { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; white-space: pre-wrap; overflow-x: auto; }
 .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
 .shots figure { margin: 0; }
 .shots img, .shots canvas { width: 100%; border: 1px solid var(--border); border-radius: 4px; }

@@ -135,7 +135,7 @@ function check(name, ok, detail = '') {
     const ui = m.edges.flatMap((e) => e.properties.uiActions);
     check('uiActions resize/zoom viewport taşıyor', ui.filter((a) => a.type === 'resize' || a.type === 'zoom').every((a) => a.viewport?.width > 0),
       JSON.stringify(ui.map((a) => [a.type, a.viewport])));
-    check('uiActions changed taşımıyor', ui.every((a) => !('changed' in a)));
+    check('uiActions changed taşıyor (runner\'ın aksiyon izi için)', ui.every((a) => 'changed' in a));
 
     // Node detay kartı: viewport metni
     await panel.bringToFront();

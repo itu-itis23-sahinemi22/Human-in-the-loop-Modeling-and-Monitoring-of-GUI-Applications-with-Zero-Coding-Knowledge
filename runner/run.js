@@ -18,9 +18,10 @@ import { chromium } from 'playwright';
 import { playAction } from './lib/actions.js';
 import { readJson } from './lib/model.js';
 import { verifyState } from './lib/oracle.js';
-import { INIT_SCRIPT, setViewport, settle } from './lib/page.js';
-import { writeReports } from './lib/report.js';
+import { INIT_SCRIPT, screenOf, setViewport } from './lib/page.js';
+import { trailLines, writeReports } from './lib/report.js';
 import { coverageOf, graphOf, loadInput } from './lib/scenario.js';
+import { diffCounts, stateCounts, urlKey } from './lib/state.js';
 
 const USAGE = `Kullanım:
   node run.js <senaryo.json> [seçenekler]
@@ -109,7 +110,8 @@ async function main() {
 
 // Bir koşu: yeni tarayıcı bağlamı (temiz oturum), başlangıç doğrulaması, sonra edge'ler. Adım:
 //   { kind: 'start' | 'edge', name, edgeId?, actions?, target, targetId, status, duration,
-//     warnings, error?, mismatch?, screenshot? }   status: passed | failed | skipped
+//     warnings, error?, mismatch?, trail?, screenshot? }   status: passed | failed | skipped
+//   trail: oynatılan her aksiyonun izi { label, changed, deviations, error? } (bkz. traceOf)
 async function runPath(browser, model, edges, index, { timeout, secrets, viewport, out }) {
   const startedAt = new Date();
   const context = await browser.newContext({
@@ -131,7 +133,9 @@ async function runPath(browser, model, edges, index, { timeout, secrets, viewpor
       const stepStarted = Date.now();
       warnings.length = 0;
       try {
-        const broken = edge ? await playEdge(edge, run) : (await run.page.goto(model.start.url), null);
+        let broken = null;
+        if (edge) ({ broken, trail: step.trail } = await playEdge(edge, run, model.settings));
+        else await run.page.goto(model.start.url);
         if (broken) {
           step.error = `Aksiyon ${broken.index + 1}/${edge.actions.length} ("${broken.action.label}") oynatılamadı: ${broken.error.message.split('\n')[0]}`;
         } else {
@@ -212,17 +216,60 @@ function createRun(context, options) {
 // Edge'in aksiyonlarını sırayla oynatır; her aksiyondan sonra sayfanın durulması beklenir
 // (kayıtta her aksiyon, öncekinin etkisi durulduktan sonraki ekranda yapılmıştı). Aksiyon
 // aktif sekmeyi değiştirebilir; her aksiyon o anki aktif sayfada oynatılır.
-// Oynatılamayan ilk aksiyonu döner, hepsi oynatıldıysa null.
-async function playEdge(edge, run) {
+// Her aksiyondan sonra varılan ekran ölçülür (trail, bkz. traceOf): adım kalınca hangi
+// aksiyonda kayıttan sapıldığı görülsün. broken: oynatılamayan ilk aksiyon, yoksa null.
+async function playEdge(edge, run, settings) {
+  const trail = [];
+  let before = await screenOf(run.page).catch(() => null);
   for (const [index, action] of edge.actions.entries()) {
     try {
       await playAction(run.page, action, run);
-      await settle(run.page);
+      const after = await screenOf(run.page);
+      trail.push(traceOf(action, before, after, await scrollOf(run.page, action), settings));
+      before = after;
     } catch (error) {
-      return { index, action, error };
+      trail.push({ label: action.label, error: error.message.split('\n')[0], deviations: [] });
+      return { broken: { index, action, error }, trail };
     }
   }
-  return null;
+  return { broken: null, trail };
+}
+
+// Aksiyonun izi: ekranı değiştirdi mi (kayıttakiyle karşılaştırılır; işaretsiz eski kayıtlarda
+// karşılaştırılmaz) ve aksiyonun kendi hedefi tuttu mu: kaydırmada varılan konum, yakınlaştırma
+// ve pencere boyutunda görünen alan. Tutmayan her şey bir sapmadır (deviations).
+function traceOf(action, before, after, scroll, settings) {
+  const changed = before ? diffCounts(stateCounts(before.elements, settings), stateCounts(after.elements, settings)).length > 0
+    || urlKey(before.url) !== urlKey(after.url) : null;
+  const deviations = [];
+  if (typeof action.changed === 'boolean' && changed !== null && changed !== action.changed) {
+    deviations.push(`ekranı ${effectText(changed)}, kayıtta ${effectText(action.changed)}`);
+  }
+  if (action.type === 'scroll' && scroll && (Math.abs(scroll.x - action.x) > 1 || Math.abs(scroll.y - action.y) > 1)) {
+    deviations.push(`kaydırma ${scroll.x}, ${scroll.y} konumunda kaldı, kayıtta ${action.x}, ${action.y}${scroll.max ? ` (sayfa en fazla ${scroll.max.x}, ${scroll.max.y} kayabiliyor)` : ''}`);
+  }
+  if ((action.type === 'zoom' || action.type === 'resize') && action.viewport && viewportText(after.viewport) !== viewportText(action.viewport)) {
+    deviations.push(`görünen alan ${viewportText(after.viewport)}, kayıtta ${viewportText(action.viewport)}`);
+  }
+  return { label: action.label, changed, deviations };
+}
+
+function effectText(changed) {
+  return changed ? 'değiştirdi' : 'değiştirmedi';
+}
+
+// Kaydırma aksiyonundan sonra sayfanın (ya da kutunun) vardığı konum ve kayabileceği en uzak konum.
+async function scrollOf(page, action) {
+  if (action.type !== 'scroll') return null;
+  const read = (box) => {
+    const el = box ?? document.scrollingElement;
+    return { x: Math.round(box ? el.scrollLeft : scrollX), y: Math.round(box ? el.scrollTop : scrollY), max: { x: el.scrollWidth - el.clientWidth, y: el.scrollHeight - el.clientHeight } };
+  };
+  try {
+    return action.selector ? await page.locator(action.selector).first().evaluate(read) : await page.evaluate(read, null);
+  } catch {
+    return null;
+  }
 }
 
 
@@ -236,6 +283,7 @@ function printStep(step) {
   for (const text of step.warnings) console.log(`    Uyarı: ${text}`);
   if (step.error) console.log(`    ${step.error}`);
   if (step.mismatch) printMismatch(step);
+  if (step.status === 'failed' && step.trail) for (const line of trailLines(step)) console.log(`    ${line}`);
 }
 
 // Beklenen node ile ekranın farkı: URL şablonu, sayısı farklı türler, görünen alan.
