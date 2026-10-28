@@ -171,6 +171,7 @@ dialog.compare { width: min(96vw, 960px); }
 .effect.unchanged { color: var(--ok); }
 .effect.unknown, .effect.waiting { color: var(--muted); }
 .effect.waiting { border-style: dashed; }
+.effect.auto { color: var(--muted); border-style: dotted; }
 /* Birleştirme penceresi: aday node listesi (küçük ekran görüntüsü + isim + uygunluk) */
 .merge-options { display: grid; gap: 6px; margin: 8px 0; max-height: 40vh; overflow: auto; }
 .merge-option { display: flex; align-items: center; gap: 8px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }

@@ -70,7 +70,7 @@ Eklentinin tek "durum sahibi" (single source of truth).
 - **Senaryo** bölümü (`panel.js > SENARYO`): test yollarını (koşular) kurar ve graph üzerinde önizler: seçili koşunun edge'leri sıra numarasıyla vurgulu, vardığı node işaretli, diğerleri soluk. Elle yolda koşunun vardığı node'dan çıkan bir edge'e tıklanır (gidilebilecekler kesik çizgili); yol çıkmaz bir node'a varınca "Yeni koşu" baştan başlar. Koşuların başlangıç node'u **Başlangıç** listesinden seçilir (varsayılan graph'ın başlangıcı; seçilen node çift çizgili). Graph'ın başlangıcı dışındaki bir başlangıç yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda başlattığı için böyle bir senaryoyu reddeder. Senaryo panelin kendi durumudur (graph state'i değil); "Senaryo indir" ile dosyaya alınır, runner oynatır ([04 > Senaryo dosyası](04-veri-modeli.md#senaryo-dosyası)).
 - `compare.js`: onay kartındaki görsel karşılaştırma: iki ekran görüntüsünün piksel farkı, farklı bölgeler, fark oranı ([03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma)). Panelde oynatmada kalınan ekran da bununla karşılaştırılır.
 - `replay.js`: **Panelde oynat**: seçili koşuyu kullanıcının tarayıcısında, açık sekmede oynatır (bkz. [Panelde oynatma](#panelde-oynatma)).
-- `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular (iki liste ve "Beklemeler" bölümü: anahtar ve alt sınır) bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
+- `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular (iki liste ve "Beklemeler" bölümü: anahtar, alt sınır ve aksiyon sonrası otomatik bekleme süresi) bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
 
 ### `fingerprint.js`: State'in tanımı
@@ -337,7 +337,7 @@ Edge oluşmadan önce de yanlışlıkla yapılan bir aksiyon (fazladan bir tıkl
 
 Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılır. Örnek: internet bankacılığında oturum zaman aşımı kullanıcıyı çıkış ekranına atar. Graph'ı kuran kişi bu durumu modele eklemek isteyebilir. Ayarlar'daki **Beklemeleri kaydet** açıkken bekleme bir aksiyon (`wait`) olarak kaydedilir. Varsayılan kapalıdır; kapalıyken kayıt eskisi gibidir.
 
-**Bekleme kaydedilir, elle eklenmez.** Gözlenmiş bir aksiyondur; edge düzenlemedeki "aksiyon eklenemez" kuralı geçerli kalır. Bekleme sayfaya dokunmaz ama ekranı değiştirebilir; bunu görmek için kayıt sekmesinin ekranı aksiyonsuz da izlenir.
+**Bekleme kaydedilir, elle eklenmez** (otomatik bekleme dışında, aşağıda). Gözlenmiş bir aksiyondur; edge düzenlemedeki "aksiyon eklenemez" kuralı geçerli kalır. Bekleme sayfaya dokunmaz ama ekranı değiştirebilir; bunu görmek için kayıt sekmesinin ekranı aksiyonsuz da izlenir.
 
 **Nasıl kaydedilir** (`background.js > BEKLEMELER`):
 
@@ -353,6 +353,13 @@ Bazı durumlara hiçbir tıklamayla ulaşılmaz, yalnızca beklenerek ulaşılı
 **İzleme** (`content.js > setMonitoring`): yalnızca anahtar açıkken ve kayıt sekmesinde çalışır. DOM değişince sayfanın durulması beklenir (300 ms DOM değişmez, en fazla 3 sn) ve ekran (edge set) değiştiyse `SCREEN` gönderilir; değişmediyse gönderilmez. Sürekli değişen bir sayfada parmak izi en fazla 3 sn'de bir alınır. Hangi sekmenin izleyeceğini background söyler (`MONITOR` ya da `ACTION` / `SCREEN` cevabı).
 
 **Sınır:** aksiyonsuz her değişim bekleme sayılır; kaydedilmeyen hareketlerin etkisi de. Fareyi üzerine getirince açılan bir menü, Ayarlar'da **Üzerine gelme** kapalıyken bekleme olarak görünür; açıkken `hover` aksiyonu olur (aşağıda). Sürekli değişen sayfalarda (carousel, canlı akış) her değişim ekranı değiştiren bir bekleme üretebilir.
+
+**Otomatik bekleme** (`background.js > withAutoWaits`): Ayarlar'daki **Beklemeleri kaydet** anahtarından bağımsız, her zaman açıktır. Edge kaydedilirken (node oluşunca ya da onay kartında karar verilince) bekleme olmayan her aksiyonun arkasına **Aksiyon sonrası bekleme** süresi (varsayılan 10 ms, 0–60000 ms) kadar bir `wait` eklenir. Bu yüzden edge her zaman bir beklemeyle biter: `Tıkla, Wait, Yaz, Wait`.
+
+- Aksiyonun arkasında kaydedilmiş bir bekleme varsa (*Beklemeleri kaydet*) otomatik bekleme eklenmez; kaydedilen kendi süresiyle onun yerine geçer.
+- "Bekleyen aksiyonlar"a eklenmez, yalnızca edge'e girer: buffer'ın son aksiyonu açık aksiyondur (sonrası bekleniyor; yazma, kaydırma, resize birleşir), arkasına bekleme konamaz.
+- `auto: true` işaretlidir; panel etkisini *otomatik eklendi* diye gösterir. Etkisi ölçülmez (`changed: null`): önceki aksiyonun yüklemesi bekleme sırasında sürebilir, runner onu sapma saymaz. Silerken uyarı çıkmaz; süresi diğer beklemeler gibi ✎ ile değişir.
+- Ayardaki süre değişince yalnızca yeni kaydedilen edge'ler etkilenir; eski edge'ler eski süreleriyle kalır.
 
 **Tekrar oynatma:** runner bekleme süresi kadar bekler. Ekranı değiştiren bekleme biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar.
 

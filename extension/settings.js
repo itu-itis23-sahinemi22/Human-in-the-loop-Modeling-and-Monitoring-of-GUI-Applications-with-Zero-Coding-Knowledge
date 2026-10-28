@@ -59,7 +59,9 @@ const INTERACTABLE_TYPES = [
 // Beklemeler (docs/01 > Beklemeler): recordWaits açıkken aksiyonlar arasındaki en az
 // minWaitSeconds saniyelik boşluklar 'wait' aksiyonu olarak kaydedilir ve kayıt sekmesinin
 // ekranı sürekli izlenir. Varsayılan kapalı: izleme her sayfada maliyetlidir.
-const DEFAULT_SETTINGS = { disabledActions: [], enabledActions: [], disabledInteractables: [], recordWaits: false, minWaitSeconds: 1 };
+// autoWaitMs: edge'e her aksiyondan sonra eklenen otomatik beklemenin süresi (her zaman açık;
+// background.js > withAutoWaits). Kaydedilen bekleme onun yerine geçer.
+const DEFAULT_SETTINGS = { disabledActions: [], enabledActions: [], disabledInteractables: [], recordWaits: false, minWaitSeconds: 1, autoWaitMs: 10 };
 
 // Bu tipteki aksiyonlar kaydediliyor mu? İsteğe bağlı tipler işaretlenince, diğerleri işareti
 // kaldırılmadıkça kaydedilir.

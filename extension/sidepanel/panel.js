@@ -550,11 +550,13 @@ $('btn-merge-confirm').onclick = () => {
 // -----------------------------------------------------------------------------
 // Her aksiyon kayıt sırasında "state'i değiştirdi mi?" diye işaretlenir (changed; bkz.
 // background.js > observeScreen). İşaret yoksa (bu özellikten önce kaydedilmiş edge) ya da
-// aksiyonun sonrası görülemediyse (null) etki "bilinmiyor"dur.
+// aksiyonun sonrası görülemediyse (null) etki "bilinmiyor"dur. Otomatik eklenen bekleme
+// (background.js > withAutoWaits) ölçülmez, "otomatik eklendi" diye ayrı gösterilir.
 
-const EFFECT_TEXT = { changed: 'ekranı değiştirdi', unchanged: 'ekranı değiştirmedi', unknown: 'etkisi bilinmiyor', waiting: 'etkisi bekleniyor' };
+const EFFECT_TEXT = { changed: 'ekranı değiştirdi', unchanged: 'ekranı değiştirmedi', unknown: 'etkisi bilinmiyor', waiting: 'etkisi bekleniyor', auto: 'otomatik eklendi' };
 
 function effectOf(action) {
+  if (action.auto) return 'auto';
   return action.changed === true ? 'changed' : action.changed === false ? 'unchanged' : 'unknown';
 }
 
@@ -597,14 +599,14 @@ function addWaitEdit(li, action, key, redraw, save) {
   const span = li.querySelector('span');
   if (waitEdit?.key !== key) {
     const edit = iconButton('✎', 'Bekleme süresini değiştir', () => {
-      waitEdit = { key, value: (action.ms / 1000).toFixed(1) };
+      waitEdit = { key, value: String(action.ms / 1000) }; // yuvarlanmasın: 10 ms '0.0' olup 0'a kaydedilmesin
       redraw();
     });
     edit.classList.add('edit-wait');
     span.after(edit);
     return;
   }
-  const input = Object.assign(document.createElement('input'), { type: 'number', min: '0', max: '3600', step: '0.1', value: waitEdit.value, className: 'wait-input' });
+  const input = Object.assign(document.createElement('input'), { type: 'number', min: '0', max: '3600', step: '0.001', value: waitEdit.value, className: 'wait-input' });
   input.setAttribute('aria-label', 'Bekleme süresi (sn)');
   let done = false;
   const finish = (keep) => {
@@ -645,13 +647,13 @@ function confirmRemoval(text, reasons, remove) {
 
 function removalRisks(edge, i) {
   const effect = effectOf(edge.actions[i]);
-  if (effect === 'unchanged') return [];
+  if (effect === 'unchanged' || effect === 'auto') return [];
   if (effect === 'unknown') {
     return ['Bu aksiyonun ekrana etkisi bilinmiyor (eski bir kayıt ya da aksiyonun sonrası görülmeden başka bir aksiyon yapıldı).'];
   }
 
   const reasons = ['Bu aksiyon ekranı (etkileşimli element kümesini) değiştirmişti.'];
-  if (i === edge.actions.length - 1) {
+  if (i === edge.actions.findLastIndex((a) => !a.auto)) { // otomatik bekleme sonda olsa da
     reasons.push(`Edge'in son aksiyonu: edge'i hedef node'un (${nodeById(edge.target)?.name}) ekranına götüren aksiyon bu. Silinirse edge o ekrana varmaz.`);
   }
   return reasons;
@@ -745,8 +747,9 @@ function actionItem(action) {
   return li;
 }
 
-// Süre: "3,2 sn"
+// Süre: "3,2 sn"; 1 sn'den kısaysa "10 ms" (otomatik bekleme)
 function seconds(ms) {
+  if (ms < 1000) return `${ms} ms`;
   return `${(ms / 1000).toFixed(1).replace('.', ',')} sn`;
 }
 
@@ -1953,15 +1956,17 @@ for (const { id, items } of CHECKLISTS) {
 }
 $('settings-record-waits').onchange = renderSaveButton;
 $('settings-min-wait').oninput = renderSaveButton;
+$('settings-auto-wait').oninput = renderSaveButton;
 
 // İsteğe bağlı aksiyon tipleri (settings.js > ACTION_TYPES > optional): işaretlenenler saklanır.
 const OPTIONAL_ACTIONS = new Set(ACTION_TYPES.filter((a) => a.optional).map((a) => a.type));
 
 // Taslak: kutuların o anki hali ve bekleme seçenekleri. Listelerde işareti kaldırılanlar,
-// isteğe bağlı aksiyonlarda işaretlenenler saklanır. Geçersiz alt sınır (boş, negatif)
-// varsayılana döner.
+// isteğe bağlı aksiyonlarda işaretlenenler saklanır. Geçersiz alt sınır (boş, negatif) ve
+// geçersiz otomatik bekleme (boş, kesirli, 0-60000 dışı) varsayılana döner.
 function draftSettings() {
   const minWait = Number($('settings-min-wait').value);
+  const autoWait = Number($('settings-auto-wait').value);
   const boxes = (id) => [...$(id).querySelectorAll('input')];
   return {
     disabledActions: boxes('settings-actions').filter((b) => !b.checked && !OPTIONAL_ACTIONS.has(b.value)).map((b) => b.value),
@@ -1969,6 +1974,7 @@ function draftSettings() {
     disabledInteractables: boxes('settings-interactables').filter((b) => !b.checked).map((b) => b.value),
     recordWaits: $('settings-record-waits').checked,
     minWaitSeconds: $('settings-min-wait').value !== '' && minWait >= 0 ? minWait : DEFAULT_SETTINGS.minWaitSeconds,
+    autoWaitMs: $('settings-auto-wait').value !== '' && Number.isInteger(autoWait) && autoWait >= 0 && autoWait <= 60000 ? autoWait : DEFAULT_SETTINGS.autoWaitMs,
   };
 }
 
@@ -1976,7 +1982,8 @@ function isDirty() {
   const draft = draftSettings();
   const same = (a, b) => [...a].sort().join('\n') === [...b].sort().join('\n');
   return ['disabledActions', 'enabledActions', 'disabledInteractables'].some((key) => !same(draft[key], settings[key]))
-    || draft.recordWaits !== settings.recordWaits || draft.minWaitSeconds !== settings.minWaitSeconds;
+    || draft.recordWaits !== settings.recordWaits || draft.minWaitSeconds !== settings.minWaitSeconds
+    || draft.autoWaitMs !== settings.autoWaitMs;
 }
 
 // Kutuları kaydedilmiş ayarlara eşitler (taslağı atar).
@@ -1985,6 +1992,7 @@ function loadDraft() {
   for (const box of $('settings-interactables').querySelectorAll('input')) box.checked = !settings.disabledInteractables.includes(box.value);
   $('settings-record-waits').checked = settings.recordWaits;
   $('settings-min-wait').value = settings.minWaitSeconds;
+  $('settings-auto-wait').value = settings.autoWaitMs;
   renderSaveButton();
 }
 
@@ -2000,6 +2008,7 @@ async function saveSettings() {
   await send({ type: 'SET_SETTINGS', settings: draft });
   settings = { ...DEFAULT_SETTINGS, ...draft }; // storage bildirimi gelmeden buton doğru görünsün
   $('settings-min-wait').value = settings.minWaitSeconds;
+  $('settings-auto-wait').value = settings.autoWaitMs;
   renderSaveButton();
   $('settings-saved').hidden = false;
 }

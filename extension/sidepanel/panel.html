@@ -258,6 +258,8 @@
         <p class="hint">Açıkken iki aksiyon arasındaki boşluk "Bekle" aksiyonu olarak kaydedilir ve kayıt sekmesinin ekranı sürekli izlenir. Ekran beklerken kendiliğinden değişirse (ör. oturum zaman aşımı) bekleme o anda biter ve "ekranı değiştirdi" işaretini alır; böyle bir bekleme alt sınırdan kısa da olsa kaydedilir.</p>
         <label class="option"><input type="checkbox" id="settings-record-waits"> <span>Beklemeleri kaydet</span></label>
         <label class="option">Alt sınır <input type="number" id="settings-min-wait" min="0" step="0.5"> saniye</label>
+        <p class="hint">Edge kaydedilirken her aksiyonun arkasına bu süre kadar bir bekleme otomatik eklenir ("otomatik eklendi"); edge hep bir beklemeyle biter. Aksiyonun arkasında kaydedilmiş bir bekleme varsa o kendi süresiyle kalır. Süre değişince yalnızca yeni kaydedilen edge'ler etkilenir.</p>
+        <label class="option">Aksiyon sonrası bekleme <input type="number" id="settings-auto-wait" min="0" max="60000" step="1"> ms</label>
       </fieldset>
       <fieldset>
         <legend>State'e dahil edilecek etkileşimli elementler</legend>
