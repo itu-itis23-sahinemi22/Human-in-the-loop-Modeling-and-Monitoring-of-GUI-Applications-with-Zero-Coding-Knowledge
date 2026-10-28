@@ -113,7 +113,7 @@ const kinds = (actions) => actions.map((a) => a.type + (a.type === 'input' ? `=$
     await createNode();
     s = await getState();
     const edge = s.edges.at(-1);
-    check('edge kalan aksiyonlarla oluştu', kinds(edge.actions) === 'click:B, click:A, click:X, input=abcd, click:X', kinds(edge.actions));
+    check('edge kalan aksiyonlarla oluştu (her birinin ardında otomatik bekleme)', kinds(edge.actions.filter((a) => !a.auto)) === 'click:B, click:A, click:X, input=abcd, click:X' && edge.actions.every((a, i) => (i % 2 === 1) === Boolean(a.auto)), kinds(edge.actions));
     check('buffer boş', s.buffer.length === 0 && await removeButtons() === 0);
 
     // Runner

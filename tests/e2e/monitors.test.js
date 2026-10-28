@@ -202,7 +202,7 @@ function check(name, ok, detail = '') {
     check('edge kapsamında element listesi: çıkış ve varış ekranları', edgePicks.includes('input:phone') && !edgePicks.includes('input:user-name'), edgePicks.join(' | '));
     // İkinci katman: edge'in aksiyon listesi
     const actionOptions = await $('#monitor-action option').allTextContents();
-    check('edge seçilince aksiyon listesi: "tamamı" + edge\'in 2 aksiyonu (yaz, tıkla)', !(await $('#monitor-action-row').isHidden()) && actionOptions.length === 3 && actionOptions[0].startsWith("Edge'in tamamı") && actionOptions[1] === '1. Yaz Fill Telefon (input:phone)' && actionOptions[2].startsWith('2. Tıkla'), actionOptions.join(' | '));
+    check('edge seçilince aksiyon listesi: "tamamı" + edge\'in 4 aksiyonu (yaz, bekle, tıkla, bekle)', !(await $('#monitor-action-row').isHidden()) && actionOptions.length === 5 && actionOptions[0].startsWith("Edge'in tamamı") && actionOptions[1] === '1. Yaz Fill Telefon (input:phone)' && actionOptions[2].startsWith('2. Bekle') && actionOptions[3].startsWith('3. Tıkla') && actionOptions[4].startsWith('4. Bekle'), actionOptions.join(' | '));
     check('özet (tamamı): "her aksiyonundan sonra"', (await summary()).includes(`${eTelefonEdge.name} edge'inin her aksiyonundan sonra`), await summary());
     await $('#monitor-action').selectOption('0');
     check('aksiyon seçilince alan aksiyonun hedefiyle doldu, ipucu aksiyonu söylüyor', (await $('[data-key="selector"] > label input').inputValue()) === 'input:phone' && (await text('#monitor-action-hint')).includes('hemen sonra') && (await text('#monitor-action-hint')).includes('input:phone'), await text('#monitor-action-hint'));
