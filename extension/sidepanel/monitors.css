@@ -1,0 +1,334 @@
+/* Monitör menüsünün görünümü (monitors.js). panel.css'teki değişkenleri ve sınıfları
+   (card, toolbar, badge, hint, segmented, field, option, settings, alert) kullanır; yalnızca
+   monitörlere özgü parçalar burada. Mor: monitörlerin rengi (graph'taki hale, ikonlar, özet). */
+
+:root {
+  --monitor: #7c3aed;
+}
+
+:root[data-theme="dark"] {
+  --monitor: #a78bfa;
+}
+
+#monitors summary { cursor: pointer; font-weight: 600; }
+#monitors[open] summary { margin-bottom: 6px; }
+
+/* Tür ikonu (Feather): kartlarda, form başlığında ve liste satırında */
+.type-icon {
+  display: inline-flex;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--monitor) 14%, transparent);
+  color: var(--monitor);
+}
+.type-icon svg { width: 16px; height: 16px; }
+.type-icon.small { width: 18px; height: 18px; border-radius: 5px; margin-right: 5px; vertical-align: -4px; }
+.type-icon.small svg { width: 12px; height: 12px; }
+
+/* Monitör listesi: etkin kutusu · ikon + ad / kapsam / parametreler · Düzenle ✕ */
+.monitor-list { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 6px; }
+.monitor {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.monitor .toggle { margin: 3px 0 0; }
+.monitor .body { min-width: 0; }
+.monitor .body b { display: block; font-weight: 600; word-break: break-word; }
+.monitor .body small { display: block; color: var(--muted); font-size: 11px; word-break: break-word; }
+.monitor .body .scope.orphan { color: var(--warn); font-weight: 600; }
+.monitor.disabled .body { opacity: 0.55; }
+.monitor.orphan { border-color: var(--highlight-border); }
+.monitor .buttons { display: flex; gap: 2px; }
+.monitor .buttons .edit { padding: 2px 6px; font-size: 11px; }
+.hint.warn { color: var(--warn); }
+
+/* Node detay kartındaki alt bölüm */
+.details-monitors { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.details-monitors h3 { font-size: 12px; margin: 0 0 4px; }
+
+/* ---- Form penceresi -------------------------------------------------------------------- */
+dialog.monitor-dialog { width: min(96vw, 560px); }
+
+/* 1. adım: aranabilir tür kartları */
+#monitor-search {
+  width: 100%;
+  margin: 2px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+#monitor-cards { max-height: 58vh; overflow: auto; padding-right: 2px; }
+.type-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 10px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.type-group:first-child { margin-top: 2px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 6px; }
+.type-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  text-align: left;
+  cursor: pointer;
+}
+.type-card:hover, .type-card:focus-visible { border-color: var(--monitor); background: var(--card); }
+.type-card .type-icon { grid-row: 1 / span 2; }
+.type-card .type-title { font-weight: 600; }
+.type-card .type-desc {
+  grid-column: 2 / span 2;
+  font-size: 11px;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 2. adım: seçilen tür başlığı */
+.type-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.type-head .type-text { flex: 1; min-width: 0; }
+.type-head .type-text b { font-weight: 600; }
+.type-head .type-text small { display: block; color: var(--muted); font-size: 11px; }
+.small-btn { flex: none; padding: 3px 8px; font-size: 11px; }
+
+/* Parametre alanları (monitor-types.js'teki tanımdan üretilir) */
+.monitor-dialog .option select { flex: 1; min-width: 0; } /* uzun edge adı etiketi satırlara bölmesin, liste kısalsın */
+.monitor-dialog .option input[type="radio"] { margin: 0; }
+#monitor-scope-set .option > span { white-space: nowrap; }
+#monitor-scope-set .action-row { margin-left: 22px; } /* ikinci katman: edge'in altında, edge'deki aksiyon */
+#monitor-scope-set .action-row[hidden], #monitor-scope-set .action-hint[hidden] { display: none; }
+#monitor-scope-set .action-hint { margin: 0 0 4px 22px; }
+.monitor-param { margin: 8px 0; }
+.monitor-param .field, .monitor-param .option { margin: 0; }
+.monitor-param .field > span, .monitor-param .option > span { flex: none; max-width: 45%; }
+.monitor-param input, .monitor-param select { min-width: 0; } /* uzun etiketin yanında alan pencereden taşmasın */
+.monitor-param input:not(.mono) { font-family: inherit; }
+.monitor-param input[type="number"] { flex: 0 0 90px; }
+.element-pick {
+  width: 100%;
+  margin-top: 4px;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+.regex-tools { margin: 4px 0 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 4px; }
+.chip { padding: 1px 8px; font-size: 11px; border-radius: 10px; }
+.chip:hover { border-color: var(--monitor); color: var(--monitor); }
+.tester { font-size: 12px; }
+.tester > span { color: var(--muted); }
+.tester input { font-family: inherit; }
+.test-result { flex: none; min-width: 72px; font-style: normal; font-size: 11px; font-weight: 600; }
+.test-result.ok { color: var(--ok); }
+.test-result.fail { color: var(--danger); }
+.test-result.invalid { color: var(--warn); }
+.field-error { margin: 2px 0 0; color: var(--danger); font-size: 11px; }
+.field-warn { margin: 2px 0 0; color: var(--warn); font-size: 11px; }
+.field-warn[hidden] { display: none; }
+
+/* Etkin anahtarı */
+.alarm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.switch { position: relative; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .track { position: relative; flex: none; width: 32px; height: 18px; border-radius: 9px; background: var(--border); transition: background 0.15s; }
+.switch .track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+.switch input:checked + .track { background: var(--ok); }
+.switch input:checked + .track::after { transform: translateX(14px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--primary); outline-offset: 2px; }
+#monitor-name { font-family: inherit; }
+
+/* Özet cümlesi: monitör kullanıcıya okunur */
+.summary {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--monitor);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--monitor) 8%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.summary b { font-weight: 600; color: var(--monitor); }
+
+/* ---- Tür kartındaki etiket: kontrol biçimi --------------------------------------------- */
+.type-card .type-tags { display: inline-flex; align-items: center; gap: 4px; }
+.type-card .when {
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  white-space: nowrap;
+}
+.type-card .when.state { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.type-card .when.action { color: var(--monitor); background: color-mix(in srgb, var(--monitor) 12%, transparent); }
+
+/* ---- LED: monitörün son kontrol sonucu, yalnızca yeşil ya da kırmızı (liste satırında ve
+        oynatma kartında) ------------------------------------------------------------------ */
+.led {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  vertical-align: -1px;
+}
+.led.ok { border-color: var(--ok); background: var(--ok); box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 70%, transparent); }
+.led.fail { border-color: var(--danger); background: var(--danger); box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 70%, transparent); }
+.monitor .verdict { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+.monitor .verdict[hidden] { display: none; }
+.monitor .verdict .led { width: 9px; height: 9px; }
+/* Uyarılar: son uyarının görüntüsü (son kontrol kırmızıysa) + "Uyarılar (n)" */
+.monitor .alarms { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.monitor .alarms[hidden] { display: none; }
+.monitor .alarms .shot, .alarm-list .shot {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  cursor: zoom-in;
+  background: var(--card);
+}
+.alarm-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.alarm-list .alarm { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 8px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 6px; background: var(--bg); }
+.alarm-list .alarm:has(> .alarm-body:only-child) { grid-template-columns: 1fr; }
+.alarm-list .alarm-body { min-width: 0; }
+.alarm-list .alarm-body b { display: block; font-weight: 600; word-break: break-word; }
+.alarm-list .alarm-body small { display: block; color: var(--muted); font-size: 11px; word-break: break-word; }
+.alarm-list .alarm-body .why { color: var(--danger); }
+
+/* ---- Oynatma kartındaki monitör listesi (monitor-run.js) -------------------------------- */
+.monitor-run { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.monitor-run-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.monitor-run-head b { font-weight: 600; }
+#monitor-run-summary { font-size: 11px; color: var(--muted); }
+#monitor-run-summary.running::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--primary); animation: led-pulse 1s ease-in-out infinite; vertical-align: 1px; }
+@keyframes led-pulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+.led-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.led-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--bg);
+}
+.led-row .led { width: 13px; height: 13px; margin-top: 2px; }
+.led-row.ok { border-left-color: var(--ok); }
+.led-row.fail { border-left-color: var(--danger); }
+.led-body { min-width: 0; }
+.led-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.led-title b { font-weight: 600; word-break: break-word; }
+.led-title .scope { color: var(--muted); font-size: 11px; }
+.led-body .detail { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; word-break: break-word; }
+.led-row.fail .detail { color: var(--danger); }
+/* Adım izi: her adım bir kare (yeşil / kırmızı; henüz oynatılmamış adım boş) */
+.trail { display: inline-flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.trail i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border); background: transparent; }
+.trail i.ok { background: var(--ok); border-color: var(--ok); }
+.trail i.fail { background: var(--danger); border-color: var(--danger); cursor: pointer; }
+.trail i:focus-visible, .shot:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.led-row .shot {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  cursor: zoom-in;
+  background: var(--card);
+}
+dialog.monitor-shot img { display: block; max-width: 100%; max-height: 70vh; margin: 6px auto 0; border: 1px solid var(--border); border-radius: 6px; }
+
+/* ---- Graph'ta sağ tık menüsü (monitors.js) --------------------------------------------- */
+.context-menu[hidden] { display: none; }
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  display: grid;
+  gap: 2px;
+}
+.context-menu button {
+  display: block;
+  width: 100%;
+  max-width: calc(100vw - 24px);
+  padding: 6px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.context-menu button:hover, .context-menu button:focus-visible { background: color-mix(in srgb, var(--monitor) 12%, transparent); color: var(--monitor); outline: none; }
+.context-menu button.primary-item { font-weight: 600; }
+.context-menu button.primary-item::before { content: '+ '; color: var(--monitor); }
