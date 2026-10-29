@@ -129,12 +129,41 @@ function findImage(haystack, needle, { threshold = 0.9, maxWork = MONITOR_IMAGE_
       if (p < total) continue; // erken bırakıldı: en iyiden ya da eşikten kötü
       diff /= 3; // kanal ortalaması: piksel başına 0–255
       if (diff < bestDiff) { bestDiff = diff; result.x = x; result.y = y; }
-      if (diff <= allowed) { result.found = true; result.score = 1 - diff / (255 * total); return result; }
+      if (diff <= allowed) { // bulundu: 1-2 piksel kaymış bir komşu daha iyi olabilir (eşiği ilk geçen konum tam yer olmayabilir)
+        result.found = true;
+        refineMatch(H, N, nidx, noff, total, result, diff);
+        return result;
+      }
     }
     if (result.capped) break;
   }
   result.score = bestDiff === Infinity ? 0 : 1 - bestDiff / (255 * total);
   return result;
+}
+
+// Bulunan konumun ±2 piksel komşuluğunda en iyi konum (tam karşılaştırma; kenar payı olan bir parça
+// bir satır kaymış halde de eşiği geçebilir, asıl yer daha yüksek benzerlik verir). result yerinde güncellenir.
+function refineMatch(H, N, nidx, noff, total, result, diff) {
+  const hd = H.data, nd = N.data, hw = H.width;
+  let best = diff, bx = result.x, by = result.y;
+  for (let y = Math.max(0, result.y - 2); y <= Math.min(H.height - N.height, result.y + 2); y++) {
+    for (let x = Math.max(0, result.x - 2); x <= Math.min(hw - N.width, result.x + 2); x++) {
+      if (x === result.x && y === result.y) continue;
+      const base = (y * hw + x) * 4;
+      const stop = best * 3;
+      let d = 0, p = 0;
+      for (; p < total && d <= stop; p++) {
+        const hi = base + noff[p], ni = nidx[p];
+        d += Math.abs(hd[hi] - nd[ni]) + Math.abs(hd[hi + 1] - nd[ni + 1]) + Math.abs(hd[hi + 2] - nd[ni + 2]);
+      }
+      if (p < total) continue;
+      d /= 3;
+      if (d < best) { best = d; bx = x; by = y; }
+    }
+  }
+  result.x = bx;
+  result.y = by;
+  result.score = 1 - best / (255 * total);
 }
 
 
@@ -249,4 +278,194 @@ async function matchExpectedImage(haystack, { image, similarity }) {
   } finally {
     bitmap.close();
   }
+}
+
+
+// -----------------------------------------------------------------------------
+// "EKRANDAN SEÇ": parçayı açık sekmenin görüntüsünden fareyle kesme (monitor-dialog.js > görüntü alanı)
+// -----------------------------------------------------------------------------
+// Kullanıcı PNG kesmek zorunda kalmaz: düğmeye basınca sekmenin görüntüsü pencerede açılır, fareyle bir
+// dikdörtgen çizilir, "Kullan" deyince o kısım png olarak forma girer. Parça kontrolde kullanılan
+// görüntüyle aynı kaynaktan geldiği için ölçek / renk farkı olmaz. Görünen alanın dışı görüntüde yoktur
+// (gerekirse sayfa kaydırılıp "Yeniden çek"). Pencere ilk açılışta kurulur: bu dosya DOM'suz da yüklenir.
+
+const MONITOR_CROP_MIN_SIDE = 4; // bundan küçük seçim kullanılmaz (yanlışlıkla tıklama)
+
+const MONITOR_CROP_HTML = `
+  <div class="dialog-body">
+    <div class="title-row">
+      <h2 id="monitor-crop-title">Ekrandan seç</h2>
+      <button id="btn-monitor-crop-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
+    </div>
+    <p class="hint">Açık sekmenin şu anki görüntüsü. Aranacak parçayı fareyle çizin: küçük ve belirgin olsun (bir mesaj, bir düğme). Görünen alanın dışı görüntüde yoktur; gerekirse sayfayı kaydırıp <b>Yeniden çek</b>.</p>
+    <p id="monitor-crop-error" class="message error" hidden></p>
+    <div class="crop-stage"><canvas id="monitor-crop-canvas" aria-label="Sekmenin görüntüsü; parçayı fareyle çizin"></canvas></div>
+    <div class="crop-meta"><small id="monitor-crop-info">Henüz seçim yok.</small></div>
+    <div class="crop-preview-box"><canvas id="monitor-crop-preview" class="crop-preview" hidden aria-label="Seçilen parça"></canvas></div>
+    <div class="toolbar">
+      <button id="btn-monitor-crop-use" class="primary" disabled>Kullan</button>
+      <button id="btn-monitor-crop-retake">Yeniden çek</button>
+      <button id="btn-monitor-crop-cancel">Vazgeç</button>
+    </div>
+  </div>`;
+
+let cropState = null; // { bitmap, scale, selection: { x, y, w, h } | null, onPick }
+
+function ensureCropDialog() {
+  if (document.getElementById('monitor-crop-dialog')) return;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'monitor-crop-dialog';
+  dialog.className = 'settings monitor-crop';
+  dialog.setAttribute('aria-labelledby', 'monitor-crop-title');
+  dialog.innerHTML = MONITOR_CROP_HTML;
+  document.body.append(dialog);
+  const canvas = dialog.querySelector('#monitor-crop-canvas');
+  canvas.addEventListener('pointerdown', cropPointerDown);
+  canvas.addEventListener('pointermove', cropPointerMove);
+  canvas.addEventListener('pointerup', cropPointerUp);
+  canvas.addEventListener('pointercancel', cropPointerUp);
+  dialog.querySelector('#btn-monitor-crop-use').onclick = useCropSelection;
+  dialog.querySelector('#btn-monitor-crop-retake').onclick = () => captureForCrop();
+  dialog.querySelector('#btn-monitor-crop-cancel').onclick = closeCropDialog;
+  dialog.querySelector('#btn-monitor-crop-close').onclick = closeCropDialog;
+  dialog.oncancel = (event) => { event.preventDefault(); closeCropDialog(); };
+  dialog.onclick = (event) => { if (event.target === dialog) closeCropDialog(); };
+}
+
+// Açar ve açık sekmeyi çeker. onPick(blob): seçilen parça (png) — monitor-dialog.js forma koyar.
+async function openImagePicker(onPick) {
+  ensureCropDialog();
+  cropState = { bitmap: null, scale: 1, selection: null, drag: null, onPick };
+  document.getElementById('monitor-crop-dialog').showModal();
+  await captureForCrop();
+}
+
+function closeCropDialog() {
+  cropState?.bitmap?.close();
+  cropState = null;
+  document.getElementById('monitor-crop-dialog')?.close();
+}
+
+async function captureForCrop() {
+  const error = document.getElementById('monitor-crop-error');
+  error.hidden = true;
+  setCropSelection(null);
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error('açık sekme bulunamadı');
+    const png = await captureTabPng(tab.id);
+    const bitmap = await createImageBitmap(await (await fetch(png)).blob());
+    if (!cropState) { bitmap.close(); return; } // bu arada kapatıldı
+    cropState.bitmap?.close();
+    cropState.bitmap = bitmap;
+    cropState.scale = null; // bu görüntü için ölçek ilk çizimde hesaplanır
+    setCropSelection(null);
+  } catch (e) {
+    error.textContent = `Ekran görüntüsü alınamadı: ${e.message}. Sekmede bir web sayfası açık olmalı (tarayıcının kendi sayfalarında alınamaz).`;
+    error.hidden = false;
+  }
+}
+
+// Görüntü, pencerenin genişliğine sığacak şekilde küçültülerek çizilir; seçim dışı karartılır.
+function drawCropCanvas() {
+  const { bitmap, selection } = cropState;
+  const canvas = document.getElementById('monitor-crop-canvas');
+  if (!bitmap) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (cropState.scale === null) { // yeni görüntü: pencereye sığdır; sonraki çizimlerde boyut sabit kalır
+    const stageWidth = canvas.parentElement.clientWidth || 400;
+    cropState.scale = Math.min(1, stageWidth / bitmap.width);
+    canvas.width = Math.round(bitmap.width * cropState.scale * dpr);
+    canvas.height = Math.round(bitmap.height * cropState.scale * dpr);
+    canvas.style.width = `${Math.round(bitmap.width * cropState.scale)}px`;
+    canvas.style.height = `${Math.round(bitmap.height * cropState.scale)}px`;
+    canvas.dataset.imageWidth = bitmap.width;
+    canvas.dataset.imageHeight = bitmap.height;
+  }
+  const scale = cropState.scale;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0); // çizim koordinatları = görüntü pikseli
+  ctx.drawImage(bitmap, 0, 0);
+  if (selection) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.rect(0, 0, bitmap.width, bitmap.height);
+    ctx.rect(selection.x, selection.y, selection.w, selection.h);
+    ctx.fill('evenodd');
+    ctx.lineWidth = 2 / (scale * dpr);
+    ctx.strokeStyle = '#ff3b30';
+    ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
+  }
+}
+
+// Fare konumu (CSS px) -> görüntü pikseli, sınırların içinde
+function cropPoint(event) {
+  const canvas = event.currentTarget;
+  const rect = canvas.getBoundingClientRect();
+  const { bitmap } = cropState;
+  const sx = canvas.clientWidth / bitmap.width; // çizilen alan (kenarlık hariç) / görüntü
+  const sy = canvas.clientHeight / bitmap.height;
+  const x = Math.max(0, Math.min(bitmap.width, Math.round((event.clientX - rect.left - canvas.clientLeft) / sx)));
+  const y = Math.max(0, Math.min(bitmap.height, Math.round((event.clientY - rect.top - canvas.clientTop) / sy)));
+  return { x, y };
+}
+
+function cropPointerDown(event) {
+  if (!cropState?.bitmap || event.button !== 0) return;
+  event.preventDefault();
+  event.currentTarget.setPointerCapture(event.pointerId);
+  cropState.drag = cropPoint(event);
+  setCropSelection(null);
+}
+
+function cropPointerMove(event) {
+  if (!cropState?.drag) return;
+  const p = cropPoint(event);
+  const d = cropState.drag;
+  setCropSelection({ x: Math.min(d.x, p.x), y: Math.min(d.y, p.y), w: Math.abs(p.x - d.x), h: Math.abs(p.y - d.y) });
+}
+
+function cropPointerUp(event) {
+  if (!cropState?.drag) return;
+  cropPointerMove(event);
+  cropState.drag = null;
+  if (cropState.selection && (cropState.selection.w < MONITOR_CROP_MIN_SIDE || cropState.selection.h < MONITOR_CROP_MIN_SIDE)) setCropSelection(null); // yanlışlıkla tıklama
+}
+
+// Seçimi kaydeder, çizer, bilgi satırını ve önizlemeyi (parça gerçek boyutunda) günceller
+function setCropSelection(selection) {
+  if (!cropState) return;
+  cropState.selection = selection;
+  const info = document.getElementById('monitor-crop-info');
+  const preview = document.getElementById('monitor-crop-preview');
+  const use = document.getElementById('btn-monitor-crop-use');
+  if (cropState.bitmap) drawCropCanvas();
+  const tooBig = selection && (selection.w > MONITOR_IMAGE_MAX_SIDE || selection.h > MONITOR_IMAGE_MAX_SIDE);
+  if (!selection || !selection.w || !selection.h) {
+    info.textContent = cropState.bitmap ? 'Henüz seçim yok: parçayı fareyle çizin.' : '';
+    preview.hidden = true;
+    use.disabled = true;
+    return;
+  }
+  info.textContent = `Seçim: ${selection.w}×${selection.h} px` + (tooBig ? ` — çok büyük (en fazla ${MONITOR_IMAGE_MAX_SIDE}×${MONITOR_IMAGE_MAX_SIDE}): daha küçük bir parça çizin.` : '');
+  use.disabled = Boolean(tooBig) || selection.w < MONITOR_CROP_MIN_SIDE || selection.h < MONITOR_CROP_MIN_SIDE;
+  preview.hidden = Boolean(tooBig);
+  if (!tooBig) {
+    preview.width = selection.w;
+    preview.height = selection.h;
+    const shownHeight = Math.min(selection.h, 64); // kutu sabit yükseklikte: önizleme büyüyünce pencere (ve seçim yapılan canvas) yerinden oynamaz
+    preview.style.height = `${shownHeight}px`;
+    preview.style.width = `${Math.round(selection.w * shownHeight / selection.h)}px`;
+    preview.getContext('2d').drawImage(cropState.bitmap, selection.x, selection.y, selection.w, selection.h, 0, 0, selection.w, selection.h);
+  }
+}
+
+async function useCropSelection() {
+  const { bitmap, selection, onPick } = cropState ?? {};
+  if (!bitmap || !selection) return;
+  const canvas = new OffscreenCanvas(selection.w, selection.h);
+  canvas.getContext('2d').drawImage(bitmap, selection.x, selection.y, selection.w, selection.h, 0, 0, selection.w, selection.h);
+  const blob = await canvas.convertToBlob({ type: 'image/png' });
+  closeCropDialog();
+  onPick(blob);
 }

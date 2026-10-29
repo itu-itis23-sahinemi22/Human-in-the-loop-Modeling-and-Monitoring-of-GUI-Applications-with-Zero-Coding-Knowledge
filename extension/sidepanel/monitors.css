@@ -177,10 +177,18 @@ dialog.monitor-dialog { width: min(96vw, 560px); }
   background: repeating-conic-gradient(var(--border) 0 25%, var(--bg) 0 50%) 0 0 / 12px 12px;
 }
 .image-preview img[hidden] { display: none; }
-.image-meta { display: flex; align-items: center; gap: 8px; }
+.image-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .image-info { color: var(--muted); font-size: 12px; }
 .image-clear[hidden] { display: none; }
 .image-preview .hint { margin: 4px 0 0; }
+/* "Ekrandan seç" penceresi: sekmenin görüntüsü sığdırılarak çizilir, seçim fareyle */
+dialog.monitor-crop { width: min(96vw, 900px); margin-top: 12px; } /* üstten sabit: içerik değişince pencere (ve seçim yapılan canvas) kaymasın */
+.crop-stage { margin: 6px 0; line-height: 0; overflow-x: auto; }
+#monitor-crop-canvas { display: block; border: 1px solid var(--border); border-radius: 4px; cursor: crosshair; touch-action: none; } /* boyutu script verir; pencere daralsa da küçülmez (seçim ölçeği sabit) */
+.crop-meta { margin: 4px 0; color: var(--muted); font-size: 12px; min-height: 16px; }
+.crop-preview-box { display: flex; align-items: center; height: 72px; margin: 0 0 6px; } /* sabit yükseklik: önizleme çıkınca yerleşim değişmez */
+.crop-preview { display: block; max-width: 100%; border: 1px solid var(--border); border-radius: 4px; }
+.crop-preview[hidden] { display: none; }
 /* Listede aranan parçanın küçük hali */
 .monitor .needle {
   display: block;

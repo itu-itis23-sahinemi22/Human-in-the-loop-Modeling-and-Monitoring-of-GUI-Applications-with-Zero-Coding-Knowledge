@@ -158,12 +158,69 @@ function check(name, ok, detail = '') {
     await $('#btn-monitor-unsaved-discard').click();
     await sleep(150);
 
+    // ---- "Ekrandan seç": sekmenin görüntüsünde fareyle dikdörtgen çizip parçayı forma almak ----
+    await page.goto(base + '/home');
+    await page.bringToFront();
+    await sleep(400);
+    const msgBox = await page.locator('#msg').boundingBox();
+    await $('#btn-monitor-add').click();
+    await $('#monitor-cards .type-card[data-type="expectedImage"]').click();
+    await $('input[name="monitor-scope"][value="node"]').check();
+    await $('#monitor-node').selectOption(home.id);
+    await $('[data-key="image"] .image-pick').click();
+    await panel.waitForFunction(() => document.getElementById('monitor-crop-dialog')?.open && Number(document.getElementById('monitor-crop-canvas').dataset.imageWidth) > 0, null, { timeout: 10000 });
+    // çizilen alan (kenarlık hariç) ve görüntü boyutu: fare konumu bununla görüntü pikseline çevrilir
+    const cropBox = () => panel.evaluate(() => { const c = document.getElementById('monitor-crop-canvas'); const r = c.getBoundingClientRect(); return { x: r.left + c.clientLeft, y: r.top + c.clientTop, width: c.clientWidth, height: c.clientHeight, imageWidth: Number(c.dataset.imageWidth), imageHeight: Number(c.dataset.imageHeight) }; });
+    const cropCanvas = await cropBox();
+    const captured = [cropCanvas.imageWidth, cropCanvas.imageHeight];
+    const cropScale = cropCanvas.width / captured[0];
+    check('kırpma penceresi: sekmenin görüntüsü sığdırılarak çizildi, Kullan pasif, seçim yok', captured[0] >= 1000 && cropScale <= 1 && (await $('#btn-monitor-crop-use').isDisabled()) && (await text('#monitor-crop-info')).includes('Henüz seçim yok'), `${captured.join('×')} → ${Math.round(cropCanvas.width)}px (ölçek ${cropScale.toFixed(3)})`);
+    // mesaj kutusunun etrafına 1 px pay bırakarak sürükle (görüntü pikseli → pencere pikseli)
+    const toCanvas = (x, y) => [cropCanvas.x + x * cropScale, cropCanvas.y + y * cropScale];
+    let [sx, sy] = toCanvas(msgBox.x - 1, msgBox.y - 1);
+    let [ex, ey] = toCanvas(msgBox.x + msgBox.width + 1, msgBox.y + msgBox.height + 1);
+    await panel.mouse.move(sx, sy);
+    await panel.mouse.down();
+    await panel.mouse.move((sx + ex) / 2, (sy + ey) / 2, { steps: 4 });
+    await panel.mouse.move(ex, ey, { steps: 4 });
+    await panel.mouse.up();
+    await sleep(100);
+    const cropInfo = await text('#monitor-crop-info');
+    const sel = cropInfo.match(/Seçim: (\d+)×(\d+) px/)?.slice(1, 3).map(Number) ?? [0, 0];
+    check('sürükleyince seçim boyutu mesaj kutusuna yakın, önizleme açık, Kullan etkin', Math.abs(sel[0] - (msgBox.width + 2)) <= 3 && Math.abs(sel[1] - (msgBox.height + 2)) <= 3 && !(await $('#monitor-crop-preview').isHidden()) && !(await $('#btn-monitor-crop-use').isDisabled()), cropInfo);
+    await shot('ekrandan-sec', '#monitor-crop-dialog');
+    await $('#btn-monitor-crop-use').click();
+    await sleep(400);
+    check('Kullan: kırpma penceresi kapandı, parça formda (boyut seçimle aynı), özet güncel', !(await panel.evaluate(() => document.getElementById('monitor-crop-dialog').open)) && (await text('[data-key="image"] .image-info')) === `${sel[0]}×${sel[1]} px` && (await text('#monitor-summary')).includes(`(${sel[0]}×${sel[1]} px)`), await text('[data-key="image"] .image-info'));
+    await $('#monitor-name').fill('Ekrandan seçilen mesaj');
+    await $('#btn-monitor-save').evaluate((b) => b.click());
+    await sleep(400);
+    m = (await store('monitors:' + await activeId()))['monitors:' + await activeId()];
+    const picked = m.items.find((x) => x.name === 'Ekrandan seçilen mesaj');
+    check('kaydedildi: ekrandan seçilen parça png, boyutu seçimle aynı', m.items.length === 2 && picked?.params.image.data.startsWith('data:image/png;base64,') && picked.params.image.width === sel[0] && picked.params.image.height === sel[1]);
+    // küçük tıklama (4 px altı) seçim sayılmaz; Vazgeç forma dokunmaz
+    await $('#monitors-list .monitor .edit').last().click();
+    await sleep(200);
+    await $('[data-key="image"] .image-pick').click();
+    await panel.waitForFunction(() => document.getElementById('monitor-crop-dialog')?.open && Number(document.getElementById('monitor-crop-canvas').dataset.imageWidth) > 0, null, { timeout: 10000 });
+    [sx, sy] = toCanvas(msgBox.x + 5, msgBox.y + 5);
+    await panel.mouse.move(sx, sy); await panel.mouse.down(); await panel.mouse.move(sx + 1, sy + 1); await panel.mouse.up();
+    await sleep(100);
+    check('yanlışlıkla tıklama: seçim yok, Kullan pasif', (await $('#btn-monitor-crop-use').isDisabled()) && (await text('#monitor-crop-info')).includes('Henüz seçim yok'), await text('#monitor-crop-info'));
+    await $('#btn-monitor-crop-cancel').click();
+    await sleep(100);
+    check('Vazgeç: formdaki parça değişmedi', (await text('[data-key="image"] .image-info')) === `${sel[0]}×${sel[1]} px`);
+    await panel.keyboard.press('Escape');
+    await sleep(150);
+    if (await panel.evaluate(() => document.getElementById('monitor-unsaved-dialog').open)) { await $('#btn-monitor-unsaved-discard').click(); await sleep(150); }
+
     // ---- Diğer monitörler storage'a (form monitors.test.js'te sınanıyor) ----
     const graphId = await activeId();
     const et = (id, scope, t, extra = {}, name = null) => ({ id, type: 'expectedText', scope, params: { text: t, caseSensitive: false }, severity: 'error', enabled: true, name, ...extra });
     const ei = (id, scope, image, name, similarity = 90) => ({ id, type: 'expectedImage', scope, params: { image, similarity }, severity: 'error', enabled: true, name });
     const M = [
       saved,
+      picked,
       et('t1', home.id, 'Password is required', {}, 'Home: şifre uyarısı var'),
       et('t2', home.id, 'Username is required', {}, 'Home: kullanıcı adı uyarısı var'),
       et('t3', home.id, 'password IS required', {}, 'Home: harf duyarsız'),
@@ -178,7 +235,7 @@ function check(name, ok, detail = '') {
     ];
     await panel.evaluate(([key, items]) => chrome.storage.local.set({ [key]: { format: 'graph-recorder-monitors/v1', nextId: 100, items } }), ['monitors:' + graphId, M]);
     await sleep(400);
-    check('12 monitör listede', (await text('#monitors-badge')) === '12');
+    check('13 monitör listede', (await text('#monitors-badge')) === '13');
 
     // ---- "Bu ekranda şimdi kontrol et": Home sayfasında, Home node'u seçili ----
     await page.goto(base + '/home');
@@ -195,6 +252,7 @@ function check(name, ok, detail = '') {
     check('şimdi: harf duyarsız yeşil; duyarlı kırmızı ve "yalnızca büyük/küçük harf farkıyla var"', lv('Home: harf duyarsız').led === 'ok' && lv('Home: harf duyarlı').led === 'fail' && lv('Home: harf duyarlı').text.includes('yalnızca büyük/küçük harf farkıyla var'), lv('Home: harf duyarlı').text);
     check('şimdi: iki satıra yayılan metin bulunur (notuyla); gizli metin bulunmaz', lv('Home: iki satıra').led === 'ok' && lv('Home: iki satıra').text.includes('birden çok satıra yayılmış') && lv('Home: gizli').led === 'fail', lv('Home: iki satıra').text + ' | ' + lv('Home: gizli').text);
     check('şimdi: formdan yüklenen mesaj parçası → yeşil, benzerlik %90+', lv('Expected Image ·').led === 'ok' && /benzerlik %(9\d|100)/.test(lv('Expected Image ·').text), lv('Expected Image ·').text);
+    check('şimdi: ekrandan seçilen parça → yeşil, benzerlik %100 (aynı kaynaktan)', lv('Ekrandan seçilen').led === 'ok' && lv('Ekrandan seçilen').text.includes('benzerlik %100'), lv('Ekrandan seçilen').text);
     check('şimdi: 2× parça 0.5 ölçekte bulunur', lv('Home: mesaj 2×').led === 'ok' && lv('Home: mesaj 2×').text.includes('0.5× ölçekte'), lv('Home: mesaj 2×').text);
     check('şimdi: Login düğmesi parçası Home\'da yok → kırmızı, "ekranda yok"', lv('Home: Login').led === 'fail' && lv('Home: Login').text.includes('beklenen görüntü') && lv('Home: Login').text.includes('ekranda yok'), lv('Home: Login').text);
     check('şimdi: tüm model mesaj parçası yeşil; Login node\'unun monitörleri bu kontrolde sonuçsuz', lv('Tüm model').led === 'ok' && lv('Login: düğme yazısı').led === null && lv('Login: Login düğmesi').led === null, JSON.stringify([lv('Tüm model'), lv('Login: düğme yazısı')]));
@@ -238,7 +296,7 @@ function check(name, ok, detail = '') {
     // ---- Dışa aktarma: görüntü de modele yazılır ----
     const exported = await panel.evaluate(() => graphWalkerModel());
     const exp = exported.models[0].properties.graphRecorder.monitors.items;
-    check('GraphWalker JSON: 12 monitör; görüntü monitöründe data URL ve boyut', exp.length === 12 && exp.filter((x) => x.type === 'expectedImage').every((x) => x.params.image.data.startsWith('data:image/png;base64,') && x.params.image.width > 0), String(exp.length));
+    check('GraphWalker JSON: 13 monitör; görüntü monitöründe data URL ve boyut', exp.length === 13 && exp.filter((x) => x.type === 'expectedImage').every((x) => x.params.image.data.startsWith('data:image/png;base64,') && x.params.image.width > 0), String(exp.length));
     check('konsolda hata yok', errors.length === 0, errors.join(' | '));
   } finally {
     await ctx.close();

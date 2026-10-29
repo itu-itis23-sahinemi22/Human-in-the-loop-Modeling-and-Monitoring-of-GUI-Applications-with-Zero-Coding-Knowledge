@@ -272,8 +272,9 @@ function paramField(param, value) {
   if (param.kind === 'image') {
     const preview = document.createElement('div');
     preview.className = 'image-preview';
-    preview.innerHTML = '<img alt="Yüklenen görüntü" hidden><div class="image-meta"><small class="image-info"></small> <button type="button" class="small-btn image-clear" hidden>Kaldır</button></div>'
-      + '<p class="hint" id="monitor-image-help">Aranacak parça küçük olsun: bir mesajın ya da düğmenin ekran görüntüsünden kesilmiş kısım (Mac: ⌘⇧4, Windows: Win+Shift+S). Dosya seçin ya da panodaki görüntüyü bu pencereye yapıştırın (⌘V / Ctrl+V). Parça, kontrol edilen ekranla aynı yakınlaştırmada alınmış olmalı.</p>';
+    preview.innerHTML = '<img alt="Yüklenen görüntü" hidden><div class="image-meta"><button type="button" class="small-btn image-pick">Ekrandan seç</button> <small class="image-info"></small> <button type="button" class="small-btn image-clear" hidden>Kaldır</button></div>'
+      + '<p class="hint" id="monitor-image-help">Aranacak parça küçük olsun: bir mesaj, bir düğme. En kolayı <b>Ekrandan seç</b>: açık sekmenin görüntüsünde parçayı fareyle çizin. Ya da ekran görüntüsünden kesilmiş bir dosya seçin (Mac: ⌘⇧4, Windows: Win+Shift+S) / panodaki görüntüyü bu pencereye yapıştırın (⌘V / Ctrl+V); dosyadan gelen parça, kontrol edilen ekranla aynı yakınlaştırmada alınmış olmalı.</p>';
+    preview.querySelector('.image-pick').onclick = () => openImagePicker((blob) => setImageParam(wrap, blob)); // monitor-image.js
     preview.querySelector('.image-clear').onclick = () => {
       wrap.imageValue = '';
       renderImagePreview(wrap);
