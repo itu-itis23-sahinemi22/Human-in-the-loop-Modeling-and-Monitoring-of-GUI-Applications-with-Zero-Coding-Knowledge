@@ -1,7 +1,8 @@
 // Monitör yardımcılarının birim testi (tarayıcısız; fit-unit.test.js gibi vm ile): tür kataloğu
-// (monitor-types.js: parametre doğrulama, ağır desen uyarısı, otomatik ad, özet cümlesi) ve
-// monitor-store.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme). Geçti / kaldı kararını
-// etkileyen mantık burada hızlıca sınanır; arayüz ve oynatma uçtan uca testlerde.
+// (monitor-types.js: parametre doğrulama, ağır desen uyarısı, otomatik ad, özet cümlesi),
+// monitor-store.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme) ve görüntü eşleme
+// (monitor-image.js > findImage: yapay görüntüde parça arama). Geçti / kaldı kararını etkileyen mantık
+// burada hızlıca sınanır; arayüz ve oynatma uçtan uca testlerde.
 // Kullanım: node tests/e2e/monitor-unit.test.js
 const fs = require('fs');
 const path = require('path');
@@ -22,15 +23,18 @@ const pick = (name) => {
 };
 const constants = monitorsSource.match(/^const (MONITORS_KEY_PREFIX|MONITORS_FORMAT|MONITOR_ALARMS_KEY_PREFIX|MONITOR_ALARMS_FORMAT|MONITOR_ALARM_LIMIT) = [^\n]*$/gm).join('\n');
 const picked = ['emptyMonitors', 'normalizeMonitors', 'emptyAlarms', 'normalizeAlarms', 'actionTarget', 'monitorActionRef', 'normalizeActionRef', 'resolveMonitorAction'].map(pick).join('\n');
+// monitor-image.js: saf kısım DOM'suz yüklenir (panel kısmı fonksiyon tanımı olarak durur, çağrılmaz)
+const imageSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-image.js'), 'utf8');
 const ctx = { console };
 vm.createContext(ctx);
-vm.runInContext(`${typesSource}\n${constants}\n${picked}\n`
-  + 'this.T = { monitorType, monitorParamProblem, monitorPatternWarning, monitorAutoName, monitorSentence, monitorDefaults, MONITOR_TYPES };\n'
-  + 'this.M = { normalizeMonitors, normalizeAlarms, normalizeActionRef, monitorActionRef, resolveMonitorAction };', ctx);
-const { T, M } = ctx;
+vm.runInContext(`${typesSource}\n${constants}\n${picked}\n${imageSource}\n`
+  + 'this.T = { monitorType, monitorParamProblem, monitorImageProblem, monitorPatternWarning, monitorAutoName, monitorSentence, monitorDefaults, MONITOR_TYPES };\n'
+  + 'this.M = { normalizeMonitors, normalizeAlarms, normalizeActionRef, monitorActionRef, resolveMonitorAction };\n'
+  + 'this.I = { findImage, needleAnchors };', ctx);
+const { T, M, I } = ctx;
 
 // ---- Katalog ----
-check('3 tür: inputValidation (aksiyon), errorText (state), fontSize (state)', T.MONITOR_TYPES.map((t) => `${t.id}:${t.when}`).join(',') === 'inputValidation:action,errorText:state,fontSize:state');
+check('5 tür: inputValidation (aksiyon), expectedText / expectedImage / errorText / fontSize (state); görüntü panelde', T.MONITOR_TYPES.map((t) => `${t.id}:${t.when}${t.side ? ':' + t.side : ''}`).join(',') === 'inputValidation:action,expectedText:state,expectedImage:state:panel,errorText:state,fontSize:state', T.MONITOR_TYPES.map((t) => t.id).join(','));
 const iv = T.monitorType('inputValidation');
 const pattern = iv.params.find((p) => p.key === 'pattern');
 const min = T.monitorType('fontSize').params.find((p) => p.key === 'min');
@@ -82,6 +86,48 @@ const alarms = M.normalizeAlarms({ nextId: 7, items: [
 ] });
 check('normalizeAlarms: görüntü yalnızca data:image, kaynak replay/live, eksikler boş, monitörsüz kayıt atılır', alarms.nextId === 7 && alarms.items.length === 2 && alarms.items[0].source === 'live' && alarms.items[0].screenshot.startsWith('data:image/')
   && alarms.items[1].screenshot === null && alarms.items[1].source === 'replay' && alarms.items[1].at === 0 && alarms.items[1].where === '', JSON.stringify(alarms));
+
+// ---- Expected Text / Expected Image: parametre doğrulama, ad, özet ----
+const et = T.monitorType('expectedText');
+const ei = T.monitorType('expectedImage');
+const png = { data: 'data:image/png;base64,iVBORw0KGgo=', width: 120, height: 24 };
+check('expectedText: metin gerekli; harf duyarlılığı varsayılan kapalı; ad ve özet', T.monitorParamProblem(et.params[0], '') === 'Bu alan gerekli.' && T.monitorParamProblem(et.params[0], 'Password is required') === null
+  && T.monitorDefaults(et).caseSensitive === false && T.monitorAutoName(et, { text: 'Password is required' }) === 'Expected Text · "Password is required"'
+  && T.monitorSentence(et, { text: 'Password is required', caseSensitive: false }, { kind: 'node', name: 'v_Login' }, true).map((p) => p.b ?? p).join('').includes('görünen yazılardan birinde Password is required geçmeli (büyük/küçük harf fark etmez)'));
+check('expectedImage: görüntü gerekli; biçim, boyut ve en/boy sınırı; benzerlik 50–100', T.monitorParamProblem(ei.params[0], '') === 'Bir görüntü yükleyin (PNG ya da JPEG).'
+  && T.monitorParamProblem(ei.params[0], png) === null && /PNG, JPEG/.test(T.monitorParamProblem(ei.params[0], { ...png, data: 'data:text/plain;base64,QQ==' }))
+  && /çok büyük/.test(T.monitorParamProblem(ei.params[0], { ...png, data: 'data:image/png;base64,' + 'A'.repeat(1500000) })) && /1–800 px/.test(T.monitorParamProblem(ei.params[0], { ...png, width: 2000 }))
+  && T.monitorParamProblem(ei.params[1], 30) === 'En az 50 olmalı.' && T.monitorParamProblem(ei.params[1], 90) === null && T.monitorDefaults(ei).similarity === 90
+  && T.monitorAutoName(ei, { image: png, similarity: 90 }) === 'Expected Image · 120×24 px');
+check('import için de aynı doğrulama: {image:"x"} geçersiz', T.monitorImageProblem('x') !== null && T.monitorImageProblem({ data: png.data }) !== null);
+
+// ---- Görüntü eşleme (monitor-image.js > findImage): yapay görüntüler ----
+// Rastgele renkli zemin (tekrar üretilebilir), içine parça gömülür; parça zeminin bir kesitidir.
+const rnd = (() => { let s = 12345; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s >>> 16) & 255; }; })(); // üst bitler: alt bitlerin kısa döngüsü deseni tekrar ettirir
+const makeImage = (width, height, fill) => { const data = new Uint8ClampedArray(width * height * 4); for (let i = 0; i < width * height; i++) { const [r, g, b, a] = fill(i % width, Math.floor(i / width)); data.set([r, g, b, a ?? 255], i * 4); } return { width, height, data }; };
+const crop = (img, x0, y0, w, h, alter = (p) => p) => makeImage(w, h, (x, y) => alter([...img.data.slice(((y0 + y) * img.width + x0 + x) * 4, ((y0 + y) * img.width + x0 + x) * 4 + 4)], x, y));
+const scene = makeImage(90, 60, () => [rnd(), rnd(), rnd()]);
+const piece = crop(scene, 23, 17, 14, 9);
+let r = I.findImage(scene, piece, { threshold: 0.9 });
+check('parça tam yerinde bulunur (23,17), benzerlik 1', r.found && r.x === 23 && r.y === 17 && r.score === 1, JSON.stringify(r));
+const noisy = crop(scene, 23, 17, 14, 9, ([R, G, B, A]) => [Math.min(255, R + 8), Math.max(0, G - 8), B, A]);
+r = I.findImage(scene, noisy, { threshold: 0.9 });
+check('küçük renk farkı (JPEG gibi): yine bulunur, benzerlik %95+', r.found && r.x === 23 && r.y === 17 && r.score > 0.95, JSON.stringify(r));
+const other = makeImage(14, 9, () => [rnd(), rnd(), rnd()]);
+r = I.findImage(scene, other, { threshold: 0.9 });
+check('başka bir parça bulunmaz; en iyi benzerlik düşük (<%85)', !r.found && r.score < 0.85, JSON.stringify(r));
+const masked = crop(scene, 23, 17, 14, 9, ([R, G, B], x, y) => (x < 4 ? [0, 0, 0, 0] : [R, G, B, 255])); // sol 4 sütun şeffaf
+r = I.findImage(scene, masked, { threshold: 0.99 });
+check('şeffaf pikseller sayılmaz: maskeli parça yine (23,17)', r.found && r.x === 23 && r.y === 17, JSON.stringify(r));
+const flat = makeImage(10, 6, () => [200, 200, 200]);
+const flatScene = makeImage(40, 30, (x, y) => (x >= 12 && x < 22 && y >= 9 && y < 15 ? [200, 200, 200] : [rnd(), rnd(), rnd()]));
+r = I.findImage(flatScene, flat, { threshold: 0.95 });
+check('düz (tek renk) parça: ızgara çapalarıyla bulunur', r.found && r.x === 12 && r.y === 9, JSON.stringify(r));
+r = I.findImage(scene, makeImage(100, 5, () => [0, 0, 0]), { threshold: 0.9 });
+check('parça görüntüden büyükse bulunamaz (hata yok)', !r.found && r.score === 0);
+r = I.findImage(flatScene, flat, { threshold: 0.95, maxWork: 1 });
+check('tam karşılaştırma sınırı: ilk adaydan sonra durur, capped işaretli', (r.capped || r.found) && r.compared <= 1, JSON.stringify(r));
+check('needleAnchors: en fazla 16 çapa, hepsi parça içinde', I.needleAnchors(piece).length <= 16 && I.needleAnchors(piece).every((a) => a.x >= 0 && a.x < 14 && a.y >= 0 && a.y < 9));
 
 console.log(failures ? `\n${failures} kontrol başarısız` : '\nHepsi geçti');
 process.exit(failures ? 1 : 0);

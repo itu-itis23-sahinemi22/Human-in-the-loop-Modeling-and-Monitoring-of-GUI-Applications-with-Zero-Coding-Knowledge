@@ -103,7 +103,7 @@ function check(name, ok, detail = '') {
 
     // ---- 1. adım: tür kartları ve arama ----
     await $('#btn-monitor-add').click();
-    check('pencere 1. adımda açıldı: 3 tür kartı, 3 grup', (await dialogOpen()) && (await $('#monitor-cards .type-card').count()) === 3 && (await $('#monitor-cards .type-group').count()) === 3, `${await $('#monitor-cards .type-card').count()} kart`);
+    check('pencere 1. adımda açıldı: 5 tür kartı, 3 grup', (await dialogOpen()) && (await $('#monitor-cards .type-card').count()) === 5 && (await $('#monitor-cards .type-group').count()) === 3, `${await $('#monitor-cards .type-card').count()} kart`);
     check('kartta kontrol biçimi etiketi', (await text('#monitor-cards .type-card[data-type="inputValidation"] .when')) === 'Aksiyon tabanlı'
       && (await text('#monitor-cards .type-card[data-type="errorText"] .when')) === 'State tabanlı');
     await $('#monitor-search').fill('hata');
