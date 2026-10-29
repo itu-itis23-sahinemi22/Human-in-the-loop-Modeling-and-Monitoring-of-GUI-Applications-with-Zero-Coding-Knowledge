@@ -64,7 +64,15 @@ function beginMonitorRun(edges) {
 // Açık sekmenin görünen kısmı (Emir'in node görüntüleriyle aynı biçim: jpeg, kalite 40); alınamazsa null.
 // Chrome görüntü almayı saniyede 2 ile sınırlar (MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND); art arda
 // bozulmalarda (Emir'in kendi görüntüsü de dahil) sınır aşılırsa kısa bekleyip bir kez daha denenir.
+// Görüntü monitörü (monitor-image.js) bu kontrol turunda çekim yaptıysa o kullanılır: uyarı zaten o
+// anın görüntüsüdür, ikinci çekim gerekmez (sınır da zorlanmaz). Çekim bir kez kullanılır ve her kontrol
+// turunun başında atılır (probeMonitors): bir sonraki adımın uyarısına eski ekran gitmesin.
+let recentCapture = null; // { tabId, screenshot }
+
 async function monitorScreenshot(tabId) {
+  const recent = recentCapture;
+  recentCapture = null;
+  if (recent && recent.tabId === tabId) return recent.screenshot;
   const options = { format: 'jpeg', quality: 40 };
   try {
     const { windowId } = await chrome.tabs.get(tabId);
@@ -230,7 +238,20 @@ function finishMonitorRun(run, result) {
 // kilitlemiş) beklemek bırakılır: ne "şimdi kontrol et" ne oynatma süresiz askıda kalır.
 const MONITOR_PROBE_TIMEOUT_MS = 10000;
 
+// Liste ikiye ayrılır: sayfada kontrol edilen türler tek mesajla sayfaya gider; panelde kontrol edilen
+// türler (monitor-types.js > side: 'panel'; görüntü monitörü) sekmenin ekran görüntüsünde burada bakılır.
 async function probeMonitors(tabId, list, replay = null) {
+  const inPage = list.filter((m) => monitorType(m.type)?.side !== 'panel');
+  const inPanel = list.filter((m) => monitorType(m.type)?.side === 'panel');
+  const results = {};
+  recentCapture = null;
+  if (inPage.length) Object.assign(results, await probeInPage(tabId, inPage, replay));
+  if (inPanel.length && !replay?.stopped) Object.assign(results, await probeInPanel(tabId, inPanel));
+  for (const m of list) results[m.id] ??= verdictSkip('oynatma durduruldu');
+  return results;
+}
+
+async function probeInPage(tabId, list, replay) {
   const checks = list.map((m) => ({ id: m.id, type: m.type, params: m.params }));
   const skipAll = (text) => Object.fromEntries(list.map((m) => [m.id, verdictSkip(text)]));
   let stopTimer = null;
@@ -251,6 +272,17 @@ async function probeMonitors(tabId, list, replay = null) {
   } finally {
     clearInterval(stopTimer);
     clearTimeout(timeout);
+  }
+}
+
+// Görüntü monitörleri (monitor-image.js): hepsi için tek ekran görüntüsü; o görüntü uyarı için de saklanır.
+async function probeInPanel(tabId, list) {
+  try {
+    const { results, screenshot } = await checkImageMonitors(tabId, list);
+    if (screenshot) recentCapture = { tabId, screenshot };
+    return Object.fromEntries(list.map((m) => [m.id, results[m.id] ?? verdictSkip('sonuç gelmedi')]));
+  } catch (error) {
+    return Object.fromEntries(list.map((m) => [m.id, verdictSkip(`görüntü kontrol edilemedi (${error.message})`)]));
   }
 }
 

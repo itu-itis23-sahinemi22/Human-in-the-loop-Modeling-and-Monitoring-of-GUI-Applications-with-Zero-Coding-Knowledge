@@ -9,12 +9,13 @@
 //                 monitör edge'in SEÇİLEN aksiyonuna bağlanabilir (m.action: o aksiyondan hemen
 //                 sonra kontrol) ya da edge'in tamamına (action = null: her aksiyondan sonra).
 //
-// Monitör modülü altı dosyadır (panel.html'de bu sırayla, panel.js'ten SONRA yüklenir):
+// Monitör modülü yedi dosyadır (panel.html'de bu sırayla, panel.js'ten SONRA yüklenir):
 //   monitor-types.js   tür kataloğu (parametreler, doğrulama, ad ve özet cümlesi)
 //   monitor-store.js   BU DOSYA: veri — storage, normalize, uyarılar, kapsam ve aksiyon yardımcıları
 //   monitor-list.js    Monitörler bölümü, detay alt bölümü, sağ tık menüsü, hale, uyarı pencereleri
 //   monitor-dialog.js  ekle / düzenle formu
 //   monitor-export.js  GraphWalker JSON'una yazma, "Yükle…", graph yedeği
+//   monitor-image.js   görüntü monitörü: parçayı sekmenin ekran görüntüsünde arama (panelde kontrol edilen tek tür)
 //   monitor-run.js     oynatmada kontrol ve ışık listesi, "Bu ekranda şimdi kontrol et"
 // Dosyalar klasik script'tir; birbirlerinin global fonksiyonlarını çağırırlar (modül yok: Emir'in
 // paneli de öyle). panel.js'in global'leri okunur / sarmalanır (state, activeGraph, scenarioView,
@@ -276,7 +277,10 @@ function paramsText(m) {
   if (!type) return `Bilinmeyen tür: ${m.type}`;
   const parts = type.params
     .filter((p) => m.params[p.key] !== '' && m.params[p.key] !== null && m.params[p.key] !== undefined && m.params[p.key] !== false)
-    .map((p) => `${p.text}: ${p.kind === 'select' ? p.options.find((o) => o.value === m.params[p.key])?.text ?? m.params[p.key] : p.kind === 'checkbox' ? 'evet' : m.params[p.key]}`);
+    .map((p) => `${p.text}: ${p.kind === 'select' ? p.options.find((o) => o.value === m.params[p.key])?.text ?? m.params[p.key]
+      : p.kind === 'checkbox' ? 'evet'
+        : p.kind === 'image' ? (m.params[p.key]?.width ? `${m.params[p.key].width}×${m.params[p.key].height} px` : '?')
+          : m.params[p.key]}`);
   return [MONITOR_WHEN[type.when]?.text, ...parts].filter(Boolean).join(' · ');
 }
 

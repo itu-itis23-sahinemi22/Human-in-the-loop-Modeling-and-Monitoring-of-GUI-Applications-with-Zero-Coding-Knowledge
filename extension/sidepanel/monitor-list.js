@@ -304,6 +304,15 @@ function monitorItem(m) {
   li.querySelector('.scope').textContent = scopeText(m);
   li.querySelector('.scope').classList.toggle('orphan', orphan || isActionMissing(m));
   li.querySelector('.params').textContent = paramsText(m);
+  // Görüntü monitörü: aranan parçanın küçük hali (monitor-types.js > kind: 'image')
+  for (const p of type?.params.filter((p) => p.kind === 'image' && m.params[p.key]?.data) ?? []) {
+    const img = document.createElement('img');
+    img.className = 'needle';
+    img.src = m.params[p.key].data;
+    img.alt = `Aranan görüntü (${m.params[p.key].width}×${m.params[p.key].height} px)`;
+    img.title = img.alt;
+    li.querySelector('.params').after(img);
+  }
   const verdict = monitorVerdicts.get(m.id);
   if (verdict) {
     const line = li.querySelector('.verdict');

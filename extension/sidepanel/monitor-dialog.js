@@ -241,6 +241,17 @@ function paramField(param, value) {
     label.innerHTML = '<span></span> <select></select>';
     label.querySelector('select').replaceChildren(...param.options.map((o) => new Option(o.text, o.value)));
     label.querySelector('select').value = value;
+  } else if (param.kind === 'image') {
+    // Değer form alanında değil, wrap.imageValue'da durur ({ data, width, height }); dosya seçme ya da
+    // yapıştırma (aşağıda, pencere düzeyinde 'paste') onu doldurur, önizleme gösterilir.
+    label.className = 'field image-field';
+    label.innerHTML = '<span></span> <input type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="monitor-image-help">';
+    wrap.classList.add('image');
+    wrap.imageValue = value && typeof value === 'object' ? value : '';
+    label.querySelector('input').onchange = () => {
+      const file = label.querySelector('input').files[0];
+      if (file) setImageParam(wrap, file);
+    };
   } else {
     label.className = 'field';
     label.innerHTML = '<span></span> <input spellcheck="false">';
@@ -257,6 +268,20 @@ function paramField(param, value) {
   }
   label.querySelector('span').textContent = param.text + (param.required ? '' : ' (isteğe bağlı)');
   wrap.append(label);
+
+  if (param.kind === 'image') {
+    const preview = document.createElement('div');
+    preview.className = 'image-preview';
+    preview.innerHTML = '<img alt="Yüklenen görüntü" hidden><div class="image-meta"><small class="image-info"></small> <button type="button" class="small-btn image-clear" hidden>Kaldır</button></div>'
+      + '<p class="hint" id="monitor-image-help">Aranacak parça küçük olsun: bir mesajın ya da düğmenin ekran görüntüsünden kesilmiş kısım (Mac: ⌘⇧4, Windows: Win+Shift+S). Dosya seçin ya da panodaki görüntüyü bu pencereye yapıştırın (⌘V / Ctrl+V). Parça, kontrol edilen ekranla aynı yakınlaştırmada alınmış olmalı.</p>';
+    preview.querySelector('.image-clear').onclick = () => {
+      wrap.imageValue = '';
+      renderImagePreview(wrap);
+      wrap.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    wrap.append(preview);
+    renderImagePreview(wrap);
+  }
 
   if (param.element) {
     const pick = document.createElement('select');
@@ -314,6 +339,55 @@ function paramField(param, value) {
   if (param.kind === 'regex') updatePatternWarning(wrap);
   return wrap;
 }
+
+// GÖRÜNTÜ ALANI: dosya (ya da panodan yapıştırılan görüntü) okunur, boyutu ölçülür, sınırlar
+// (monitor-types.js > monitorImageProblem) kontrol edilir; uygunsa değer olur ve önizleme çizilir.
+async function setImageParam(wrap, file) {
+  const error = wrap.querySelector('.field-error');
+  const fail = (text) => { error.textContent = text; error.hidden = false; };
+  wrap.querySelector('input[type="file"]').value = ''; // aynı dosya yeniden seçilebilsin
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return fail('Görüntü PNG, JPEG ya da WebP olmalı.');
+  let value;
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    const bitmap = await createImageBitmap(file);
+    value = { data, width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+  } catch {
+    return fail('Görüntü okunamadı.');
+  }
+  const problem = monitorImageProblem(value);
+  if (problem) return fail(problem);
+  wrap.imageValue = value;
+  error.hidden = true;
+  renderImagePreview(wrap);
+  wrap.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function renderImagePreview(wrap) {
+  const value = wrap.imageValue;
+  const img = wrap.querySelector('.image-preview img');
+  img.hidden = !value;
+  img.src = value ? value.data : '';
+  wrap.querySelector('.image-info').textContent = value ? `${value.width}×${value.height} px` : 'Henüz görüntü yok.';
+  wrap.querySelector('.image-clear').hidden = !value;
+}
+
+// Panodan yapıştırma: formda görüntü alanı varsa panodaki ilk görüntü ona gider (metin alanına
+// yapıştırmayı bozmaz: görüntü yoksa tarayıcı olağan yapıştırmayı yapar).
+$('monitor-dialog').addEventListener('paste', (event) => {
+  if ($('monitor-step-params').hidden) return;
+  const wrap = $('monitor-params').querySelector('.monitor-param.image');
+  const file = wrap && [...(event.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'));
+  if (!file) return;
+  event.preventDefault();
+  setImageParam(wrap, file);
+});
 
 // Ağır desen uyarısı (monitor-types.js > monitorPatternWarning), desenin altında
 function updatePatternWarning(wrap) {
@@ -432,7 +506,9 @@ function draftMonitor() {
   const type = monitorType(dialogTypeId);
   const params = {};
   for (const p of type.params) {
-    const field = $('monitor-params').querySelector(`[data-key="${p.key}"] > label input, [data-key="${p.key}"] > label select`);
+    const wrap = $('monitor-params').querySelector(`[data-key="${p.key}"]`);
+    if (p.kind === 'image') { params[p.key] = wrap.imageValue || ''; continue; }
+    const field = wrap.querySelector(':scope > label input, :scope > label select');
     params[p.key] = p.kind === 'checkbox' ? field.checked
       : p.kind === 'number' ? (field.value.trim() === '' ? '' : Number(field.value))
         : field.value.trim();
@@ -529,8 +605,9 @@ function requestCloseMonitorDialog() {
   else closeMonitorDialog();
 }
 
-// 2. adımdaki her değişiklik: kapsam kısıtı, element listeleri ve özet cümlesi
-$('monitor-step-params').addEventListener('input', renderSummary);
+// 2. adımdaki her değişiklik: kapsam kısıtı, element listeleri ve özet cümlesi; pencerenin altındaki
+// hata ("Parametrelerde sorun var…") kullanıcı düzeltmeye başlayınca kalkar, Kaydet'te yeniden bakılır
+$('monitor-step-params').addEventListener('input', () => { showDialogError(null); renderSummary(); });
 $('monitor-step-params').addEventListener('change', (event) => {
   if (event.target.name === 'monitor-scope' || event.target.id === 'monitor-node' || event.target.id === 'monitor-edge') {
     renderScopeState();

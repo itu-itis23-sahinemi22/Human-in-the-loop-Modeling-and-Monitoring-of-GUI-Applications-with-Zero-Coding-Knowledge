@@ -17,11 +17,15 @@
 //             aksiyondan sonra, 'event' olay gerçekleşince, 'temporal' süre dolana kadar
 //   scope   : 'any' | 'global' | 'node' | 'edge' | 'node-edge' — tüm model / tek node /
 //             tek edge (aksiyon) seçeneklerinden hangileri olabilir
+//   side    : kontrolün yeri: yoksa sayfada (monitor-probe.js, DOM'a bakar); 'panel' ise panelde
+//             (sidepanel/monitor-image.js: sekmenin ekran görüntüsüne bakar; sayfa içinden görüntü alınamaz)
 //   params  : [{ key, text, kind, required, placeholder, default, min, max, step, options, presets, element }]
-// Parametre türleri (kind): 'text', 'regex', 'number', 'select', 'checkbox'.
+// Parametre türleri (kind): 'text', 'regex', 'number', 'select', 'checkbox', 'image'.
 //   'regex'   : kaydedilmeden derlenerek doğrulanır; formda canlı deneme kutusu çıkar.
 //               presets: [{ text, value }] hazır desen çipleri.
 //   'select'  : options: [{ value, text }].
+//   'image'   : küçük bir resim (PNG / JPEG); değeri { data: 'data:image/png;base64,…', width, height }.
+//               Formda dosya seçme + yapıştırma (Ctrl+V) ve önizleme.
 //   element   : 'fields' | 'all' — alan, node'un kayıttaki etkileşimli elementlerinden
 //               (parmak izi anahtarı: "input:phone") listeden de seçilebilir.
 // =============================================================================
@@ -76,6 +80,22 @@ const MONITOR_TYPES = [
     ],
   },
   {
+    id: 'expectedText', text: 'Expected Text', group: 'functional', when: 'state', scope: 'any',
+    hint: 'Beklenen metin ekranda var mı? Yazdığınız parça, görünen yazılardan birinin içinde geçmeli; örnek: "Password is required".',
+    params: [
+      { key: 'text', text: 'Beklenen metin', kind: 'text', required: true, placeholder: 'ör. Password is required' },
+      { key: 'caseSensitive', text: 'Büyük/küçük harf aynı olmalı', kind: 'checkbox', default: false },
+    ],
+  },
+  {
+    id: 'expectedImage', text: 'Expected Image', group: 'functional', when: 'state', scope: 'any', side: 'panel',
+    hint: 'Beklenen görüntü ekranda var mı? Yüklediğiniz küçük resim (ör. bir uyarı mesajının ekran görüntüsünden kesilmiş parça) ekranın görüntüsü içinde bulunmalı.',
+    params: [
+      { key: 'image', text: 'Görüntü', kind: 'image', required: true },
+      { key: 'similarity', text: 'Benzerlik (en az %)', kind: 'number', required: true, default: 90, min: 50, max: 100, step: 1 },
+    ],
+  },
+  {
     id: 'errorText', text: 'Error Text', group: 'error', when: 'state', scope: 'any',
     hint: 'Ekranda "404", "500", "Internal Server Error" gibi hata metinleri var mı?',
     params: [{ key: 'pattern', text: 'Hata kalıbı (desen)', kind: 'regex', required: true, default: '\\b(404|500|internal server error|something went wrong|bir hata oluştu)\\b' }],
@@ -117,10 +137,27 @@ function monitorDefaults(type) {
   return Object.fromEntries(type.params.map((p) => [p.key, p.default ?? (p.kind === 'checkbox' ? false : p.kind === 'select' ? p.options[0].value : '')]));
 }
 
+// Görüntü parametresinin sınırları ('image'): küçük bir parça beklenir (bir mesaj, bir düğme), tam
+// ekran görüntüsü değil. Veri data URL olarak saklanır (storage'da ve dışa aktarılan JSON'da).
+const MONITOR_IMAGE_MAX_SIDE = 800;         // en, boy (px)
+const MONITOR_IMAGE_MAX_CHARS = 1400000;    // data URL uzunluğu (~1 MB dosya)
+const MONITOR_IMAGE_TYPES = /^data:image\/(png|jpeg|webp);base64,/;
+
+// Görüntü değeri biçimi doğru mu: { data, width, height }
+function monitorImageProblem(value) {
+  if (!value || typeof value !== 'object' || typeof value.data !== 'string') return 'Bir görüntü yükleyin (PNG ya da JPEG).';
+  if (!MONITOR_IMAGE_TYPES.test(value.data)) return 'Görüntü PNG, JPEG ya da WebP olmalı.';
+  if (value.data.length > MONITOR_IMAGE_MAX_CHARS) return `Görüntü çok büyük (en fazla ${Math.round(MONITOR_IMAGE_MAX_CHARS * 0.75 / 1e6 * 10) / 10} MB).`;
+  const sideOk = (n) => Number.isInteger(n) && n >= 1 && n <= MONITOR_IMAGE_MAX_SIDE;
+  if (!sideOk(value.width) || !sideOk(value.height)) return `Görüntünün eni ve boyu 1–${MONITOR_IMAGE_MAX_SIDE} px olmalı; tam ekran yerine küçük bir parça kesin.`;
+  return null;
+}
+
 // Tek bir parametreyi doğrular; sorun yoksa null, varsa kullanıcıya gösterilecek metin döner.
 function monitorParamProblem(param, value) {
   const empty = value === '' || value === null || value === undefined;
-  if (empty) return param.required ? 'Bu alan gerekli.' : null;
+  if (empty) return param.required ? (param.kind === 'image' ? 'Bir görüntü yükleyin (PNG ya da JPEG).' : 'Bu alan gerekli.') : null;
+  if (param.kind === 'image') return monitorImageProblem(value);
   if (param.kind === 'number') {
     const n = Number(value);
     if (!Number.isFinite(n)) return 'Sayı girin.';
@@ -157,6 +194,8 @@ function monitorAutoName(type, params) {
   const detail = (() => {
     switch (type.id) {
       case 'inputValidation': return `${params.selector} ${params.mode === 'notMatch' ? '≁' : '~'} /${params.pattern}/`;
+      case 'expectedText': return `"${String(params.text ?? '').trim().slice(0, 40)}"`;
+      case 'expectedImage': return params.image?.width ? `${params.image.width}×${params.image.height} px` : '';
       case 'errorText': return `/${params.pattern}/`;
       case 'fontSize': return `≥ ${params.min} ${params.unit}`;
       default: return '';
@@ -183,6 +222,8 @@ function monitorSentence(type, params, scope, enabled) {
         v(params.selector), ' alanının değeri ', rx(params.pattern), params.mode === 'notMatch' ? ' desenine uymamalı' : ' desenine uymalı',
         params.whenEmpty === 'check' ? ' (alan boşken de kontrol edilir).' : ' (alan boşsa kontrol edilmez).',
       ];
+      case 'expectedText': return ['görünen yazılardan birinde ', v(params.text), params.caseSensitive ? ' geçmeli (büyük/küçük harf aynı olmalı).' : ' geçmeli (büyük/küçük harf fark etmez).'];
+      case 'expectedImage': return ['yüklenen görüntü (', v(params.image?.width ? `${params.image.width}×${params.image.height} px` : ''), ') ekranda bulunmalı (benzerlik en az %', v(params.similarity), ').'];
       case 'errorText': return ['görünen metinde ', rx(params.pattern), ' gibi hata metni geçmemeli.'];
       case 'fontSize': return ['görünen hiçbir metin ', v(params.min), ' ', v(params.unit), '\'den küçük olmamalı.'];
       default: return [type.text, '.'];

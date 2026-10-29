@@ -62,6 +62,26 @@ const MONITOR_PROBES = {
     return ok ? probeOk(`değer ${shown} kurala uyuyor`) : probeFail(`değer ${shown} ${mode === 'notMatch' ? 'desene uyuyor (uymamalıydı)' : 'desene uymuyor'}`);
   },
 
+  // Beklenen metin ekranda olmalı: görünen yazılardan birinin (satırının) içinde geçmeli. Satır: innerText'in
+  // blok sınırlarında böldüğü parça (bir etiket, bir paragraf, bir düğme yazısı), ayrıca düğme değerleri ve boş
+  // alanların yer tutucuları. Varsayılan büyük/küçük harfe duyarsız (foldText). Parça birden çok satıra
+  // yayılmışsa (başlık + paragraf) bütün metinde de aranır; bulunursa yine geçer, notuyla.
+  expectedText({ text, caseSensitive }) {
+    const needle = squeeze(String(text ?? ''));
+    if (!needle) return probeSkip('beklenen metin boş');
+    const lines = visibleTextLines();
+    if (!lines.length) return probeSkip('sayfada görünen metin yok');
+    const fold = caseSensitive ? (s) => s : foldText;
+    const wanted = fold(needle);
+    const line = lines.find((l) => fold(l).includes(wanted));
+    if (line) return probeOk(`metin bulundu: ${quoteAround(line, fold(line).indexOf(wanted), needle.length)}`);
+    const whole = lines.join(' ');
+    const at = fold(whole).indexOf(wanted);
+    if (at >= 0) return probeOk(`metin bulundu (birden çok satıra yayılmış): ${quoteAround(whole, at, needle.length)}`);
+    const onlyCase = caseSensitive && lines.find((l) => foldText(l).includes(foldText(needle)));
+    return probeFail(`beklenen metin ekranda yok: "${needle.length > 60 ? needle.slice(0, 60) + '…' : needle}"${onlyCase ? ` (yalnızca büyük/küçük harf farkıyla var: ${quoteAround(onlyCase, foldText(onlyCase).indexOf(foldText(needle)), needle.length)})` : ''}`);
+  },
+
   // Ekranda hata metni geçmemeli (görünen metin: document.body.innerText)
   errorText({ pattern }) {
     const re = probeRegex(pattern, 'i');
@@ -151,6 +171,37 @@ function isRendered(el) {
 
 function listOf(items, limit = 3) {
   return items.slice(0, limit).join(', ') + (items.length > limit ? ` (+${items.length - limit})` : '');
+}
+
+// Boşlukları tekler (satır sonu, sekme, bölünmez boşluk dahil) ve kırpar
+function squeeze(text) {
+  return text.replace(/[\s ]+/g, ' ').trim();
+}
+
+// Büyük/küçük harfe duyarsız karşılaştırma için katlama. toLowerCase() 'İ'yi "i + birleşik nokta" yapar,
+// nokta atılır; 'ı' da 'i' sayılır (Türkçe "GİRİŞ" ~ "giriş", İngilizce "Is" ~ "is"; yerel ayardan bağımsız).
+function foldText(text) {
+  return text.toLowerCase().replace(/̇/g, '').replace(/ı/g, 'i');
+}
+
+// Sayfada görünen yazılar, satır satır: innerText (gizli metin yok, blok sınırlarında satır), düğme değerleri
+// (<input type="submit"> gibi; innerText'te yoktur) ve boş alanların yer tutucuları (kullanıcı onları görür).
+function visibleTextLines() {
+  const body = (document.body?.innerText ?? '').slice(0, MONITOR_PROBE_TEXT_CHARS);
+  const lines = body.split('\n').map(squeeze).filter(Boolean);
+  for (const el of document.querySelectorAll('input[type="button"], input[type="submit"], input[type="reset"], input[placeholder], textarea[placeholder]')) {
+    if (!isRendered(el)) continue;
+    const text = /^(button|submit|reset)$/.test(el.type) ? el.value : (el.value === '' ? el.placeholder : '');
+    if (squeeze(text ?? '')) lines.push(squeeze(text));
+  }
+  return lines;
+}
+
+// Metnin içinden, bulunan parçanın etrafı: "…önce PARÇA sonra…" (uzunsa kırpılır)
+function quoteAround(text, at, length) {
+  const from = Math.max(0, at - 25);
+  const to = Math.min(text.length, at + length + 25);
+  return `"${from > 0 ? '…' : ''}${text.slice(from, to)}${to < text.length ? '…' : ''}"`;
 }
 
 function trimNumber(n) {
