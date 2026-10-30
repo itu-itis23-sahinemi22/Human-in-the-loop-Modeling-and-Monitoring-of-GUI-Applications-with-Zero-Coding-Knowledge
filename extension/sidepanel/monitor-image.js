@@ -254,9 +254,11 @@ async function checkImageMonitors(tabId, list) {
 }
 
 // Tek bir görüntü monitörü: parça ekran görüntüsünde var mı? Ölçekler sırayla denenir (önce 1).
-async function matchExpectedImage(haystack, { image, similarity }) {
+// mode 'absent' (olmamalı): parça ekranda bulunMAmalı (ör. bekleme bitince "yükleniyor" simgesi gitmiş); bulunursa kırmızı.
+async function matchExpectedImage(haystack, { image, mode, similarity }) {
   const problem = monitorImageProblem(image); // monitor-types.js
   if (problem) return { status: 'skip', text: problem };
+  const absent = mode === 'absent';
   const threshold = Math.min(100, Math.max(50, Number(similarity) || 90)) / 100;
   const blob = await (await fetch(image.data)).blob();
   const bitmap = await createImageBitmap(blob);
@@ -272,8 +274,13 @@ async function matchExpectedImage(haystack, { image, similarity }) {
     const pct = (score) => Math.round(score * 100);
     const size = `${image.width}×${image.height} px`;
     if (!best) return { status: 'skip', text: `parça (${size}) ekran görüntüsünden (${haystack.width}×${haystack.height}) büyük` };
-    if (best.found) return { status: 'ok', text: `görüntü bulundu (benzerlik %${pct(best.score)}${best.scale !== 1 ? `, ${best.scale}× ölçekte` : ''})` };
+    const where = `benzerlik %${pct(best.score)}${best.scale !== 1 ? `, ${best.scale}× ölçekte` : ''}`;
     const closest = best.compared ? `en iyi benzerlik %${pct(best.score)}, eşik %${pct(threshold)}` : 'benzer bir bölge yok';
+    if (absent) {
+      return best.found ? { status: 'fail', text: `görüntü (${size}) hâlâ ekranda (olmamalıydı; ${where})` }
+        : { status: 'ok', text: `görüntü ekranda yok (beklendiği gibi; ${closest}${best.capped ? '; arama sınırına ulaşıldı' : ''})` };
+    }
+    if (best.found) return { status: 'ok', text: `görüntü bulundu (${where})` };
     return { status: 'fail', text: `beklenen görüntü (${size}) ekranda yok (${closest}${best.capped ? '; arama sınırına ulaşıldı' : ''})` };
   } finally {
     bitmap.close();

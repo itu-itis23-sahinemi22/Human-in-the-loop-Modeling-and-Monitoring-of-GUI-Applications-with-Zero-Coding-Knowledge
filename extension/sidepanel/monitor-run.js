@@ -178,7 +178,9 @@ afterAction = async (replay) => {
       step.verdicts.set(m.id, now);
       if (now.status === 'fail') failing.push(m);
     }
-    await raiseAlarms(run, replay, step, failing, { index: replay.action, count: edge?.actions?.length ?? 0, label: replay.actionLabel });
+    const played = edge?.actions?.[replay.action];
+    const label = played?.type === 'wait' && Number.isFinite(played.ms) ? `Bekle ${waitSeconds(played.ms)}` : replay.actionLabel; // "aksiyon 2/4: Bekle 10 sn"
+    await raiseAlarms(run, replay, step, failing, { index: replay.action, count: edge?.actions?.length ?? 0, label });
     renderMonitorRun();
   } catch (error) {
     console.warn('Monitör kontrolü yapılamadı:', error);

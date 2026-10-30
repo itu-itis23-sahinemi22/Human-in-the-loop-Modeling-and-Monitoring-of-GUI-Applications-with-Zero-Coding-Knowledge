@@ -47,7 +47,7 @@ const MONITOR_GROUPS = [
 // Kontrol biçimi: ne zaman değerlendirilir? (tür kartındaki etiket)
 const MONITOR_WHEN = {
   state: { text: 'State tabanlı', hint: 'İlgili node\'a (ekrana) varıldığında kontrol edilir.' },
-  action: { text: 'Aksiyon tabanlı', hint: 'İlgili aksiyondan hemen sonra kontrol edilir: edge\'in seçilen aksiyonu (ör. kullanıcı adı yazılınca); aksiyon seçilmezse edge\'in her aksiyonundan sonra.' },
+  action: { text: 'Aksiyon tabanlı', hint: 'İlgili aksiyondan hemen sonra kontrol edilir: edge\'in seçilen aksiyonu (ör. kullanıcı adı yazılınca); aksiyon seçilmezse edge\'in her aksiyonundan sonra. Bir bekleme aksiyonu seçilirse bekleme bitince (yüklenmesi beklenen içerik gelmiş mi, geçici mesaj gitmiş mi).' },
   // event / temporal: henüz bu biçimde tür yok; ileride olay (hata / yanıt) ve süre tabanlı türler için
   event: { text: 'Olay tabanlı', hint: 'Hata ya da yanıt olayı gerçekleştiğinde kontrol edilir.' },
   temporal: { text: 'Zamansal', hint: 'Koşul gerçekleşene ya da süre dolana kadar beklenir.' },
@@ -81,17 +81,25 @@ const MONITOR_TYPES = [
   },
   {
     id: 'expectedText', text: 'Expected Text', group: 'functional', when: 'state', scope: 'any',
-    hint: 'Beklenen metin ekranda var mı? Yazdığınız parça, görünen yazılardan birinin içinde geçmeli; örnek: "Password is required".',
+    hint: 'Beklenen metin ekranda var mı (ya da artık yok mu)? Yazdığınız parça, görünen yazılardan birinin içinde geçmeli; örnek: "Password is required". "Olmamalı" kuralıyla: "Bekleyiniz" gitmiş olmalı.',
     params: [
       { key: 'text', text: 'Beklenen metin', kind: 'text', required: true, placeholder: 'ör. Password is required' },
+      { key: 'mode', text: 'Kural', kind: 'select', required: true, default: 'present', options: [
+        { value: 'present', text: 'Ekranda olmalı' },
+        { value: 'absent', text: 'Ekranda olmamalı' },
+      ] },
       { key: 'caseSensitive', text: 'Büyük/küçük harf aynı olmalı', kind: 'checkbox', default: false },
     ],
   },
   {
     id: 'expectedImage', text: 'Expected Image', group: 'functional', when: 'state', scope: 'any', side: 'panel',
-    hint: 'Beklenen görüntü ekranda var mı? Yüklediğiniz küçük resim (ör. bir uyarı mesajının ekran görüntüsünden kesilmiş parça) ekranın görüntüsü içinde bulunmalı.',
+    hint: 'Beklenen görüntü ekranda var mı (ya da artık yok mu)? Küçük bir resim (ör. bir uyarı mesajının ekrandan kesilmiş parçası) ekranın görüntüsü içinde bulunmalı; "olmamalı" kuralıyla bulunmamalı.',
     params: [
       { key: 'image', text: 'Görüntü', kind: 'image', required: true },
+      { key: 'mode', text: 'Kural', kind: 'select', required: true, default: 'present', options: [
+        { value: 'present', text: 'Ekranda olmalı' },
+        { value: 'absent', text: 'Ekranda olmamalı' },
+      ] },
       { key: 'similarity', text: 'Benzerlik (en az %)', kind: 'number', required: true, default: 90, min: 50, max: 100, step: 1 },
     ],
   },
@@ -194,8 +202,8 @@ function monitorAutoName(type, params) {
   const detail = (() => {
     switch (type.id) {
       case 'inputValidation': return `${params.selector} ${params.mode === 'notMatch' ? '≁' : '~'} /${params.pattern}/`;
-      case 'expectedText': return `"${String(params.text ?? '').trim().slice(0, 40)}"`;
-      case 'expectedImage': return params.image?.width ? `${params.image.width}×${params.image.height} px` : '';
+      case 'expectedText': return `"${String(params.text ?? '').trim().slice(0, 40)}"${params.mode === 'absent' ? ' yok' : ''}`;
+      case 'expectedImage': return (params.image?.width ? `${params.image.width}×${params.image.height} px` : '') + (params.mode === 'absent' ? ' yok' : '');
       case 'errorText': return `/${params.pattern}/`;
       case 'fontSize': return `≥ ${params.min} ${params.unit}`;
       default: return '';
@@ -222,8 +230,8 @@ function monitorSentence(type, params, scope, enabled) {
         v(params.selector), ' alanının değeri ', rx(params.pattern), params.mode === 'notMatch' ? ' desenine uymamalı' : ' desenine uymalı',
         params.whenEmpty === 'check' ? ' (alan boşken de kontrol edilir).' : ' (alan boşsa kontrol edilmez).',
       ];
-      case 'expectedText': return ['görünen yazılardan birinde ', v(params.text), params.caseSensitive ? ' geçmeli (büyük/küçük harf aynı olmalı).' : ' geçmeli (büyük/küçük harf fark etmez).'];
-      case 'expectedImage': return ['yüklenen görüntü (', v(params.image?.width ? `${params.image.width}×${params.image.height} px` : ''), ') ekranda bulunmalı (benzerlik en az %', v(params.similarity), ').'];
+      case 'expectedText': return [params.mode === 'absent' ? 'görünen yazıların hiçbirinde ' : 'görünen yazılardan birinde ', v(params.text), params.mode === 'absent' ? ' geçmemeli' : ' geçmeli', params.caseSensitive ? ' (büyük/küçük harf aynı olmalı).' : ' (büyük/küçük harf fark etmez).'];
+      case 'expectedImage': return ['yüklenen görüntü (', v(params.image?.width ? `${params.image.width}×${params.image.height} px` : ''), params.mode === 'absent' ? ') ekranda bulunmamalı (benzerlik en az %' : ') ekranda bulunmalı (benzerlik en az %', v(params.similarity), ').'];
       case 'errorText': return ['görünen metinde ', rx(params.pattern), ' gibi hata metni geçmemeli.'];
       case 'fontSize': return ['görünen hiçbir metin ', v(params.min), ' ', v(params.unit), '\'den küçük olmamalı.'];
       default: return [type.text, '.'];

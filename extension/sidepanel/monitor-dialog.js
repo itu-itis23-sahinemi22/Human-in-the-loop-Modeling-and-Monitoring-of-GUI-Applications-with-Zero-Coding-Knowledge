@@ -442,8 +442,9 @@ function renderActionHint() {
   const i = $('monitor-action').value === '' ? -1 : Number($('monitor-action').value);
   const action = edge?.actions?.[i];
   $('monitor-action-hint').textContent = !edge?.actions?.length ? ''
-    : i < 0 ? `Bu edge'de ${edge.actions.length} aksiyon var. Belirli bir aksiyondan hemen sonra kontrol için (ör. kullanıcı adı yazılınca) listeden seçin; seçilmezse her aksiyondan sonra kontrol edilir.`
-      : `Yalnızca bu aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan).${action.type === 'input' && action.target?.key ? ` Alan: ${action.target.key}` : ''}`;
+    : i < 0 ? `Bu edge'de ${edge.actions.length} aksiyon var. Belirli bir aksiyondan hemen sonra kontrol için (ör. kullanıcı adı yazılınca, bekleme bitince) listeden seçin; seçilmezse her aksiyondan sonra kontrol edilir.`
+      : action.type === 'wait' ? `Bekleme (${waitSeconds(action.ms)}) bittikten hemen sonra kontrol edilir: yüklenmesi beklenen içerik gelmiş mi ("olmalı"), geçici mesaj gitmiş mi ("olmamalı", ör. "Bekleyiniz").`
+        : `Yalnızca bu aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan).${action.type === 'input' && action.target?.key ? ` Alan: ${action.target.key}` : ''}`;
 }
 
 // Aksiyon seçilince: Input Validation gibi alan isteyen türde alan, aksiyonun hedefiyle dolar

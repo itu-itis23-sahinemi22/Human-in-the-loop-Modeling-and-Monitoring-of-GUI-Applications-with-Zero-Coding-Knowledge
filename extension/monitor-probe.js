@@ -66,20 +66,26 @@ const MONITOR_PROBES = {
   // blok sınırlarında böldüğü parça (bir etiket, bir paragraf, bir düğme yazısı), ayrıca düğme değerleri ve boş
   // alanların yer tutucuları. Varsayılan büyük/küçük harfe duyarsız (foldText). Parça birden çok satıra
   // yayılmışsa (başlık + paragraf) bütün metinde de aranır; bulunursa yine geçer, notuyla.
-  expectedText({ text, caseSensitive }) {
+  // mode 'absent' (olmamalı): metin ekrandan gitmiş olmalı (ör. bekleme bitince "Bekleyiniz" yok); bulunursa kırmızı.
+  expectedText({ text, mode, caseSensitive }) {
     const needle = squeeze(String(text ?? ''));
     if (!needle) return probeSkip('beklenen metin boş');
     const lines = visibleTextLines();
-    if (!lines.length) return probeSkip('sayfada görünen metin yok');
+    const absent = mode === 'absent';
+    if (!lines.length) return absent ? probeOk('sayfada görünen metin yok') : probeSkip('sayfada görünen metin yok');
     const fold = caseSensitive ? (s) => s : foldText;
     const wanted = fold(needle);
+    const shortNeedle = `"${needle.length > 60 ? needle.slice(0, 60) + '…' : needle}"`;
     const line = lines.find((l) => fold(l).includes(wanted));
-    if (line) return probeOk(`metin bulundu: ${quoteAround(line, fold(line).indexOf(wanted), needle.length)}`);
-    const whole = lines.join(' ');
-    const at = fold(whole).indexOf(wanted);
-    if (at >= 0) return probeOk(`metin bulundu (birden çok satıra yayılmış): ${quoteAround(whole, at, needle.length)}`);
+    const found = line ? `metin bulundu: ${quoteAround(line, fold(line).indexOf(wanted), needle.length)}` : (() => {
+      const whole = lines.join(' ');
+      const at = fold(whole).indexOf(wanted);
+      return at >= 0 ? `metin bulundu (birden çok satıra yayılmış): ${quoteAround(whole, at, needle.length)}` : null;
+    })();
+    if (absent) return found ? probeFail(`${found.replace(/^metin bulundu/, 'metin hâlâ ekranda')} (olmamalıydı)`) : probeOk(`metin ekranda yok: ${shortNeedle} (beklendiği gibi)`);
+    if (found) return probeOk(found);
     const onlyCase = caseSensitive && lines.find((l) => foldText(l).includes(foldText(needle)));
-    return probeFail(`beklenen metin ekranda yok: "${needle.length > 60 ? needle.slice(0, 60) + '…' : needle}"${onlyCase ? ` (yalnızca büyük/küçük harf farkıyla var: ${quoteAround(onlyCase, foldText(onlyCase).indexOf(foldText(needle)), needle.length)})` : ''}`);
+    return probeFail(`beklenen metin ekranda yok: ${shortNeedle}${onlyCase ? ` (yalnızca büyük/küçük harf farkıyla var: ${quoteAround(onlyCase, foldText(onlyCase).indexOf(foldText(needle)), needle.length)})` : ''}`);
   },
 
   // Ekranda hata metni geçmemeli (görünen metin: document.body.innerText)

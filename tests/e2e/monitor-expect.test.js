@@ -232,10 +232,13 @@ function check(name, ok, detail = '') {
       ei('i3', login.id, loginCrop, 'Login: Login düğmesi'),
       ei('i4', home.id, msgCrop2x, 'Home: mesaj 2× parça'),
       ei('i5', 'global', msgCrop, 'Tüm model: mesaj'),
+      // "Olmamalı" kuralı: Home'da "Username is required" yok → yeşil; mesaj parçası var → kırmızı
+      { ...et('t8', home.id, 'Username is required', {}, 'Home: kullanıcı adı uyarısı YOK'), params: { text: 'Username is required', mode: 'absent', caseSensitive: false } },
+      { id: 'i6', type: 'expectedImage', scope: home.id, params: { image: msgCrop, mode: 'absent', similarity: 90 }, severity: 'error', enabled: true, name: 'Home: mesaj parçası YOK' },
     ];
     await panel.evaluate(([key, items]) => chrome.storage.local.set({ [key]: { format: 'graph-recorder-monitors/v1', nextId: 100, items } }), ['monitors:' + graphId, M]);
     await sleep(400);
-    check('13 monitör listede', (await text('#monitors-badge')) === '13');
+    check('15 monitör listede', (await text('#monitors-badge')) === '15');
 
     // ---- "Bu ekranda şimdi kontrol et": Home sayfasında, Home node'u seçili ----
     await page.goto(base + '/home');
@@ -255,9 +258,10 @@ function check(name, ok, detail = '') {
     check('şimdi: ekrandan seçilen parça → yeşil, benzerlik %100 (aynı kaynaktan)', lv('Ekrandan seçilen').led === 'ok' && lv('Ekrandan seçilen').text.includes('benzerlik %100'), lv('Ekrandan seçilen').text);
     check('şimdi: 2× parça 0.5 ölçekte bulunur', lv('Home: mesaj 2×').led === 'ok' && lv('Home: mesaj 2×').text.includes('0.5× ölçekte'), lv('Home: mesaj 2×').text);
     check('şimdi: Login düğmesi parçası Home\'da yok → kırmızı, "ekranda yok"', lv('Home: Login').led === 'fail' && lv('Home: Login').text.includes('beklenen görüntü') && lv('Home: Login').text.includes('ekranda yok'), lv('Home: Login').text);
+    check('şimdi: olmamalı kuralı — olmayan metin yeşil ("beklendiği gibi"), ekrandaki parça kırmızı ("hâlâ ekranda")', lv('Home: kullanıcı adı uyarısı YOK').led === 'ok' && lv('Home: kullanıcı adı uyarısı YOK').text.includes('beklendiği gibi') && lv('Home: mesaj parçası YOK').led === 'fail' && lv('Home: mesaj parçası YOK').text.includes('hâlâ ekranda'), lv('Home: mesaj parçası YOK').text);
     check('şimdi: tüm model mesaj parçası yeşil; Login node\'unun monitörleri bu kontrolde sonuçsuz', lv('Tüm model').led === 'ok' && lv('Login: düğme yazısı').led === null && lv('Login: Login düğmesi').led === null, JSON.stringify([lv('Tüm model'), lv('Login: düğme yazısı')]));
     const liveAlarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
-    check('şimdi: bozulan 4 monitör için görüntülü uyarı (metin 3, görüntü 1)', liveAlarms.items.length === 4 && liveAlarms.items.every((a) => a.source === 'live' && a.screenshot?.startsWith('data:image/jpeg') && a.url === base + '/home') && liveAlarms.items.some((a) => a.monitorId === 'i2'), JSON.stringify(liveAlarms.items.map((a) => a.monitorId)));
+    check('şimdi: bozulan 5 monitör için görüntülü uyarı (metin 3, görüntü 2)', liveAlarms.items.length === 5 && liveAlarms.items.every((a) => a.source === 'live' && a.screenshot?.startsWith('data:image/jpeg') && a.url === base + '/home') && liveAlarms.items.some((a) => a.monitorId === 'i2'), JSON.stringify(liveAlarms.items.map((a) => a.monitorId)));
     await shot('simdi-kontrol', '#monitors');
 
     // ---- Senaryo + oynatma: adım 1 Home'a, adım 2 Login'e varır ----
@@ -290,13 +294,13 @@ function check(name, ok, detail = '') {
     const alarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
     const replayAlarms = alarms.items.filter((a) => a.source === 'replay');
     const alarmOf = (id) => replayAlarms.find((a) => a.monitorId === id);
-    check('oynatma uyarıları: Home\'dakiler /home görüntüsüyle, tüm model olan /\'de (Login ekranı), hepsi görüntülü', replayAlarms.length === 5 && alarmOf('t2')?.url === base + '/home' && alarmOf('i2')?.url === base + '/home' && alarmOf('i5')?.url === base + '/' && replayAlarms.every((a) => a.screenshot?.startsWith('data:image/jpeg')), JSON.stringify(replayAlarms.map((a) => [a.monitorId, a.url])));
+    check('oynatma uyarıları: Home\'dakiler /home görüntüsüyle, tüm model olan /\'de (Login ekranı), hepsi görüntülü', replayAlarms.length === 6 && alarmOf('t2')?.url === base + '/home' && alarmOf('i2')?.url === base + '/home' && alarmOf('i5')?.url === base + '/' && replayAlarms.every((a) => a.screenshot?.startsWith('data:image/jpeg')), JSON.stringify(replayAlarms.map((a) => [a.monitorId, a.url])));
     await shot('oynatma-sonu', '#replay');
 
     // ---- Dışa aktarma: görüntü de modele yazılır ----
     const exported = await panel.evaluate(() => graphWalkerModel());
     const exp = exported.models[0].properties.graphRecorder.monitors.items;
-    check('GraphWalker JSON: 13 monitör; görüntü monitöründe data URL ve boyut', exp.length === 13 && exp.filter((x) => x.type === 'expectedImage').every((x) => x.params.image.data.startsWith('data:image/png;base64,') && x.params.image.width > 0), String(exp.length));
+    check('GraphWalker JSON: 15 monitör; görüntü monitöründe data URL ve boyut', exp.length === 15 && exp.filter((x) => x.type === 'expectedImage').every((x) => x.params.image.data.startsWith('data:image/png;base64,') && x.params.image.width > 0), String(exp.length));
     check('konsolda hata yok', errors.length === 0, errors.join(' | '));
   } finally {
     await ctx.close();

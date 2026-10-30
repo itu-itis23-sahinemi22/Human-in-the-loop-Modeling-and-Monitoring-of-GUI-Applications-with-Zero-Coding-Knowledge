@@ -215,7 +215,11 @@ function monitorActionRef(action, index) {
   return { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: actionTarget(action) };
 }
 
+// Aksiyonun hedefi: elementin parmak izi anahtarı ("input:phone") ya da selector'ı. Bekleme aksiyonunun
+// elementi yok; onu süresi ayırır ("wait:10000"): aynı edge'de birden çok bekleme olabilir (Emir'in
+// otomatik beklemeleri de dahil), monitör bağlandığı beklemeyi süresiyle bulur.
 function actionTarget(action) {
+  if (action?.type === 'wait') return Number.isFinite(action.ms) ? `wait:${action.ms}` : null;
   return action?.target?.key ?? action?.selector ?? null;
 }
 
@@ -238,13 +242,20 @@ function resolveMonitorAction(ref, actions) {
   let i = actions.findIndex((a) => sameTarget(a) && a.label === ref.label);
   if (i < 0) i = actions.findIndex(sameTarget);
   if (i < 0 && ref.target === null) i = actions.findIndex((a) => sameType(a) && a.label === ref.label);
+  if (i < 0 && ref.type === 'wait' && sameType(at)) i = ref.index; // süresi değiştirilmiş bekleme (Emir'in ✎'si): aynı sıradaki bekleme
   return i;
 }
 
 // "1. Yaz Fill Username" (Emir'in edge kartındaki satırla aynı: ACTION_TEXT panel.js'te)
 function actionText(action, index) {
   const verb = (typeof ACTION_TEXT !== 'undefined' && ACTION_TEXT[action?.type]) || action?.type || '';
+  if (action?.type === 'wait' && Number.isFinite(action.ms)) return `${index + 1}. ${verb} ${waitSeconds(action.ms)}`; // "2. Bekle 10 sn" (etiket "Wait" yerine süre)
   return `${index + 1}. ${verb} ${action?.label ?? ''}`.trim();
+}
+
+// Bekleme süresi: "10 sn", "1,5 sn", "0,01 sn" (Emir'in edge kartındaki biçimde)
+function waitSeconds(ms) {
+  return `${String(Math.round(ms / 10) / 100).replace('.', ',')} sn`;
 }
 
 // Monitörün aksiyon metni; aksiyon edge'de bulunamıyorsa kayıttaki bilgiyle ve uyarıyla

@@ -64,6 +64,14 @@ check('ikinci alan öne kayınca hedefiyle bulunur (0)', M.resolveMonitorAction(
 check('etiket değişmiş, tür + hedef aynı: bulunur', M.resolveMonitorAction({ index: 2, type: 'click', label: 'Eski', target: 'button:next' }, edge) === 2);
 check('sıra yanlış kaydedilmiş: tür + hedef + etiketle bulunur', M.resolveMonitorAction({ index: 9, type: 'click', label: 'Devam', target: 'button:next' }, edge) === 2);
 check('hedefsiz aksiyon (kaydırma) etiketle bulunur', M.resolveMonitorAction({ index: 0, type: 'scroll', label: 'Scroll down', target: null }, [A('scroll', null, 'Scroll down')]) === 0);
+// Bekleme aksiyonları: hedef = süre ("wait:2500"); otomatik beklemeler (hepsi "Wait" etiketli) süreyle ayrılır; süresi değişen bekleme aynı sırada bulunur
+const W = (ms) => ({ type: 'wait', label: 'Wait', ms, selector: null, target: null });
+const waits = [A('input', 'input:a', 'Fill A'), W(10), A('click', 'button:b', 'B'), W(2500)];
+const refW = M.monitorActionRef(waits[3], 3);
+check('monitorActionRef bekleme: hedef süre', refW.target === 'wait:2500' && M.resolveMonitorAction(refW, waits) === 3, JSON.stringify(refW));
+check('bekleme öne kayınca süresiyle bulunur (10 ms otomatik beklemeyle karışmaz)', M.resolveMonitorAction(refW, waits.slice(1)) === 2);
+check('süresi değiştirilmiş bekleme (2,5 → 4 sn) aynı sırada bulunur', M.resolveMonitorAction(refW, [...waits.slice(0, 3), W(4000)]) === 3);
+check('bekleme silinip yerine başka tür gelirse bulunmaz', M.resolveMonitorAction(refW, [...waits.slice(0, 3), A('click', 'button:c', 'C')]) === -1);
 check('tür farklıysa bulunmaz', M.resolveMonitorAction({ index: 2, type: 'input', label: 'Devam', target: 'button:next' }, edge) === -1);
 check('normalizeActionRef: string sıra sayıya çevrilir, bozuk sıra null, eksik alanlar boş', JSON.stringify(M.normalizeActionRef({ index: '1', type: 'input', label: 'x', target: 'input:a' })) === JSON.stringify({ index: 1, type: 'input', label: 'x', target: 'input:a' })
   && M.normalizeActionRef({ index: 'abc' }) === null && M.normalizeActionRef(null) === null && M.normalizeActionRef({ index: 2 }).label === '' && M.normalizeActionRef({ index: 2 }).target === null);
@@ -91,14 +99,18 @@ check('normalizeAlarms: görüntü yalnızca data:image, kaynak replay/live, eks
 const et = T.monitorType('expectedText');
 const ei = T.monitorType('expectedImage');
 const png = { data: 'data:image/png;base64,iVBORw0KGgo=', width: 120, height: 24 };
-check('expectedText: metin gerekli; harf duyarlılığı varsayılan kapalı; ad ve özet', T.monitorParamProblem(et.params[0], '') === 'Bu alan gerekli.' && T.monitorParamProblem(et.params[0], 'Password is required') === null
-  && T.monitorDefaults(et).caseSensitive === false && T.monitorAutoName(et, { text: 'Password is required' }) === 'Expected Text · "Password is required"'
+check('expectedText: metin gerekli; harf duyarlılığı varsayılan kapalı; kural varsayılan olmalı; ad ve özet', T.monitorParamProblem(et.params[0], '') === 'Bu alan gerekli.' && T.monitorParamProblem(et.params[0], 'Password is required') === null
+  && T.monitorDefaults(et).caseSensitive === false && T.monitorDefaults(et).mode === 'present' && T.monitorAutoName(et, { text: 'Password is required' }) === 'Expected Text · "Password is required"'
   && T.monitorSentence(et, { text: 'Password is required', caseSensitive: false }, { kind: 'node', name: 'v_Login' }, true).map((p) => p.b ?? p).join('').includes('görünen yazılardan birinde Password is required geçmeli (büyük/küçük harf fark etmez)'));
+check('expectedText olmamalı: ad "… yok", özet "hiçbirinde … geçmemeli"; kural listede olmayan değer reddedilir', T.monitorAutoName(et, { text: 'Bekleyiniz', mode: 'absent' }) === 'Expected Text · "Bekleyiniz" yok'
+  && T.monitorSentence(et, { text: 'Bekleyiniz', mode: 'absent' }, { kind: 'edge', name: 'e_SGK', action: '2. Bekle 10 sn' }, true).map((p) => p.b ?? p).join('').includes('2. Bekle 10 sn aksiyonundan hemen sonra: görünen yazıların hiçbirinde Bekleyiniz geçmemeli')
+  && T.monitorParamProblem(et.params.find((p) => p.key === 'mode'), 'maybe') === 'Listeden bir seçenek seçin.');
 check('expectedImage: görüntü gerekli; biçim, boyut ve en/boy sınırı; benzerlik 50–100', T.monitorParamProblem(ei.params[0], '') === 'Bir görüntü yükleyin (PNG ya da JPEG).'
   && T.monitorParamProblem(ei.params[0], png) === null && /PNG, JPEG/.test(T.monitorParamProblem(ei.params[0], { ...png, data: 'data:text/plain;base64,QQ==' }))
   && /çok büyük/.test(T.monitorParamProblem(ei.params[0], { ...png, data: 'data:image/png;base64,' + 'A'.repeat(1500000) })) && /1–800 px/.test(T.monitorParamProblem(ei.params[0], { ...png, width: 2000 }))
-  && T.monitorParamProblem(ei.params[1], 30) === 'En az 50 olmalı.' && T.monitorParamProblem(ei.params[1], 90) === null && T.monitorDefaults(ei).similarity === 90
-  && T.monitorAutoName(ei, { image: png, similarity: 90 }) === 'Expected Image · 120×24 px');
+  && T.monitorParamProblem(ei.params.find((p) => p.key === 'similarity'), 30) === 'En az 50 olmalı.' && T.monitorParamProblem(ei.params.find((p) => p.key === 'similarity'), 90) === null && T.monitorDefaults(ei).similarity === 90 && T.monitorDefaults(ei).mode === 'present'
+  && T.monitorAutoName(ei, { image: png, similarity: 90 }) === 'Expected Image · 120×24 px' && T.monitorAutoName(ei, { image: png, mode: 'absent', similarity: 90 }) === 'Expected Image · 120×24 px yok'
+  && T.monitorSentence(ei, { image: png, mode: 'absent', similarity: 90 }, { kind: 'global' }, true).map((p) => p.b ?? p).join('').includes('ekranda bulunmamalı (benzerlik en az %90)'));
 check('import için de aynı doğrulama: {image:"x"} geçersiz', T.monitorImageProblem('x') !== null && T.monitorImageProblem({ data: png.data }) !== null);
 
 // ---- Görüntü eşleme (monitor-image.js > findImage): yapay görüntüler ----
