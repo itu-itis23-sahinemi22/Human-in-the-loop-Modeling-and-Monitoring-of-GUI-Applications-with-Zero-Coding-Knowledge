@@ -12,6 +12,10 @@ secrets*.json
 /bitirme adi.txt
 /degisiklik-notlari.md
 
+# GraphWalker: Java sürümünün jar'ı ve Rust sürümünün derlenmiş graphwalker.exe'si (kullanıcı verir)
+*.jar
+*.exe
+
 # Haftalık plan dokümanları (yerel)
 /docs/*-plan.md
 

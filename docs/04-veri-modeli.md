@@ -249,6 +249,8 @@ java -jar graphwalker-cli-4.3.3.jar offline -m SwagLabs.json "random(edge_covera
 
 > GraphWalker 4.3.3, Java 25 ile `NoSuchMethodError: sun.misc.Unsafe.ensureClassInitialized` hatası verir. Java 17 (ya da 21) ile çalıştırın.
 
+GraphWalker'ın Rust sürümünde ([graphwalker-rs](https://github.com/GraphWalker/graphwalker-rs) 1.0.4) aynı komutlar `graphwalker.exe check -m …` ve `graphwalker.exe offline -m …` şeklindedir. Rust sürümü dışa aktarılan modeli (`properties` alanlarıyla birlikte) okur. `check` Java'yla aynı uyarıları verir; örneğin çıkmaz node'lu bir modelde *"The model has one cul-de-sacs …"*. Uyarı varsa 1 koduyla çıkar. `offline` çıktısında id her zaman vardır (`currentElementId`).
+
 Model kurulurken dikkat:
 
 - **Başlangıç elementi:** `startElementId` ilk node'dur. Boşsa GraphWalker *"The model has neither a start element or a defined shared state"* der.

@@ -1490,7 +1490,8 @@ let planning = false; // GraphWalker çalışıyor
 
 function plannerText(planner) {
   const goal = { edges: "tüm edge'ler", nodes: "tüm node'lar", node: `"${nodeById(planner.target)?.name ?? planner.target}" node'una ulaş` }[planner.goal];
-  return `GraphWalker: ${goal}` + (planner.seed !== undefined ? ` (tohum ${planner.seed})` : '');
+  // Aynı tohum GraphWalker'ın iki sürümünde farklı yol verir: Rust ile üretildiyse söylenir
+  return `GraphWalker${planner.cli === 'rust' ? ' (Rust)' : ''}: ${goal}` + (planner.seed !== undefined ? ` (tohum ${planner.seed})` : '');
 }
 
 let plannerTargetKey = '';
@@ -1518,7 +1519,8 @@ $('btn-scenario-generate').onclick = () => {
   if (!strategy?.goal || !scenario.id) return;
   const seedText = $('scenario-seed').value.trim();
   const seed = seedText === '' || strategy.goal === 'node' ? null : Number(seedText);
-  if (seed !== null && !(Number.isInteger(seed) && seed >= 0)) return showMessage({ error: 'Tohum 0 ya da pozitif bir tam sayı olmalı (boş: rastgele).' });
+  // 0 olmaz: GraphWalker'ın Rust sürümünde 0 "rastgele" demektir (planner/graphwalker.js)
+  if (seed !== null && !(Number.isInteger(seed) && seed >= 1)) return showMessage({ error: 'Tohum pozitif bir tam sayı olmalı (boş: rastgele).' });
   const target = strategy.goal === 'node' ? $('scenario-target').value : null;
   const generate = () => generateRuns(strategy.goal, target, seed);
   if (!scenario.runs.some((r) => r.length)) return generate();
@@ -1562,7 +1564,7 @@ async function generateRuns(goal, target, seed) {
 // Chrome'un native messaging hataları kullanıcının yapabileceği şeye çevrilir.
 function plannerHostError(message) {
   if (/not found/i.test(message)) {
-    return 'planlayıcı kurulu değil. Bir kez runner\\install-planner.cmd\'yi çalıştırın (Java 17 ya da 21 ve GraphWalker CLI jar\'ı gerekir). '
+    return 'planlayıcı kurulu değil. Bir kez runner\\install-planner.cmd\'yi çalıştırın (GraphWalker\'ın Java sürümü: jar ve Java 17 ya da 21; ya da Rust sürümü: derlenmiş graphwalker.exe). '
       + `Panel olmadan aynı senaryo: node runner/plan.js ${modelName()}.json`;
   }
   if (/forbidden/i.test(message)) return 'planlayıcı bu eklenti kimliği için kurulmamış. runner\\install-planner.cmd\'yi yeniden çalıştırın.';

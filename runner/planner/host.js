@@ -5,7 +5,7 @@
 // Chrome bu programı panelin her isteğinde kendisi başlatır (chrome.runtime.sendNativeMessage)
 // ve standart giriş / çıkışla konuşur: her mesaj 4 bayt uzunluk (little-endian) + UTF-8 JSON.
 // Bir istek, bir cevap, sonra çıkış. İstekler:
-//   { type: 'ping' }                               -> { ok, java, jar, version }
+//   { type: 'ping' }                               -> { ok, cli, java + jar | binary, version }
 //   { type: 'plan', graph, goal, target?, seed? }  -> { runs, planner, unreachable, calls }
 // Hata { error } olarak döner. Standart çıktıya mesajdan başka bir şey yazılmaz: Chrome
 // bağlantıyı keser. Kurulum bu dosyayı ve graphwalker.js'i kullanıcının klasörüne kopyalar

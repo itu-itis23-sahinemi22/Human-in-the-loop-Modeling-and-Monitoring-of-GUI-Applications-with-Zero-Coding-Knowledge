@@ -16,9 +16,15 @@
 //     önce: onların en kısa yolu yakındakileri de kapsar, koşu sayısı azalır. length(N), random'un bir
 //     şekilde bitmemesine karşı üst sınırdır; kalanlar yine a_star koşularıyla kapsanır.
 //   - Tohum: verilmezse rastgele seçilir ve senaryoya yazılır; aynı tohum aynı senaryoyu verir.
+//     Tohum 1 ya da daha büyüktür: Rust sürümünde 0 "rastgele" demektir.
 //
-// Java ve jar'ın yeri kurulumun yazdığı ayar dosyasındadır (install.js); komut satırında ve
-// ortam değişkenleriyle (GRAPHWALKER_JAVA, GRAPHWALKER_JAR) de verilebilir.
+// GraphWalker'ın iki sürümü (cli): 'java' (graphwalker-cli jar'ı, Java 17 / 21 ile) ve 'rust'
+// (graphwalker-rs'in derlenmiş graphwalker.exe'si). Komut kalıbı, generator dili, model ve
+// çıktı aynıdır; farklar: çağrı (gwCommand), --version çıktısı (parseVersion), çıkmaz node
+// mesajı (deadEndOf). Aynı tohum iki sürümde farklı yol verir; senaryoya hangisi olduğu yazılır
+// (planner.cli). Hangisinin kullanılacağı kurulumun ayar dosyasındadır (install.js); komut
+// satırında ve ortam değişkenleriyle (GRAPHWALKER_BIN; GRAPHWALKER_JAVA, GRAPHWALKER_JAR) de
+// verilebilir.
 // =============================================================================
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -35,18 +41,36 @@ export function installDir() {
   return process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'GraphRecorder') : join(homedir(), '.graph-recorder');
 }
 
-// Java ve jar: komut satırı > ortam değişkeni > kurulumun ayar dosyası.
+// Kullanılacak GraphWalker: { cli: 'rust', binary } ya da { cli: 'java', java, jar }.
+// Komut satırı > ortam değişkeni > kurulumun ayar dosyası; ayar dosyasında cli yoksa (eski
+// kurulum) Java.
 export function readConfig(overrides = {}) {
   let saved = {};
   try {
     saved = JSON.parse(readFileSync(join(installDir(), 'config.json'), 'utf8'));
   } catch { /* kurulum yok */ }
+  const cli = overrides.graphwalker ? 'rust'
+    : overrides.jar || overrides.java ? 'java'
+      : process.env.GRAPHWALKER_BIN ? 'rust'
+        : process.env.GRAPHWALKER_JAR ? 'java'
+          : saved.cli ?? 'java';
+  if (cli === 'rust') {
+    const binary = overrides.graphwalker ?? process.env.GRAPHWALKER_BIN ?? saved.binary ?? null;
+    if (!binary) throw new Error('GraphWalker (Rust) bilinmiyor. Kurulumu çalıştırın (runner\\install-planner.cmd) ya da --graphwalker ile verin.');
+    if (!existsSync(binary)) throw new Error(`GraphWalker (Rust) bulunamadı: ${binary}. Dosya taşındıysa kurulumu yeniden çalıştırın.`);
+    return { cli, binary };
+  }
   const java = overrides.java ?? process.env.GRAPHWALKER_JAVA ?? saved.java ?? null;
   const jar = overrides.jar ?? process.env.GRAPHWALKER_JAR ?? saved.jar ?? null;
   if (!java) throw new Error('Java bulunamadı. Kurulumu çalıştırın (runner\\install-planner.cmd) ya da --java ile verin.');
   if (!jar) throw new Error('GraphWalker jar\'ı bilinmiyor. Kurulumu çalıştırın (runner\\install-planner.cmd) ya da --jar ile verin.');
   if (!existsSync(jar)) throw new Error(`GraphWalker jar'ı bulunamadı: ${jar}. Dosya taşındıysa kurulumu yeniden çalıştırın.`);
-  return { java, jar };
+  return { cli, java, jar };
+}
+
+// GraphWalker'ı çalıştıran komut: [program, argümanlar].
+export function gwCommand(config, args) {
+  return config.cli === 'rust' ? [config.binary, args] : [config.java, ['-jar', config.jar, ...args]];
 }
 
 // Java'nın ana sürümü ("17.0.12" -> 17, "1.8.0_461" -> 8); çalışmazsa null. Java sürümünü
@@ -89,10 +113,29 @@ export function findJava() {
   return { java: usable[0]?.java ?? null, found };
 }
 
-// GraphWalker'ın sürümü: jar ve Java'nın birlikte çalıştığını da gösterir.
-export function graphWalkerVersion({ java, jar }) {
-  const out = execFileSync(java, ['-jar', jar, '--version'], { encoding: 'utf8', timeout: 20000 });
-  return /version:\s*(\S+)/.exec(out)?.[1] ?? out.trim();
+// GraphWalker'ın sürümü: programın çalıştığını da gösterir (Java'da jar ve Java birlikte).
+export function graphWalkerVersion(config) {
+  const [command, args] = gwCommand(config, ['--version']);
+  return parseVersion(execFileSync(command, args, { encoding: 'utf8', timeout: 20000, windowsHide: true }));
+}
+
+// --version çıktısı: Java "... version: 4.3.3-1c28d9c", Rust "graphwalker 1.0.4 (git …)".
+export function parseVersion(out) {
+  return /version:\s*(\S+)/.exec(out)?.[1] ?? /^graphwalker\s+(\S+)/m.exec(out)?.[1] ?? out.trim();
+}
+
+// Rastgele yürüyüşün çıkmaz node'u (oradan çıkan edge yok) ya da null. Java
+// "NoPathFoundException ... element: n3"; Rust "No path found from vertex 'n3' in model 'plan'"
+// (hedefli a_star'ın "from ... to ..." hatası çıkmaz node değildir).
+export function deadEndOf(output) {
+  return /NoPathFoundException[^\n]*element: (\S+)/.exec(output)?.[1]
+    ?? /No path found from vertex '([^']+)' in model/.exec(output)?.[1]
+    ?? null;
+}
+
+// Rastgele tohum: 1 .. 2^31-1 (0 Rust sürümünde "rastgele" demektir).
+export function randomSeed() {
+  return 1 + Math.floor(Math.random() * (2 ** 31 - 1));
 }
 
 // graph: { start, nodes: [{ id, name }], edges: [{ id, name, source, target }] } (scenario.js'teki biçim)
@@ -105,7 +148,8 @@ export async function plan(graph, { goal = 'edges', target = null, seed = null }
   const unreachable = goal === 'nodes'
     ? graph.nodes.filter((n) => !reach.nodes.has(n.id))
     : graph.edges.filter((e) => !reach.edges.has(e.id));
-  const usedSeed = Number.isInteger(seed) ? seed : Math.floor(Math.random() * 2 ** 31);
+  if (Number.isInteger(seed) && seed < 1) throw new Error('Tohum 1 ya da daha büyük bir tam sayı olmalı.');
+  const usedSeed = Number.isInteger(seed) ? seed : randomSeed();
   const walker = await modelWalker(graph, reach, config);
   try {
     if (goal === 'node') {
@@ -114,7 +158,7 @@ export async function plan(graph, { goal = 'edges', target = null, seed = null }
       if (!reach.nodes.has(target)) throw new Error(`"${nameOf(graph, target)}" başlangıçtan ulaşılamıyor.`);
       const generator = `a_star(reached_vertex(${target}))`;
       const run = await walker.offline(generator);
-      return { runs: [run.edges], planner: { engine: 'graphwalker', goal, target, generator }, unreachable: [], calls: walker.calls };
+      return { runs: [run.edges], planner: { engine: 'graphwalker', cli: config.cli, goal, target, generator }, unreachable: [], calls: walker.calls };
     }
 
     const kind = goal === 'edges' ? 'edge' : 'vertex';
@@ -136,7 +180,7 @@ export async function plan(graph, { goal = 'edges', target = null, seed = null }
     }
     return {
       runs,
-      planner: { engine: 'graphwalker', goal, generator, seed: usedSeed, ...(first.deadEnd && { deadEnd: first.deadEnd }) },
+      planner: { engine: 'graphwalker', cli: config.cli, goal, generator, seed: usedSeed, ...(first.deadEnd && { deadEnd: first.deadEnd }) },
       unreachable: unreachable.map(({ id, name }) => ({ id, name })),
       calls: walker.calls,
     };
@@ -177,7 +221,7 @@ function nameOf(graph, id) {
 
 // Ulaşılabilen kısım GraphWalker modeli olarak geçici bir dosyaya yazılır; her offline çağrısı
 // onu okur. Adlar id'dir.
-async function modelWalker(graph, reach, { java, jar }) {
+async function modelWalker(graph, reach, config) {
   const dir = mkdtempSync(join(tmpdir(), 'graph-recorder-plan-'));
   const file = join(dir, 'model.json');
   writeFileSync(file, JSON.stringify({
@@ -195,10 +239,10 @@ async function modelWalker(graph, reach, { java, jar }) {
     // Döner: { edges: [id...], deadEnd: node id | null }
     offline: async (generator, seed = null) => {
       walker.calls++;
-      const args = ['-jar', jar, 'offline', ...(seed !== null ? ['--seed', String(seed)] : []), '-m', file, generator];
-      const { code, stdout, stderr } = await run(java, args);
+      const [command, args] = gwCommand(config, ['offline', ...(seed !== null ? ['--seed', String(seed)] : []), '-m', file, generator]);
+      const { code, stdout, stderr } = await run(command, args);
       const steps = stdout.split(/\r?\n/).filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).currentElementName);
-      const deadEnd = /NoPathFoundException[^\n]*element: (\S+)/.exec(stdout + stderr)?.[1] ?? null;
+      const deadEnd = deadEndOf(stdout + stderr);
       if (code !== 0 && !deadEnd) throw new Error(`GraphWalker çalışmadı (${generator}): ${(stderr || stdout).trim().split(/\r?\n/).slice(-2).join(' ')}`);
       return { edges: steps.filter((id) => edgeIds.has(id)), deadEnd };
     },
@@ -219,7 +263,7 @@ function run(command, args) {
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => {
       clearTimeout(timer);
-      reject(new Error(`Java çalıştırılamadı (${command}): ${error.message}`));
+      reject(new Error(`GraphWalker çalıştırılamadı (${command}): ${error.message}`));
     });
     child.on('close', (code) => {
       clearTimeout(timer);

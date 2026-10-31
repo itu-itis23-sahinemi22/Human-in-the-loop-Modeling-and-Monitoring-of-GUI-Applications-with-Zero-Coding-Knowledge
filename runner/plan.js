@@ -21,10 +21,12 @@ const USAGE = `Kullanım:
   <model.json>           eklentinin "GraphWalker JSON" butonuyla indirdiği model
   -g, --goal <hedef>     edges: tüm edge'ler (varsayılan), nodes: tüm node'lar, node: bir node'a ulaş
   -t, --target <node>    (node hedefinde) ulaşılacak node'un adı ya da id'si
-      --seed <sayı>      aynı tohum aynı senaryoyu verir (verilmezse rastgele, senaryoya yazılır)
+      --seed <sayı>      aynı tohum aynı senaryoyu verir (1 ya da büyük; verilmezse rastgele, senaryoya yazılır)
   -o, --out <dosya>      senaryoyu dosyaya yaz (varsayılan: standart çıktı)
-      --java <yol>       Java 17 / 21 (varsayılan: kurulumun bulduğu)
-      --jar <yol>        GraphWalker CLI jar'ı (varsayılan: kurulumda verilen)`;
+      --graphwalker <exe>  GraphWalker'ın Rust sürümü (derlenmiş graphwalker.exe)
+      --jar <yol>        GraphWalker'ın Java sürümü (CLI jar'ı)
+      --java <yol>       Java 17 / 21 (jar için; varsayılan: kurulumun bulduğu)
+  Hiçbiri verilmezse kurulumda seçilen sürüm kullanılır.`;
 
 const GOAL_TEXT = { edges: "tüm edge'ler", nodes: "tüm node'lar", node: "node'a ulaş" };
 
@@ -38,6 +40,7 @@ async function main() {
       out: { type: 'string', short: 'o' },
       java: { type: 'string' },
       jar: { type: 'string' },
+      graphwalker: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -52,7 +55,8 @@ async function main() {
   if (options.goal === 'node' && !target) throw new Error(`Ulaşılacak node bulunamadı: ${options.target ?? '(--target verilmedi)'}`);
   const seed = options.seed === undefined ? null : Number.parseInt(options.seed, 10);
 
-  const result = await plan(graph, { goal: options.goal, target, seed }, readConfig({ java: options.java, jar: options.jar }));
+  if (options.graphwalker && (options.jar || options.java)) throw new Error('--graphwalker (Rust) ile --jar / --java (Java) birlikte verilmez.');
+  const result = await plan(graph, { goal: options.goal, target, seed }, readConfig({ java: options.java, jar: options.jar, graphwalker: options.graphwalker }));
   const out = options.out ? resolve(options.out) : null;
   const scenario = {
     format: SCENARIO_FORMAT,
@@ -67,7 +71,7 @@ async function main() {
   else process.stdout.write(text);
 
   const { edges, nodes } = scenario.coverage;
-  console.error(`${result.runs.length} koşu · kapsama ${edges[0]}/${edges[1]} edge, ${nodes[0]}/${nodes[1]} node · tohum ${result.planner.seed ?? '-'} · ${result.calls} GraphWalker çağrısı${out ? ` · ${out}` : ''}`);
+  console.error(`${result.runs.length} koşu · kapsama ${edges[0]}/${edges[1]} edge, ${nodes[0]}/${nodes[1]} node · tohum ${result.planner.seed ?? '-'} · ${result.calls} GraphWalker (${result.planner.cli === 'rust' ? 'Rust' : 'Java'}) çağrısı${out ? ` · ${out}` : ''}`);
   if (result.unreachable.length) console.error(`Başlangıçtan ulaşılamayan: ${result.unreachable.map((x) => x.name).join(', ')}`);
   return 0;
 }
