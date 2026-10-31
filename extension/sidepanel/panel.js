@@ -2066,12 +2066,29 @@ for (const { id, items } of CHECKLISTS) {
   }));
   $(id).onchange = renderSaveButton;
 }
+$('settings-actions').onchange = () => {
+  syncRequiredActions();
+  renderSaveButton();
+};
 $('settings-record-waits').onchange = renderSaveButton;
 $('settings-min-wait').oninput = renderSaveButton;
 $('settings-auto-wait').oninput = renderSaveButton;
 
 // İsteğe bağlı aksiyon tipleri (settings.js > ACTION_TYPES > optional): işaretlenenler saklanır.
 const OPTIONAL_ACTIONS = new Set(ACTION_TYPES.filter((a) => a.optional).map((a) => a.type));
+
+// Bağlı aksiyon tipleri (settings.js > ACTION_TYPES > requires; Çoklu tıklama → Tıkla): bağlı
+// olduğu tipin işareti kalkınca bu tipin işareti de kalkar ve kutusu pasif olur. O tip yeniden
+// işaretlenince kutu açılır ama işaretsiz kalır; kullanıcı kendisi işaretler.
+function syncRequiredActions() {
+  const box = (type) => $('settings-actions').querySelector(`input[value="${type}"]`);
+  for (const { type, requires } of ACTION_TYPES.filter((a) => a.requires)) {
+    const on = box(requires).checked;
+    if (!on) box(type).checked = false;
+    box(type).disabled = !on;
+    box(type).closest('label').title = on ? '' : `${ACTION_TEXT[requires]} açıkken kaydedilir`;
+  }
+}
 
 // Taslak: kutuların o anki hali ve bekleme seçenekleri. Listelerde işareti kaldırılanlar,
 // isteğe bağlı aksiyonlarda işaretlenenler saklanır. Geçersiz alt sınır (boş, negatif) ve
@@ -2093,7 +2110,11 @@ function draftSettings() {
 function isDirty() {
   const draft = draftSettings();
   const same = (a, b) => [...a].sort().join('\n') === [...b].sort().join('\n');
-  return ['disabledActions', 'enabledActions', 'disabledInteractables'].some((key) => !same(draft[key], settings[key]))
+  // Bağlı tip, bağlı olduğu tip kapalıyken kutuda işaretsizdir; kayıtlı ayarda listede olmasa da
+  // (bu tip eklenmeden önce kaydedilmiş ayar) öyle sayılır, pencere açılır açılmaz kirli görünmesin.
+  const unrequired = ACTION_TYPES.filter((a) => a.requires && !a.optional && !isActionEnabled(settings, a.requires) && !settings.disabledActions.includes(a.type));
+  const saved = { ...settings, disabledActions: [...settings.disabledActions, ...unrequired.map((a) => a.type)] };
+  return ['disabledActions', 'enabledActions', 'disabledInteractables'].some((key) => !same(draft[key], saved[key]))
     || draft.recordWaits !== settings.recordWaits || draft.minWaitSeconds !== settings.minWaitSeconds
     || draft.autoWaitMs !== settings.autoWaitMs;
 }
@@ -2101,6 +2122,7 @@ function isDirty() {
 // Kutuları kaydedilmiş ayarlara eşitler (taslağı atar).
 function loadDraft() {
   for (const box of $('settings-actions').querySelectorAll('input')) box.checked = isActionEnabled(settings, box.value);
+  syncRequiredActions();
   for (const box of $('settings-interactables').querySelectorAll('input')) box.checked = !settings.disabledInteractables.includes(box.value);
   $('settings-record-waits').checked = settings.recordWaits;
   $('settings-min-wait').value = settings.minWaitSeconds;

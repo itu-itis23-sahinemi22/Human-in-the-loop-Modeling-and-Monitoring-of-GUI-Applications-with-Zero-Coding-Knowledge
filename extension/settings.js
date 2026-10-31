@@ -16,8 +16,11 @@
 // Kaydedilebilen aksiyon tipleri. Ayarlarda işaretli olmayan tipteki aksiyonlar
 // "Bekleyen aksiyonlar" listesine eklenmez. `text`, panelde görünen addır.
 // `optional`: varsayılan kapalıdır; Ayarlar'da işaretlenince kaydedilir (bkz. isActionEnabled).
+// `requires`: yalnızca o tip de kaydedilirken kaydedilir; Ayarlar'da o tipin işareti
+// kaldırılınca bu tipin işareti de kalkar ve kutusu pasif olur (panel.js > syncRequiredActions).
 const ACTION_TYPES = [
   { type: 'click', text: 'Tıkla' },
+  { type: 'multiclick', text: 'Çoklu tıklama', requires: 'click' },
   { type: 'input', text: 'Yaz' },
   { type: 'enter', text: 'Enter' },
   { type: 'key', text: 'Tuş' },
@@ -64,9 +67,10 @@ const INTERACTABLE_TYPES = [
 const DEFAULT_SETTINGS = { disabledActions: [], enabledActions: [], disabledInteractables: [], recordWaits: false, minWaitSeconds: 1, autoWaitMs: 10 };
 
 // Bu tipteki aksiyonlar kaydediliyor mu? İsteğe bağlı tipler işaretlenince, diğerleri işareti
-// kaldırılmadıkça kaydedilir.
+// kaldırılmadıkça kaydedilir; bağlı olduğu tip (requires) kaydedilmiyorsa hiçbiri.
 function isActionEnabled(settings, type) {
-  const optional = ACTION_TYPES.find((a) => a.type === type)?.optional;
+  const { optional, requires } = ACTION_TYPES.find((a) => a.type === type) ?? {};
+  if (requires && !isActionEnabled(settings, requires)) return false;
   return optional ? settings.enabledActions.includes(type) : !settings.disabledActions.includes(type);
 }
 

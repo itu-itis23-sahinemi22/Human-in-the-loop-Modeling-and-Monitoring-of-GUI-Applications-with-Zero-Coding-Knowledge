@@ -97,7 +97,7 @@ Kullanıcının tek bir hareketi. Ortak alanlar:
 | Alan | Tip | Açıklama |
 |---|---|---|
 | `type` | `string` | Aksiyon tipi (aşağıdaki tablo) |
-| `target` | `{ key, index }` | Sadece `click`, `input`, `enter`, odakta bir element varken `key`, etkileşimli elementteki `contextmenu` / `focus` ve form alanındaki `select` / `clipboard`: hedef element, state ile aynı düzeyde. `key` elementin türü, `index` ekranda görünen aynı türdekiler arasındaki DOM sırası (1'den). Örnek: `{ "key": "button:Sil", "index": 2 }` = "ekrandaki 2. Sil". Element o an ekranda tıklanabilir değilse `index` `null`. Tekrar oynatırken önce bu kullanılır ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)). |
+| `target` | `{ key, index }` | Sadece `click`, `multiclick`, `input`, `enter`, odakta bir element varken `key`, etkileşimli elementteki `contextmenu` / `focus` ve form alanındaki `select` / `clipboard`: hedef element, state ile aynı düzeyde. `key` elementin türü, `index` ekranda görünen aynı türdekiler arasındaki DOM sırası (1'den). Örnek: `{ "key": "button:Sil", "index": 2 }` = "ekrandaki 2. Sil". Element o an ekranda tıklanabilir değilse `index` `null`. Tekrar oynatırken önce bu kullanılır ([03](03-state-eslestirme.md#edge-hedefi-state-ile-aynı-düzeyde-türün-ncisi)). |
 | `changed` | `boolean \| null` | Aksiyon state'i (edge set'i) değiştirdi mi: hemen önceki state ile aksiyondan sonra sayfa durulunca görülen state karşılaştırılır. `null` ya da yok: bilinmiyor. Edge düzenlemedeki silme uyarısı ve runner'ın aksiyon izi (adım kalınca her aksiyonun oynatmadaki etkisi kayıttakiyle karşılaştırılır) için; GraphWalker çıktısında da vardır. Bkz. [01 > Edge düzenleme](01-mimari.md#edge-düzenleme) |
 | `selector` | `string \| null` | Elementi bulan CSS selector (yedek; `target` bulunamazsa). Tarayıcı seviyesindeki gezinmelerde, yakınlaştırmada, pencere boyutu değişiminde ve sayfanın kendisi kaydırıldığında `null`. |
 | `label` | `string` | İnsan tarafından okunabilir açıklama. Edge isimleri buradan türetilir. |
@@ -109,6 +109,7 @@ Tipler:
 | `type` | Kaynağı | Ek alan | `label` örneği | Tekrar oynatırken (replay) karşılığı |
 |---|---|---|---|---|
 | `click` | content.js | | `"Login"`, `"Add to cart"` | `click(selector)` |
+| `multiclick` | content.js | `count` (`number`): hızlı art arda kaç tıklama (2 ya da fazla) | `"Double click Login"`, `"Triple click Satır"`, `"Click Logo ×5"` | `click(selector, { clickCount: count })`: basıp bırakmalar arada beklemeden, artan `clickCount`'la; sayfa `dblclick`'i de görür. Ayarlar'da Çoklu tıklama kapalıysa kaydedilmez, tıklamalar ayrı `click` olur ([01 > Aksiyonlar](01-mimari.md#sayfa-içi-olaylar-contentjs)). |
 | `input` | content.js | `value` (`string` ya da checkbox için `boolean`; düzenlenebilir alanda metni) | `"Fill Username"`, `"Select Sort"`, `"Check Remember me"` | `fill(selector, value)` / `selectOption` / `check` |
 | `enter` | content.js | | `"Submit Username"` | `press(selector, "Enter")` |
 | `key` | content.js | `key` (`string`): Playwright biçiminde tuş (`"Escape"`, `"Control+Enter"`, `"/"`); `count` (`number`): art arda kaç kez basıldığı | `"Press Escape"`, `"Press ArrowDown ×3"` | `selector` varsa `press(selector, key)`, `null` ise `keyboard.press(key)`; `count` kez |
@@ -153,7 +154,7 @@ Panelin **Ayarlar** bölümündeki seçim, `chrome.storage.local` içinde state'
 | Alan | Tip | Açıklama |
 |---|---|---|
 | `enabledActions` | `string[]` | İşaretlenmiş **isteğe bağlı** aksiyon tipleri (ör. `["hover"]`). İsteğe bağlı tipler (`ACTION_TYPES > optional`) varsayılan kapalıdır; yalnızca burada listelenince kaydedilir. |
-| `disabledActions` | `string[]` | İşareti kaldırılmış aksiyon tipleri (ör. `["scroll"]`). Bu tipteki aksiyonlar buffer'a eklenmez. |
+| `disabledActions` | `string[]` | İşareti kaldırılmış aksiyon tipleri (ör. `["scroll"]`). Bu tipteki aksiyonlar buffer'a eklenmez. Bağlı bir tip (`ACTION_TYPES > requires`, ör. `multiclick` → `click`), bağlı olduğu tip burada listelenince listede olmasa da kapalı sayılır. |
 | `disabledInteractables` | `string[]` | İşareti kaldırılmış etkileşimli element türleri (ör. `["a", "label"]`). Bu türlerin anahtarları state karşılaştırmasına girmez. |
 | `recordWaits` | `boolean` | "Beklemeleri kaydet": aksiyonlar arasındaki boşluklar ve ekranın kendiliğinden değişmesi `wait` aksiyonu olarak kaydedilir; kayıt sekmesinin ekranı sürekli izlenir. Varsayılan `false`. |
 | `minWaitSeconds` | `number` | Ekranı değiştirmeyen bir beklemenin kaydedilmesi için en kısa süre (saniye). Varsayılan `1`. Ekranı değiştiren bekleme her zaman kaydedilir. |

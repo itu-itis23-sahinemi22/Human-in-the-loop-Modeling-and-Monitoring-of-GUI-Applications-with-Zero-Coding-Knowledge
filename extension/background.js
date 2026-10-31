@@ -451,7 +451,11 @@ async function setReplay(state, { active, endNodeId = null, tabId = null }) {
 // Önceki aksiyon kapandıysa kullanılmaz: yazmada bu ekran yazılanın sonrasıdır; aksiyonun
 // öncesi, son görülen state'tir.
 // replaces: bu aksiyonun yerini aldığı, aynı hareketten önceki aksiyonun zamanı. Çift/üçlü
-// tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp).
+// tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp);
+// çoklu tıklama da hareketin önceki tıklamasının yerine geçer (content.js > onClick).
+// clickLabel: çoklu tıklamada tek tıklamanın etiketi. Çoklu tıklama kaydedilmiyorsa (Ayarlar)
+// aksiyon sıradan bir tıklama olarak eklenir, öncekinin yerine geçmez: N ayrı tıklama.
+// gestureScreen: çoklu tıklamada hareketin ilk tıklamasının öncesi (aksiyonun öncesi odur).
 // viewport: aksiyonun gönderildiği andaki sayfa boyutu (content.js gönderir; bkz. observeScreen).
 // typingSince: yazma aksiyonunda yazmaya başlanan an (bkz. waitBefore).
 async function addAction(state, tabId, action, options = {}) {
@@ -462,7 +466,14 @@ async function addAction(state, tabId, action, options = {}) {
 }
 
 // Aksiyonu buffer'a ekler (sekme kontrolünden sonra; sekme aksiyonlarını background kendisi ekler).
-function pushAction(state, settings, action, { screen = null, replaces = null, viewport = null, typingSince = null } = {}) {
+function pushAction(state, settings, action, { screen = null, replaces = null, viewport = null, typingSince = null, clickLabel = null, gestureScreen = null } = {}) {
+  if (action.type === 'multiclick' && !isActionEnabled(settings, 'multiclick')) {
+    const { count: _, ...click } = action;
+    action = { ...click, type: 'click', label: clickLabel ?? click.label };
+    replaces = null;
+  } else if (action.type === 'multiclick') {
+    screen = gestureScreen ?? screen; // öncesi: hareketin ilk tıklamasının öncesi
+  }
   if (viewport) state.viewport = viewport;
   noteTabUrl(state, action.url);
   if (replaces && state.buffer.at(-1)?.time === replaces) state.buffer.pop();

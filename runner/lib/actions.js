@@ -14,6 +14,8 @@ import { urlKey } from './state.js';
 export async function playAction(page, action, run) {
   switch (action.type) {
     case 'click': return (await elementOf(page, action, run)).click({ timeout: run.timeout });
+    // Hızlı art arda tıklama: Playwright basıp bırakmaları arada beklemeden, artan clickCount'la gönderir
+    case 'multiclick': return (await elementOf(page, action, run)).click({ clickCount: action.count, timeout: run.timeout });
     case 'contextmenu': return (await elementOf(page, action, run)).click({ button: 'right', timeout: run.timeout });
     case 'hover': return (await elementOf(page, action, run)).hover({ timeout: run.timeout });
     case 'focus': return (await elementOf(page, action, run)).focus();

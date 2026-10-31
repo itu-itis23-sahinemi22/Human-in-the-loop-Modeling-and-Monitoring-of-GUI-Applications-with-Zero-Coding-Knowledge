@@ -80,18 +80,18 @@ Ayarlanacak bir eşik yoktur. `background.js > findSameStateNodes()` yalnızca U
 
 Node sayısı fazla geliyorsa kuralı değil, parmak izini değiştirin: `fingerprint.js > elementKey()` içinde dinamik ya da veriye bağlı id'leri normalleştirin.
 
-### Yeni bir aksiyon tipi eklemek (örnek: çift tıklama)
+### Yeni bir aksiyon tipi eklemek (örnek: orta tuşla tıklama)
 
 1. **`content.js`:** dinleyiciyi ekleyin.
    ```js
-   document.addEventListener('dblclick', (event) => {
-     if (!event.isTrusted) return;
+   document.addEventListener('auxclick', (event) => {
+     if (!event.isTrusted || event.button !== 1) return;
      const el = event.target.closest(INTERACTIVE) || event.target;
-     send({ type: 'dblclick', selector: cssSelector(el), label: 'DoubleClick ' + visibleText(el) });
+     send({ type: 'middleclick', selector: cssSelector(el), label: 'Middle click ' + visibleText(el) });
    }, true);
    ```
-2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'dblclick', text: 'Çift tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir. Tip varsayılan kapalı olacaksa (gürültülü ya da tahmine dayalıysa, üzerine gelme gibi) `optional: true` ekleyin; o zaman yalnızca işaretlenince kaydedilir (`enabledActions`).
-3. **`runner/lib/actions.js > playAction()`:** tekrar oynatma karşılığını ekleyin (ör. `element.dblclick()`). Eklenmezse runner bu aksiyonda adımı "desteklenmiyor" diye başarısız sayar.
+2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'middleclick', text: 'Orta tuşla tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir. Tip varsayılan kapalı olacaksa (gürültülü ya da tahmine dayalıysa, üzerine gelme gibi) `optional: true` ekleyin; o zaman yalnızca işaretlenince kaydedilir (`enabledActions`). Tip başka bir tipe bağlıysa (Çoklu tıklama → Tıkla gibi) `requires: 'click'` ekleyin: o tip kaydedilmiyorsa bu da kaydedilmez, Ayarlar'da kutusu pasif olur.
+3. **`sidepanel/replay.js > playAction()`** ve **`runner/lib/actions.js > playAction()`:** panelde ve runner'da tekrar oynatma karşılığını ekleyin (ör. `element.click({ button: 'middle' })`). Eklenmezse oynatma bu aksiyonda adımı "henüz oynatılamıyor / desteklenmiyor" diye başarısız sayar.
 4. **`docs/04-veri-modeli.md`** ve **`runner/README.md`:** aksiyon tipleri tablolarına yeni satırı ekleyin.
 
 Background'da değişiklik gerekmez: gelen her aksiyonu, tipi Ayarlar'da işaretliyse buffer'a ekler.

@@ -30,6 +30,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `viewport` | Node'da görünen alan, pencere boyutu (`resize`) ve yakınlaştırma aksiyonları, dışa aktarımda görünen alan |
 | `wait` | Beklemeleri kaydetme: Ayarlar, aksiyonlar arası bekleme, alt sınır, ekranı değiştiren bekleme (oturum zaman aşımı), runner'da oynatma |
 | `hover` | Fareyle üzerine gelme: varsayılan kapalı, CSS ve JS menüleri, runner'da oynatma |
+| `multiclick` | Çoklu tıklama: Ayarlar (varsayılan açık, Tıkla'ya bağlı kutu), çift / üçlü / beşli tıklamanın tek aksiyon olması, metne çift tıklamanın yine metin seçimi olması, ayar kapalıyken ayrı tıklamalar, panelde ve runner'da oynatma (`dblclick` ve tıklama sayacı) |
 | `tabs` | Yeni sekmede ve başka sitede devam: sekme sorusu, sekme aksiyonları, runner'da çok sekme |
 | `compare` | "Aynı node mu?" kartındaki görsel karşılaştırma |
 | `zoom-replay` | Yakınlaştırma ve pencere boyutunun runner'da aynı ekranı kurması |
