@@ -35,8 +35,9 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await page.bringToFront();
     await panel.evaluate(() => document.getElementById('btn-replay').click());
     await sleep(1000);
-    let c = await panel.evaluate(() => ({ hidden: document.getElementById('replay-check').hidden, fit: document.getElementById('btn-replay-fit').textContent }));
-    check('kart ve buton', !c.hidden && c.fit.includes('adres'), JSON.stringify(c));
+    // Buton yalnızca adres farkında çıkar (görünen alanı oynatma kendisi kurar): adres başlıkta
+    let c = await panel.evaluate(() => { const fit = document.getElementById('btn-replay-fit'); return { hidden: document.getElementById('replay-check').hidden, fit: fit.hidden ? null : fit.textContent, title: fit.title }; });
+    check('kart ve buton', !c.hidden && c.fit === "Başlangıç node'una dön" && c.title.includes('inventory.html adresine gider'), JSON.stringify(c));
     await panel.evaluate(() => document.getElementById('btn-replay-fit').click());
     await sleep(500);
     await panel.waitForFunction(() => !document.getElementById('btn-replay-fit').disabled, null, { timeout: 30000 });
