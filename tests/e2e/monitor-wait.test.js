@@ -194,6 +194,9 @@ function check(name, ok, detail = '') {
     await panel.evaluate(() => { document.getElementById('monitors').open = true; });
     const scopes = await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent + (e.classList.contains('orphan') ? ' [SAHİPSİZ]' : '')));
     check('bekleme 3 sn olunca monitörler aynı beklemeye bağlı ("Bekle 3 sn"), sahipsiz değil', scopes.filter((t) => t.endsWith(`${waitIndex + 1}. Bekle 3 sn`)).length === 3 && !scopes.some((t) => t.includes('SAHİPSİZ')), scopes.join(' | '));
+    // Oynatma senaryonun graph'ını (kopya) oynatır: yeni süre "Ana graph'tan yenile" ile kopyaya alınır
+    await panel.evaluate(() => persistScenario());
+    await sleep(300);
 
     // ---- Yavaş sayfa (liste 6 sn'de): bekleme bitince "Bekleyiniz" hâlâ ekranda ----
     delay = 6000;
