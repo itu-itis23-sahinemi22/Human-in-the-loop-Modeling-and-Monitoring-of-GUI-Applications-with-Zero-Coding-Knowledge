@@ -35,6 +35,9 @@ function check(name, ok, detail = '') {
     console.log('ATLANDI: planlayıcı kurulu değil (runner\\install-planner.cmd).');
     process.exit(3);
   }
+  // Kurulu sürüm (eski kurulumda cli yok: Java); aynı tohum iki sürümde farklı yol verir
+  const cli = JSON.parse(fs.readFileSync(config, 'utf8')).cli ?? 'java';
+  console.log(`GraphWalker: ${cli === 'rust' ? 'Rust' : 'Java'}`);
   const server = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html; charset=utf-8');
     res.end(PAGES[req.url.split('?')[0]] ?? 'yok');
@@ -110,9 +113,11 @@ function check(name, ok, detail = '') {
     let r = await generate('gw-edges', { seed: 42 });
     const seconds = Math.round((Date.now() - started) / 100) / 10;
     const edgesCovered = new Set(r.runs.flat());
-    check('tüm edge\'ler: %100 kapsama, birden fazla koşu (çıkmaz node)', edgesCovered.size === 5 && r.runs.length > 1, `${JSON.stringify(r.runs)} · ${seconds} sn`);
-    check('planner bilgisi senaryoda', r.planner.engine === 'graphwalker' && r.planner.goal === 'edges' && r.planner.seed === 42 && r.planner.deadEnd === nodeOf('v_B'), JSON.stringify(r.planner));
-    check('bildirim ve özet', r.message.includes('5/5 edge') && (await panel.textContent('#scenario-summary')).includes('GraphWalker: tüm edge\'ler (tohum 42)'), r.message);
+    // Yürüyüş B'ye varırsa orada kalır (çıkmaz node) ve kalanlar yeni koşularla kapsanır; e_B son
+    // kapsanan edge'se kapsama B'ye varınca tamamlanır, tek koşu yeter (tohuma ve sürüme bağlı)
+    check('tüm edge\'ler: %100 kapsama; birden fazla koşu ancak çıkmaz node\'da', edgesCovered.size === 5 && (r.runs.length === 1 || r.planner.deadEnd === nodeOf('v_B')), `${JSON.stringify(r.runs)} · ${seconds} sn`);
+    check('planner bilgisi senaryoda (sürüm dahil)', r.planner.engine === 'graphwalker' && r.planner.cli === cli && r.planner.goal === 'edges' && r.planner.seed === 42 && (!r.planner.deadEnd || r.planner.deadEnd === nodeOf('v_B')), JSON.stringify(r.planner));
+    check('bildirim ve özet', r.message.includes('5/5 edge') && (await panel.textContent('#scenario-summary')).includes(`GraphWalker${cli === 'rust' ? ' (Rust)' : ''}: tüm edge'ler (tohum 42)`), r.message);
     s = await getState();
     check('kaydedildi', JSON.stringify(s.scenarios[0].runs) === JSON.stringify(r.runs) && s.scenarios[0].planner.seed === 42);
     const firstRuns = JSON.stringify(r.runs);
