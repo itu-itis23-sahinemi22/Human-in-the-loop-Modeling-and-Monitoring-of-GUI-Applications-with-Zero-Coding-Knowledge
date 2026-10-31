@@ -337,6 +337,7 @@ function getSettings() {
 async function setSettings(state, settings) {
   const merged = { ...DEFAULT_SETTINGS, ...settings };
   if (!(merged.minWaitSeconds >= 0)) merged.minWaitSeconds = DEFAULT_SETTINGS.minWaitSeconds;
+  if (!(Number.isInteger(merged.autoWaitMs) && merged.autoWaitMs >= 0 && merged.autoWaitMs <= MAX_AUTO_WAIT_MS)) merged.autoWaitMs = DEFAULT_SETTINGS.autoWaitMs;
   settingsPromise = Promise.resolve(merged);
   await chrome.storage.local.set({ settings: merged });
   notifyMonitor(state, merged);
@@ -619,6 +620,22 @@ function waitBefore(state, settings, action, screen, typingSince) {
 
 function waitAction(from, to, url, changed) {
   return { type: 'wait', ms: Math.round(to - from), label: 'Wait', selector: null, url, time: Math.round(from), changed };
+}
+
+// OTOMATİK BEKLEME (Ayarlar > Aksiyon sonrası bekleme): edge kaydedilirken bekleme olmayan her
+// aksiyonun arkasına autoWaitMs süreli bir bekleme eklenir; edge bu yüzden her zaman bir
+// beklemeyle biter. Aksiyonun arkasında zaten kaydedilmiş bir bekleme varsa (Beklemeleri kaydet)
+// o kalır, kendi süresiyle otomatiğin yerine geçer. Kayıt sırasında "Bekleyen aksiyonlar"a
+// eklenmez: buffer'ın son aksiyonu açık aksiyondur (sonrası bekleniyor, yazma ve kaydırma
+// birleşir); bekleme yalnızca liste edge olunca girer.
+// Etkisi ölçülmez (changed: null): önceki aksiyonun yüklemesi bekleme sırasında sürebilir;
+// runner onu sapma saymasın. Panel 'auto' işaretinden "otomatik eklendi" gösterir.
+const MAX_AUTO_WAIT_MS = 60000;
+
+function withAutoWaits(actions, settings) {
+  return actions.flatMap((action, i) => action.type === 'wait' || actions[i + 1]?.type === 'wait'
+    ? [action]
+    : [action, { type: 'wait', ms: settings.autoWaitMs, label: 'Wait', selector: null, url: action.url, time: action.time, changed: null, auto: true }]);
 }
 
 // Adres çubuğuna yazma, geri/ileri ve yenileme sayfanın İÇİNDE olmadığı için
@@ -928,7 +945,7 @@ async function createNode(state, tabId, windowId) {
   if (matches.length) {
     state.pending = { capture, actions, candidateIds: matches.map((n) => n.id) };
   } else {
-    commit(state, capture, actions, null);
+    commit(state, capture, actions, null, settings);
   }
   await save(state);
 }
@@ -957,19 +974,20 @@ function cancelPending(state) {
 }
 
 // Kullanıcı onay kartında aday node'lardan birini seçti (targetId) ya da "yeni node" dedi (null).
-function resolvePending(state, targetId) {
+async function resolvePending(state, targetId) {
   const pending = state.pending;
   if (!pending) return;
   if (targetId && !pending.candidateIds.includes(targetId)) return; // aday olmayan node'a bağlanmaz
   state.pending = null;
   // Node şimdi oluştu: karar beklerken aksiyon yapılmadıysa bekleme buradan başlar.
   if (!state.buffer.length) state.idleSince = Date.now();
-  commit(state, pending.capture, pending.actions, targetId ?? null);
+  commit(state, pending.capture, pending.actions, targetId ?? null, await getSettings());
   return save(state);
 }
 
-// targetId verilmişse o node'a bağlan, verilmemişse yeni node oluştur.
-function commit(state, capture, actions, targetId) {
+// targetId verilmişse o node'a bağlan, verilmemişse yeni node oluştur. Edge'in aksiyonlarına
+// otomatik beklemeler eklenir (withAutoWaits).
+function commit(state, capture, actions, targetId, settings) {
   if (!state.nodes.some((n) => n.id === targetId)) {
     const node = {
       id: 'n' + state.nextId++,
@@ -1001,7 +1019,7 @@ function commit(state, capture, actions, targetId) {
       name: 'e_' + (toPascalCase(lastLabel ?? '') || 'Transition'),
       source: from,
       target: targetId,
-      actions,
+      actions: withAutoWaits(actions, settings),
     });
   }
 

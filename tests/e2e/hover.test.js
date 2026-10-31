@@ -102,7 +102,7 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'hover' ? `($
     await sleep(600);
     s = await createNode();
     let edge = s.edges.at(-1);
-    check('edge: wait, hover, click → e_Bir', types(edge.actions) === 'wait(false), hover(#products,true), click' && edge.name === 'e_Bir', `${edge.name}: ${types(edge.actions)}`);
+    check('edge: wait, hover, click → e_Bir', types(edge.actions.filter((a) => !a.auto)) === 'wait(false), hover(#products,true), click' && edge.name === 'e_Bir', `${edge.name}: ${types(edge.actions)}`);
 
     // 4) JS mouseenter kartı (etkileşimli olmayan tetikleyici)
     await page.hover('#card');

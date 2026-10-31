@@ -35,10 +35,10 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `zoom-replay` | Yakınlaştırma ve pencere boyutunun runner'da aynı ekranı kurması |
 | `scenario-run` | Elle senaryo, indirme / yükleme, runner'da çoklu koşu, JSON / HTML / JUnit raporları, bozuk modelde atlanan adımlar |
 | `replay` | Panelde oynatma: şifre, başlangıç uyarısı, geçen ve kalan koşu, durdurma (`--zoom=1.5` ile yakınlaştırmada) |
-| `replay-start` | Senaryonun başlangıç node'u, runner'ın reddi, görünen alanı kayıttakine getirme (`--small-screen` ile pencere büyüyemezken) |
-| `fit-unit` | Görünen alanı getirmenin birim testi (Chrome API'leri taklit edilir) |
+| `replay-start` | Senaryonun başlangıç node'u, runner'ın reddi, oynatmanın görünen alanı kayıttakine getirmesi (`--small-screen` ile pencere büyüyemezken) |
+| `filter` | Aksiyon filtresi: bekleyen ve edge listelerinde türleri gizleme, korunan sıra numaraları, ayrı filtreler, otomatik beklemenin ayrı türü, hatırlama |
 | `buffer` | Bekleyen aksiyonları silme: uyarı, bayat liste, karar beklerken kilit, runner ve panelde oynatma |
-| `return-to-start` | "Başlangıç node'una dön": adres ve boyut, gezinmenin kayda girmesi, yönlendirme, okunamayan sayfa |
+| `return-to-start` | "Başlangıç node'una dön": adres, boyutu oynatmanın kurması, gezinmenin kayda girmesi, yönlendirme, okunamayan sayfa |
 | `saucedemo-return` | Gerçek saucedemo'da istemci tarafı yönlendirmenin söylenmesi (internet ister) |
 | `graphs` | Birden fazla graph: otomatik ad, geçiş onayı, sekme sorusu, yeniden adlandırma, yedek ve yükleme, silme, eski kaydın taşınması |
 | `planner` | GraphWalker ile üretim: tüm edge'ler (çıkmaz node'da birden fazla koşu), tüm node'lar, bir node'a ulaş, aynı tohum aynı koşular, runner'da oynatma. Planlayıcı kurulu olmalı (`runner\install-planner.cmd`); değilse atlanır |

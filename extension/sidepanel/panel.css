@@ -163,6 +163,19 @@ dialog.compare { width: min(96vw, 960px); }
 
 /* Edge detayındaki aksiyon: etki işareti ve sil butonu */
 .actions li.editable { position: relative; padding-right: 24px; }
+.actions li[hidden] { display: none; }
+
+/* Aksiyon filtresi: liste başlığının sağında açılır kutu */
+.list-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+.list-head[hidden] { display: none; }
+.list-head h2 { margin: 0; }
+.action-filter { position: relative; font-size: 11px; }
+.action-filter > summary { list-style: none; cursor: pointer; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; white-space: nowrap; }
+.action-filter > summary::-webkit-details-marker { display: none; }
+.action-filter.active > summary { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.filter-menu { position: absolute; right: 0; z-index: 10; margin-top: 4px; padding: 6px 8px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgb(0 0 0 / 0.15); white-space: nowrap; }
+.filter-menu p { margin: 0 0 4px; }
+.filter-menu label { display: flex; align-items: center; gap: 6px; margin: 2px 0; cursor: pointer; }
 .actions li.editable .delete-action { position: absolute; top: 0; right: 0; }
 .actions .edit-wait { margin-left: 2px; }
 .actions .wait-input { width: 64px; font: inherit; }
@@ -171,6 +184,7 @@ dialog.compare { width: min(96vw, 960px); }
 .effect.unchanged { color: var(--ok); }
 .effect.unknown, .effect.waiting { color: var(--muted); }
 .effect.waiting { border-style: dashed; }
+.effect.auto { color: var(--muted); border-style: dotted; }
 /* Birleştirme penceresi: aday node listesi (küçük ekran görüntüsü + isim + uygunluk) */
 .merge-options { display: grid; gap: 6px; margin: 8px 0; max-height: 40vh; overflow: auto; }
 .merge-option { display: flex; align-items: center; gap: 8px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
@@ -283,7 +297,6 @@ dialog.alert .choice .hint { margin: 4px 2px 0; }
 .replay-steps .time { margin-left: auto; color: var(--muted); white-space: nowrap; }
 .replay-steps small { display: block; color: var(--muted); }
 #replay-secrets .field input { font-family: inherit; }
-.fit-guide { margin: 6px 0; font-size: 12px; font-weight: 600; }
 
 .badge {
   display: inline-block;

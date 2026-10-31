@@ -62,6 +62,7 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'wait' ? `(${
     await panel.click('#btn-settings');
     check('alt sınır varsayılan 1 ve kapalıyken pasif', await panel.inputValue('#settings-min-wait') === '1' && await panel.isDisabled('#settings-min-wait'));
     check('Kaydet başta pasif', await panel.isDisabled('#btn-settings-save'));
+    check('otomatik bekleme varsayılan 10 ms, her zaman aktif', await panel.inputValue('#settings-auto-wait') === '10' && !(await panel.isDisabled('#settings-auto-wait')));
     await panel.check('#settings-record-waits');
     check('işaretleyince alt sınır aktif, Kaydet aktif', !(await panel.isDisabled('#settings-min-wait')) && !(await panel.isDisabled('#btn-settings-save')));
     await panel.fill('#settings-min-wait', '');
@@ -91,7 +92,8 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'wait' ? `(${
     let { s } = await createNode();
     let edge = s.edges.at(-1);
     const acts = edge.actions;
-    check('edge aksiyonları', types(acts).replace(/\(\d+ms,false\)/g, '(…,false)') === 'wait(…,false), click, wait(…,false), click, click, input, click', types(acts));
+    check('edge aksiyonları', types(acts).replace(/\(\d+ms,false\)/g, '(…,false)') === 'wait(…,false), click, wait(…,false), click, wait(10ms,null), click, wait(10ms,null), input, wait(10ms,null), click, wait(10ms,null)', types(acts));
+    check('kaydedilen bekleme otomatiğin yerine geçti, otomatikler işaretli', !acts[2].auto && acts.filter((a) => a.auto).length === 4 && acts.at(-1).auto, types(acts));
     const [first, w] = acts.filter((a) => a.type === 'wait');
     check('node\'dan sonraki bekleme en az 1,4 sn, ekranı değiştirmedi', first && first.ms >= 1400 && first.changed === false, JSON.stringify(first));
     check('bekleme süresi 0,9–1,6 sn, ekranı değiştirmedi', w && w.ms >= 900 && w.ms <= 1600 && w.changed === false, JSON.stringify(w));
@@ -126,8 +128,8 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'wait' ? `(${
     e = s.edges.find((x) => x.id === edge.id);
     check('geri al: 2,5 sn ve orijinal liste düştü', e.actions[0].ms === 2500 && !e.recordedActions, JSON.stringify(e.actions[0]));
 
-    // 4) Anahtar kapalı: bekleme kaydedilmez
-    await send({ type: 'SET_SETTINGS', settings: { ...stored, recordWaits: false } });
+    // 4) Anahtar kapalı: yalnızca otomatik bekleme; süre ayardan
+    await send({ type: 'SET_SETTINGS', settings: { ...stored, recordWaits: false, autoWaitMs: 25 } });
     await page.bringToFront();
     await page.click('#relogin');
     await sleep(1500);
@@ -135,7 +137,7 @@ const types = (actions) => actions.map((a) => a.type + (a.type === 'wait' ? `(${
     await sleep(600);
     ({ s } = await createNode(s.currentNodeId));
     edge = s.edges.at(-1);
-    check('kapalıyken bekleme yok', !edge.actions.some((a) => a.type === 'wait'), types(edge.actions));
+    check('kapalıyken yalnızca otomatik bekleme, ayardaki süreyle', types(edge.actions) === 'click, wait(25ms,null), click, wait(25ms,null)' && edge.actions.filter((a) => a.type === 'wait').every((a) => a.auto), types(edge.actions));
     model = await panel.evaluate(() => graphWalkerModel());
   } finally {
     await ctx.close();

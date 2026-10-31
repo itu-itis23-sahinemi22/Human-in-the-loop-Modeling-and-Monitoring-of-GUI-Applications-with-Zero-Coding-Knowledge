@@ -1,4 +1,4 @@
-// Monitör yardımcılarının birim testi (tarayıcısız; fit-unit.test.js gibi vm ile): tür kataloğu
+// Monitör yardımcılarının birim testi: tür kataloğu
 // (monitor-types.js: parametre doğrulama, ağır desen uyarısı, otomatik ad, özet cümlesi),
 // monitor-store.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme) ve görüntü eşleme
 // (monitor-image.js > findImage: yapay görüntüde parça arama). Geçti / kaldı kararını etkileyen mantık
