@@ -9,12 +9,13 @@
 //                 monitör edge'in SEÇİLEN aksiyonuna bağlanabilir (m.action: o aksiyondan hemen
 //                 sonra kontrol) ya da edge'in tamamına (action = null: her aksiyondan sonra).
 //
-// Monitör modülü altı dosyadır (panel.html'de bu sırayla, panel.js'ten SONRA yüklenir):
+// Monitör modülü yedi dosyadır (panel.html'de bu sırayla, panel.js'ten SONRA yüklenir):
 //   monitor-types.js   tür kataloğu (parametreler, doğrulama, ad ve özet cümlesi)
 //   monitor-store.js   BU DOSYA: veri — storage, normalize, uyarılar, kapsam ve aksiyon yardımcıları
 //   monitor-list.js    Monitörler bölümü, detay alt bölümü, sağ tık menüsü, hale, uyarı pencereleri
 //   monitor-dialog.js  ekle / düzenle formu
 //   monitor-export.js  GraphWalker JSON'una yazma, "Yükle…", graph yedeği
+//   monitor-image.js   görüntü monitörü: parçayı sekmenin ekran görüntüsünde arama (panelde kontrol edilen tek tür)
 //   monitor-run.js     oynatmada kontrol ve ışık listesi, "Bu ekranda şimdi kontrol et"
 // Dosyalar klasik script'tir; birbirlerinin global fonksiyonlarını çağırırlar (modül yok: Emir'in
 // paneli de öyle). panel.js'in global'leri okunur / sarmalanır (state, activeGraph, scenarioView,
@@ -214,7 +215,11 @@ function monitorActionRef(action, index) {
   return { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: actionTarget(action) };
 }
 
+// Aksiyonun hedefi: elementin parmak izi anahtarı ("input:phone") ya da selector'ı. Bekleme aksiyonunun
+// elementi yok; onu süresi ayırır ("wait:10000"): aynı edge'de birden çok bekleme olabilir (Emir'in
+// otomatik beklemeleri de dahil), monitör bağlandığı beklemeyi süresiyle bulur.
 function actionTarget(action) {
+  if (action?.type === 'wait') return Number.isFinite(action.ms) ? `wait:${action.ms}` : null;
   return action?.target?.key ?? action?.selector ?? null;
 }
 
@@ -237,13 +242,20 @@ function resolveMonitorAction(ref, actions) {
   let i = actions.findIndex((a) => sameTarget(a) && a.label === ref.label);
   if (i < 0) i = actions.findIndex(sameTarget);
   if (i < 0 && ref.target === null) i = actions.findIndex((a) => sameType(a) && a.label === ref.label);
+  if (i < 0 && ref.type === 'wait' && sameType(at)) i = ref.index; // süresi değiştirilmiş bekleme (Emir'in ✎'si): aynı sıradaki bekleme
   return i;
 }
 
 // "1. Yaz Fill Username" (Emir'in edge kartındaki satırla aynı: ACTION_TEXT panel.js'te)
 function actionText(action, index) {
   const verb = (typeof ACTION_TEXT !== 'undefined' && ACTION_TEXT[action?.type]) || action?.type || '';
+  if (action?.type === 'wait' && Number.isFinite(action.ms)) return `${index + 1}. ${verb} ${waitSeconds(action.ms)}`; // "2. Bekle 10 sn" (etiket "Wait" yerine süre)
   return `${index + 1}. ${verb} ${action?.label ?? ''}`.trim();
+}
+
+// Bekleme süresi: "10 sn", "1,5 sn", "0,01 sn" (Emir'in edge kartındaki biçimde)
+function waitSeconds(ms) {
+  return `${String(Math.round(ms / 10) / 100).replace('.', ',')} sn`;
 }
 
 // Monitörün aksiyon metni; aksiyon edge'de bulunamıyorsa kayıttaki bilgiyle ve uyarıyla
@@ -276,7 +288,10 @@ function paramsText(m) {
   if (!type) return `Bilinmeyen tür: ${m.type}`;
   const parts = type.params
     .filter((p) => m.params[p.key] !== '' && m.params[p.key] !== null && m.params[p.key] !== undefined && m.params[p.key] !== false)
-    .map((p) => `${p.text}: ${p.kind === 'select' ? p.options.find((o) => o.value === m.params[p.key])?.text ?? m.params[p.key] : p.kind === 'checkbox' ? 'evet' : m.params[p.key]}`);
+    .map((p) => `${p.text}: ${p.kind === 'select' ? p.options.find((o) => o.value === m.params[p.key])?.text ?? m.params[p.key]
+      : p.kind === 'checkbox' ? 'evet'
+        : p.kind === 'image' ? (m.params[p.key]?.width ? `${m.params[p.key].width}×${m.params[p.key].height} px` : '?')
+          : m.params[p.key]}`);
   return [MONITOR_WHEN[type.when]?.text, ...parts].filter(Boolean).join(' · ');
 }
 

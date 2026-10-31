@@ -46,7 +46,9 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `scenarios` | Senaryo listesi: önce "Yeni senaryo", kendiliğinden kayıt, seçim ve hatırlama, yürünemeyen senaryo, silme, yedekte senaryolar |
 | `monitors` | Monitör menüsü ([docs/07](../docs/07-monitorler.md)): tür kartları, node / edge / tüm model monitörü, graph'ta sağ tık menüsü, form yardımcıları, graph'ta hale, GraphWalker JSON'una yazılma ve runner'ın okuması, graph başına saklama, yedekle geri yükleme, sahipsizlik, senaryo görünümü, kalıcılık |
 | `monitor-run` | Monitörlerin kontrolü ([docs/07](../docs/07-monitorler.md#oynatmada-kontrol)): kuralları bozan sayfalarda panelde oynatma, ışık listesi (yeşil / kırmızı, adım izi, ekran görüntüsü), aksiyon tabanlı Input Validation, edge'in aksiyonuna bağlı monitörler, bozulma anındaki görüntülü uyarılar, "Bu ekranda şimdi kontrol et" |
-| `monitor-unit` | Monitör yardımcılarının birim testi (tarayıcısız): parametre doğrulama, ağır desen uyarısı, otomatik ad ve özet cümlesi, aksiyon eşleştirme, storage verisinin normalize edilmesi |
+| `monitor-unit` | Monitör yardımcılarının birim testi (tarayıcısız): parametre doğrulama, ağır desen uyarısı, otomatik ad ve özet cümlesi, aksiyon eşleştirme, storage verisinin normalize edilmesi, görüntü eşleme (`findImage`) |
+| `monitor-wait` | Bekleme aksiyonuna bağlı monitörler ve "olmamalı" kuralı ([docs/07](../docs/07-monitorler.md#bekleme-aksiyonuna-monitör)): "Bekleyiniz" mesajı çıkan sayfada ekranı değiştiren bekleme, bekleme bitince metin / görüntü yok (ya da var) kontrolü, hızlı ve yavaş sayfa, bekleme süresi değişince bağ |
+| `monitor-expect` | Expected Text ve Expected Image monitörleri ([docs/07](../docs/07-monitorler.md#monitör-türleri)): node'a bağlı metin ve görüntü beklentileri, formdan PNG yükleme ve "Ekrandan seç" ile fareyle kesme, "Bu ekranda şimdi kontrol et", oynatmada yeşil / kırmızı ve uyarı görüntüsü, 2× parçanın ölçekle bulunması, dışa aktarımda görüntü |
 
 ## Yeni test
 
