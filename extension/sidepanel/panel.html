@@ -148,7 +148,8 @@
         <button id="btn-replay-stop" class="danger" hidden>Durdur</button>
         <label class="option"><input type="checkbox" id="replay-slow" checked> <span>Yavaş (elementi çerçevele)</span></label>
       </div>
-      <!-- Oynatmadan önce: ekran koşunun ilk node'u değil ya da bekleyen aksiyonlar silinecek -->
+      <!-- Oynatmadan önce: ekran koşunun ilk node'u değil, bekleyen aksiyonlar silinecek ya da
+           ana graph senaryonun kopyasından sonra değişti -->
       <div id="replay-check" class="card highlight" hidden>
         <p id="replay-check-text"></p>
         <ul id="replay-check-reasons" class="reasons"></ul>
@@ -156,6 +157,8 @@
           <!-- Sekme başlangıç node'unun adresinde değilse: sekme o adrese gider (görünen alanı
                oynatma kendisi kurar, replay.js > fitStart) -->
           <button id="btn-replay-fit" hidden>Başlangıç node'una dön</button>
+          <!-- Ana graph kopyadan sonra değiştiyse: kopya yeniden alınır, kontrol tekrarlanır -->
+          <button id="btn-replay-refresh" hidden>Ana graph'tan yenile</button>
           <button id="btn-replay-anyway" class="primary">Yine de oynat</button>
           <button id="btn-replay-cancel">Vazgeç</button>
         </div>

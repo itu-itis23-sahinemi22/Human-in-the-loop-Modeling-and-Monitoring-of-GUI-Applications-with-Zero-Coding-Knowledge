@@ -162,7 +162,8 @@ function check(name, ok, detail = '') {
     r = await rows();
     const dal = r.find((x) => x.name === 'Dal B');
     check('edge silindi: Dal B ⚠ yürünemiyor', dal.warn && dal.meta === 'yürünemiyor', JSON.stringify(dal));
-    check('yürünemeyen: indirme ve oynatma kapalı', await panel.isDisabled('#btn-scenario-download') && await panel.isDisabled('#btn-replay'));
+    // İndirme kapalı (runner ana modeli oynatır); panelde oynatma senaryonun graph'ını (kopya) oynatır, kopyada edge duruyor
+    check('yürünemeyen: indirme kapalı, oynatma kopyayla açık', await panel.isDisabled('#btn-scenario-download') && !(await panel.isDisabled('#btn-replay')));
     check('senaryo silinmedi', (await stored()).some((x) => x.name === 'Dal B'));
     await send({ type: 'UNDO' });
     await sleep(500);

@@ -30,13 +30,16 @@ const REPLAY_STOPPED = 'Oynatma durduruldu.';
 // Oynatmayı başlatır. edges: koşunun edge'leri (state'teki biçim: { id, name, source, target,
 // actions }), nodes: id -> node, secrets: maskeli alanların değerleri (anahtar: hedefin türü ya da
 // selector; bkz. maskedKeys), onUpdate(replay): her adımda ve aksiyonda çağrılır.
+// scenario: oynatılan senaryo { id, graph } (graph: senaryonun kendi graph'ı; edges ve nodes
+// ondan alınır). Oynatma kullanmaz; replay.scenario'da durur, oynatmaya bağlanan kod (ör.
+// senaryoya özel monitörler) hangi senaryonun hangi graph'ının oynatıldığını buradan okur.
 // Döner: { stop(), done } ve done şuna çözülür:
 //   { status: passed | failed | stopped, endNodeId, tabId, steps: [{ edgeId, name, target,
 //     status: pending | running | passed | failed | stopped | skipped, error?, mismatch?,
 //     warnings, duration }] }
-function startReplay({ tabId, edges, nodes, settings, secrets, slow, onUpdate }) {
+function startReplay({ tabId, edges, nodes, settings, secrets, slow, scenario = null, onUpdate }) {
   const replay = {
-    tabId, tabs: [tabId], settings, secrets, slow,
+    tabId, tabs: [tabId], settings, secrets, slow, scenario,
     steps: edges.map((edge) => ({ edgeId: edge.id, name: edge.name, target: edge.target, status: 'pending', warnings: [] })),
     step: -1, action: -1, actionLabel: '',
     attached: new Set(), emulated: new Set(), opened: [], stopped: false, stopReason: null,

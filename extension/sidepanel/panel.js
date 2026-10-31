@@ -1697,12 +1697,15 @@ function renderViewNote() {
     + ' · salt okunur; koşular "Ana graph" sekmesinde düzenlenir.';
   $('view-drift').hidden = !drift.length;
   $('btn-view-refresh').hidden = !drift.length;
-  if (drift.length) {
-    const LIMIT = 5;
-    $('view-drift').textContent = 'Kopyadan sonra ana graph değişti: '
-      + drift.slice(0, LIMIT).map((d) => `${d.name} ${d.change}`).join(', ')
-      + (drift.length > LIMIT ? ` (+${drift.length - LIMIT})` : '') + '. Senaryo graph\'ı olduğu gibi duruyor.';
-  }
+  if (drift.length) $('view-drift').textContent = driftText(drift) + ' Senaryo graph\'ı olduğu gibi duruyor.';
+}
+
+// "Kopyadan sonra ana graph değişti: e_Login değişti, v_Home silindi (+2)."
+function driftText(drift) {
+  const LIMIT = 5;
+  return 'Kopyadan sonra ana graph değişti: '
+    + drift.slice(0, LIMIT).map((d) => `${d.name} ${d.change}`).join(', ')
+    + (drift.length > LIMIT ? ` (+${drift.length - LIMIT})` : '') + '.';
 }
 
 // Kopya ana graph'tan yeniden alınır (monitörler id'yle korunur). Silinen edge'ler kopyadan
@@ -1744,15 +1747,28 @@ function renderDetailsScenarios(item, readOnly) {
 // kullanıcı yine de oynatabilir. Oynatma sürerken background kaydı durdurur; bitince koşu geçtiyse kayıt
 // vardığı node'dan sürer, geçmediyse şu anki node bilinmez (background.js > PANELDE OYNATMA).
 // Graph'ta ilerleme canlı görünür; kalınan adımda fark listesi ve beklenen ekranla görsel
-// karşılaştırma.
+// karşılaştırma. Koşu senaryonun kendi graph'ından oynatılır (replayGraph).
 
-let replay = null;        // sürüyorsa oynatma (replay.js > startReplay)
+let replay = null;       // sürüyorsa oynatma (replay.js > startReplay)
 let replayResult = null;  // son oynatmanın sonucu ve hangi koşu için olduğu (runKey)
 let replayStart = null;   // uyarı kartı açıkken başlatılmayı bekleyen oynatma { tab, edges }
 const replaySecrets = {}; // maskeli alanların değerleri: yalnızca panel açıkken bellekte, saklanmaz
 
+// Oynatılan graph senaryonun kendi graph'ıdır (kopya; scenario.js > scenarioSnapshot), ana graph
+// değil: ana graph kopyadan sonra değiştiyse kopya oynatılır, fark oynatmadan önce söylenir
+// (checkReplay). Ekran görüntüleri kopyada yoktur, node id'siyle ana graph'tan okunur.
+function replayGraph() {
+  return scenario.graph ?? scenarioSnapshot(scenarioGraph(), scenario.runs);
+}
+
 function replayEdges() {
-  return (scenario.runs[scenarioRun] ?? []).map((id) => state.edges.find((e) => e.id === id)).filter(Boolean);
+  const { edges } = replayGraph();
+  return (scenario.runs[scenarioRun] ?? []).map((id) => edges.find((e) => e.id === id)).filter(Boolean);
+}
+
+// Oynatılan graph'taki node (adı, ekranı); kopyada yoksa ana graph'taki.
+function replayNode(id) {
+  return replayGraph().nodes.find((n) => n.id === id) ?? nodeById(id);
 }
 
 // Panelde gösterilen oynatma: süren ya da seçili koşu için en son biten.
@@ -1764,7 +1780,7 @@ function shownReplay() {
 function renderReplay() {
   const edges = replayEdges();
   const running = Boolean(replay);
-  const problem = runProblem(scenarioGraph(), scenario.runs);
+  const problem = runProblem(replayGraph(), scenario.runs);
   $('btn-replay').hidden = running;
   $('btn-replay-stop').hidden = !running;
   $('btn-replay').disabled = !edges.length || Boolean(problem) || Boolean(state.pending) || Boolean(replayStart);
@@ -1776,7 +1792,7 @@ function renderReplay() {
   $('replay-status').hidden = !shown;
   $('replay-steps').replaceChildren(...(shown?.steps ?? []).map(replayStepItem));
   const broken = !running && shown?.steps.find((s) => s.status === 'failed');
-  $('replay-diff').replaceChildren(...(broken?.mismatch ? mismatchLines(broken.mismatch, nodeById(broken.target)) : [])
+  $('replay-diff').replaceChildren(...(broken?.mismatch ? mismatchLines(broken.mismatch, replayNode(broken.target)) : [])
     .map((text) => Object.assign(document.createElement('li'), { textContent: text })));
   $('replay-result-actions').hidden = !(broken?.screenshot && nodeById(broken.target)?.screenshot);
   if (shown) $('replay-status').textContent = replayStatusText(shown, running);
@@ -1788,9 +1804,9 @@ function replayStatusText(shown, running) {
   if (running) {
     const step = shown.steps[shown.step];
     if (!step) return 'Oynatma başlıyor…';
-    const actions = state.edges.find((e) => e.id === step.edgeId)?.actions.length ?? 0;
+    const actions = replayGraph().edges.find((e) => e.id === step.edgeId)?.actions.length ?? 0;
     return `Oynatılıyor · adım ${shown.step + 1}/${total}: ${step.name}`
-      + (shown.actionLabel ? ` · aksiyon ${shown.action + 1}/${actions}: ${shown.actionLabel}` : ` · ekran "${nodeById(step.target)?.name}" mi?`);
+      + (shown.actionLabel ? ` · aksiyon ${shown.action + 1}/${actions}: ${shown.actionLabel}` : ` · ekran "${replayNode(step.target)?.name}" mi?`);
   }
   const time = seconds(shown.steps.reduce((sum, s) => sum + (s.duration ?? 0), 0));
   if (shown.status === 'passed') return `Geçti · ${total}/${total} edge · ${time}`;
@@ -1802,7 +1818,7 @@ function replayStepItem(step) {
   li.className = step.status;
   li.innerHTML = '<span class="mark"></span><span class="name"></span><span class="time"></span>';
   li.querySelector('.mark').textContent = { passed: '✓', failed: '✗', stopped: '■', running: '▶', skipped: '–', pending: '·' }[step.status];
-  li.querySelector('.name').textContent = `${step.name} → ${nodeById(step.target)?.name ?? step.target}`;
+  li.querySelector('.name').textContent = `${step.name} → ${replayNode(step.target)?.name ?? step.target}`;
   for (const note of [step.error, ...step.warnings].filter(Boolean)) {
     li.querySelector('.name').append(Object.assign(document.createElement('small'), { textContent: note }));
   }
@@ -1877,8 +1893,11 @@ $('btn-replay').onclick = async () => {
 // (replay.js > fitStart). Boyut farklıysa ekran burada karşılaştırılmaz (state ekrana sığan
 // elementlerden oluşur, yanlış boyutta tutmayabilir); karşılaştırmayı oynatma boyutu kurduktan
 // sonra yapar.
+// Ana graph senaryonun kopyasından sonra değiştiyse kartta söylenir: oynatılan kopyadır,
+// değişiklikleri almak için "Ana graph'tan yenile".
 async function checkReplay(tab, edges, { startIfClear = true } = {}) {
-  const start = nodeById(scenarioGraph().start);
+  const start = replayNode(replayGraph().start);
+  const drift = snapshotDrift(state, scenario.graph, scenario.runs);
   const page = await chrome.tabs.sendMessage(tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
   const address = page?.url ?? (await chrome.tabs.get(tab.id).catch(() => null))?.url ?? '';
   const addressDiffers = !sameAddress(address, start.url);
@@ -1890,6 +1909,7 @@ async function checkReplay(tab, edges, { startIfClear = true } = {}) {
     ...(page && addressDiffers && viewportDiffers ? [`Sekme başlangıç node'unun ("${start.name}") adresinde değil.`] : []),
     ...(check && !check.ok ? mismatchLines(check, start) : []),
     ...(state.buffer.length ? [`"Bekleyen aksiyonlar"daki ${state.buffer.length} aksiyon silinecek: oynatma kaydı durdurur.`] : []),
+    ...(drift.length ? [`${driftText(drift)} Oynatma senaryonun graph'ını (kopyayı) oynatır; değişiklikleri almak için "Ana graph'tan yenile".`] : []),
   ];
   if (!reasons.length) {
     closeReplayCheck();
@@ -1900,6 +1920,7 @@ async function checkReplay(tab, edges, { startIfClear = true } = {}) {
     ? `Başlangıç node'ları aynı değil: bu sekme koşunun ilk node'unun ("${start.name}") ekranında değil. Koşu doğru sonuç vermeyecektir.`
     : 'Oynatmadan önce:';
   $('replay-check-reasons').replaceChildren(...reasons.map((text) => Object.assign(document.createElement('li'), { textContent: text })));
+  $('btn-replay-refresh').hidden = !drift.length;
   $('btn-replay-fit').hidden = !addressDiffers;
   $('btn-replay-fit').title = addressDiffers ? `${start.url} adresine gider` : '';
   $('btn-replay-fit').classList.toggle('primary', addressDiffers);
@@ -1929,6 +1950,16 @@ $('btn-replay-fit').onclick = async () => {
   }
 };
 
+// "Ana graph'tan yenile" (kartta): kopya yeniden alınır, kontrol yenilenmiş koşuyla tekrarlanır.
+$('btn-replay-refresh').onclick = async () => {
+  const pending = replayStart;
+  if (!pending) return;
+  await persistScenario();
+  const edges = replayEdges();
+  if (!edges.length) return closeReplayCheck();
+  await checkReplay(pending.tab, edges, { startIfClear: false });
+};
+
 $('btn-replay-anyway').onclick = () => {
   const start = replayStart;
   closeReplayCheck();
@@ -1951,9 +1982,11 @@ function runKey() {
 async function runReplay(tab, edges) {
   const key = runKey();
   await send({ type: 'REPLAY', active: true });
+  const graph = replayGraph();
   replay = startReplay({
     tabId: tab.id, edges, settings, secrets: replaySecrets, slow: $('replay-slow').checked,
-    nodes: new Map(state.nodes.map((n) => [n.id, n])),
+    nodes: new Map(graph.nodes.map((n) => [n.id, n])),
+    scenario: { id: scenario.id, graph },
     onUpdate: renderScenario,
   });
   renderStatus();
