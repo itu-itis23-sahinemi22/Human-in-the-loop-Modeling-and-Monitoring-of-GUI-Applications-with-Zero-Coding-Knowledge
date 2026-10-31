@@ -518,9 +518,10 @@ panel.js ▸ Üret
    │   { type: 'plan', graph: { start, nodes, edges }, goal, target, seed })   ekran görüntüsü yok
    ▼
 Chrome ▸ host.cmd ▸ node host.js            (%LOCALAPPDATA%\GraphRecorder, kurulum bir kez)
-   │ graphwalker.js ▸ java -jar graphwalker-cli.jar offline ...   (çağrı başına ~1 sn)
+   │ graphwalker.js ▸ java -jar graphwalker-cli.jar offline ...   (Java sürümü; çağrı başına ~1 sn)
+   │               ya da graphwalker.exe offline ...           (Rust sürümü; kurulumda seçilir)
    ▼
-{ runs, planner: { engine: "graphwalker", goal, generator, seed, deadEnd? }, unreachable }
+{ runs, planner: { engine: "graphwalker", cli, goal, generator, seed, deadEnd? }, unreachable }
    ▼
 panel: koşular senaryoya yazılır ve kaydedilir; bildirim kapsamayı ve ulaşılamayanları söyler
 ```

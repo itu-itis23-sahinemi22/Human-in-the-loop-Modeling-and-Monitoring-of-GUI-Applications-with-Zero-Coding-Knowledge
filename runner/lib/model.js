@@ -49,15 +49,15 @@ export function loadModel(file) {
 }
 
 // Yol: virgülle ayrılmış edge adları ya da id'leri ("e_Login,e_Cart") ya da bir dosya: JSON
-// dizi ya da GraphWalker'ın "offline" çıktısı (her satırda bir JSON; currentElementID varsa
-// o, yoksa currentElementName kullanılır).
+// dizi ya da GraphWalker'ın "offline" çıktısı (her satırda bir JSON; id varsa o, yoksa
+// currentElementName kullanılır: Java --verbose'da currentElementID, Rust her zaman currentElementId).
 export function readPath(value) {
   if (!existsSync(value)) return value.split(',').map((item) => item.trim()).filter(Boolean);
   const text = readText(value).trim();
   if (text.startsWith('[')) return JSON.parse(text);
   return text.split(/\r?\n/).filter((line) => line.trim().startsWith('{')).map((line) => {
     const step = JSON.parse(line);
-    return step.currentElementID ?? step.currentElementName;
+    return step.currentElementID ?? step.currentElementId ?? step.currentElementName;
   });
 }
 

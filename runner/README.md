@@ -121,10 +121,11 @@ Başarısız adımın ekran görüntüsü PNG olarak da aynı klasöre kaydedili
 
   ```
   java -jar graphwalker-cli-4.3.3.jar offline -m SwagLabs.json "random(edge_coverage(100))" > yol.txt
+  graphwalker.exe offline -m SwagLabs.json "random(edge_coverage(100))" > yol.txt
   node run.js SwagLabs.json --path yol.txt --secrets secrets.json
   ```
 
-  Çıktının düz biçimi (`currentElementName`) de `--verbose` biçimi (`currentElementID`) de okunur. Yoldaki node'lar yalnızca tutarlılık için kontrol edilir. GraphWalker 4.3.3, Java 17 ya da 21 ister ([docs/04 > GraphWalker ile doğrulama](../docs/04-veri-modeli.md#graphwalker-ile-doğrulama)).
+  İlk satır GraphWalker'ın Java sürümü, ikincisi Rust sürümü. Çıktıda id varsa o (Java `--verbose`: `currentElementID`; Rust her zaman: `currentElementId`), yoksa `currentElementName` okunur. Yoldaki node'lar yalnızca tutarlılık için kontrol edilir. Java sürümü (4.3.3) Java 17 ya da 21 ister; Rust sürümü derlenmiş bir `graphwalker.exe`'dir ([Planlayıcı > Kurulum](#kurulum-bir-kez-windows), [docs/04 > GraphWalker ile doğrulama](../docs/04-veri-modeli.md#graphwalker-ile-doğrulama)).
 
 ### Gizli değerler
 
@@ -152,22 +153,40 @@ Başarısız adımın ekran görüntüsü PNG olarak da aynı klasöre kaydedili
 
 ## Planlayıcı: GraphWalker ile senaryo
 
-Koşuları GraphWalker CLI 4.3.3 üretir (`planner/graphwalker.js`). İki yoldan kullanılır, ikisi aynı senaryoyu üretir:
+Koşuları GraphWalker CLI üretir (`planner/graphwalker.js`). İki sürümden biri kullanılır:
+
+- **Java sürümü:** graphwalker-cli 4.3.3 jar'ı.
+- **Rust sürümü:** [graphwalker-rs](https://github.com/GraphWalker/graphwalker-rs) 1.0.4, `graphwalker.exe`.
+
+İki sürümün komutu (`offline --seed N -m <model> <generator>`), generator dili, model JSON'u ve çıktısı aynıdır. Planlayıcı ikisinde de aynı hedefleri aynı yoldan üretir. Hangisinin kullanılacağı kurulumda seçilir. Planlayıcı iki yoldan kullanılır, ikisi aynı senaryoyu üretir:
 
 - **Panelden:** Senaryo bölümünde **Strateji** listesinde "GraphWalker: tüm edge'ler", "tüm node'lar", "bir node'a ulaş"; tohum (boşsa rastgele) ve **Üret**. Eklenti bilgisayarda program çalıştıramaz; Chrome, kayıtlı bir programı (native messaging host, `planner/host.js`) kendisi başlatır ve onunla konuşur. Host bir kez kurulur (aşağıda).
-- **Komut satırından:** `node plan.js` (kurulum gerekmez, `--java` ve `--jar` verilirse).
+- **Komut satırından:** `node plan.js`. Kurulum gerekmez, `--graphwalker` ya da `--jar` ve `--java` verilmesi yeterli.
 
 ### Kurulum (bir kez, Windows)
 
-Gerekenler: Node.js (runner için zaten), **Java 17 ya da 21** (GraphWalker 4.3.3, Java 25 ile çalışmaz) ve **GraphWalker CLI jar'ı** ([graphwalker-cli-4.3.3.jar](https://github.com/GraphWalker/graphwalker-project/releases/tag/4.3.3), 47 MB).
+Gerekenler: Node.js (runner için zaten) ve GraphWalker'ın iki sürümünden biri:
 
-`runner\install-planner.cmd`'ye çift tıklayın (ya da `install-planner.cmd --jar C:\yol\graphwalker-cli-4.3.3.jar`). Kurulum:
+- **Java sürümü:** **Java 17 ya da 21** (GraphWalker 4.3.3, Java 25 ile çalışmaz) ve **GraphWalker CLI jar'ı** ([graphwalker-cli-4.3.3.jar](https://github.com/GraphWalker/graphwalker-project/releases/tag/4.3.3), 47 MB).
+- **Rust sürümü:** derlenmiş **`graphwalker.exe`**; Java gerekmez. graphwalker-rs'in GitHub sürümlerinde hazır CLI yoktur, yalnızca `graphwalker-mcp` yayımlanır. CLI kaynaktan derlenir. Bunun için Rust 1.88 ya da sonrası gerekir ([rustup](https://rustup.rs)); Windows'ta ayrıca Visual Studio C++ Build Tools gerekir:
 
-1. Java 17 / 21'i bulur: `JAVA_HOME`, `PATH` ve bilinen kurulum klasörleri (Program Files altında Java, Eclipse Adoptium, Microsoft, Zulu, Amazon Corretto, BellSoft); en yenisini seçer. Bulamazsa Temurin 21 bağlantısını verip durur; `--java` ile bir `java.exe` gösterilebilir.
-2. Jar'ın yolunu sorar (bir önceki kurulumdakini önerir) ve Java'yla çalıştırıp sürümünü okur.
-3. `planner/host.js` ve `planner/graphwalker.js`'i `%LOCALAPPDATA%\GraphRecorder`'a kopyalar; ayar dosyasını (`config.json`: Java, jar, Node), `host.cmd`'yi ve host manifestini (`com.graphrecorder.planner.json`) yazar. Manifest yalnızca bu eklentinin kimliğine izin verir; kimlik `extension/manifest.json`'daki `key`'den hesaplanır.
+  ```
+  git clone https://github.com/GraphWalker/graphwalker-rs.git
+  cd graphwalker-rs
+  cargo build --release -p graphwalker
+  ```
+
+  Çıktı `target\release\graphwalker.exe` olur. `graphwalker.exe --version` komutu `graphwalker 1.0.4 (git …)` yazmalı.
+
+`runner\install-planner.cmd`'ye çift tıklayın. Yolu doğrudan da verebilirsiniz: `install-planner.cmd --jar C:\yol\graphwalker-cli-4.3.3.jar` ya da `install-planner.cmd --graphwalker C:\yol\graphwalker.exe`. Kurulum:
+
+1. GraphWalker'ın yolunu sorar: jar ya da `graphwalker.exe`. Bir önceki kurulumdakini önerir. Sürümü uzantıdan anlar: `.jar` Java, diğeri Rust.
+2. Jar verildiyse Java 17 / 21'i bulur: `JAVA_HOME`, `PATH` ve bilinen kurulum klasörlerine bakar (Program Files altında Java, Eclipse Adoptium, Microsoft, Zulu, Amazon Corretto, BellSoft) ve en yenisini seçer. Bulamazsa Temurin 21 bağlantısını verip durur; `--java` ile bir `java.exe` gösterilebilir. Sonra GraphWalker'ı `--version` ile çalıştırıp sürümünü okur.
+3. `planner/host.js` ve `planner/graphwalker.js`'i `%LOCALAPPDATA%\GraphRecorder`'a kopyalar. Ayar dosyasını (`config.json`: `cli` (`java` / `rust`), Java ve jar ya da `binary`, Node), `host.cmd`'yi ve host manifestini (`com.graphrecorder.planner.json`) yazar. Manifest yalnızca bu eklentinin kimliğine izin verir; kimlik `extension/manifest.json`'daki `key`'den hesaplanır.
 4. Chrome, Chromium ve Edge için `HKCU\Software\...\NativeMessagingHosts\com.graphrecorder.planner` kayıt anahtarını ekler (yönetici yetkisi gerekmez).
 5. Host'u bir "ping" isteğiyle dener.
+
+Aynı anda tek sürüm kuruludur; sürüm değiştirmek (Java ↔ Rust) için kurulum yeniden çalıştırılır. Bu değişiklikten önce yapılmış kurulumların ayar dosyasında `cli` alanı yoktur; bunlar Java sayılır.
 
 Host dosyaları kopya olduğu için repo taşınsa da çalışır; `planner/` altındaki kod değişirse kurulum yeniden çalıştırılır. Repo yolunda Türkçe karakter olabileceği için (`Masaüstü`) `host.cmd` yalnızca kendi klasörünü (`%~dp0`) ve Node'un yolunu içerir: `cmd` dosyadaki ASCII olmayan yolları yanlış okur. Kaldırmak: `install-planner.cmd --uninstall`.
 
@@ -177,10 +196,16 @@ Host dosyaları kopya olduğu için repo taşınsa da çalışır; `planner/` al
 node plan.js SwagLabs.json --seed 42 > SwagLabs-GraphWalker.json
 node plan.js SwagLabs.json --goal nodes --out SwagLabs-Nodes.json
 node plan.js SwagLabs.json --goal node --target v_Cart --jar C:\yol\graphwalker-cli-4.3.3.jar
+node plan.js SwagLabs.json --seed 42 --graphwalker C:\yol\graphwalker.exe > SwagLabs-Rust.json
 node run.js SwagLabs-GraphWalker.json --secrets secrets.json
 ```
 
-Java ve jar: `--java` / `--jar` > ortam değişkenleri (`GRAPHWALKER_JAVA`, `GRAPHWALKER_JAR`) > kurulumun ayar dosyası. Özet (koşu sayısı, kapsama, tohum, ulaşılamayanlar) standart hataya yazılır.
+Hangi sürümün kullanılacağı şu sırayla belirlenir:
+1. Komut satırı: `--graphwalker` (Rust) ya da `--jar` / `--java` (Java). `--graphwalker` ile `--jar` birlikte verilmez.
+2. Ortam değişkenleri: `GRAPHWALKER_BIN` (Rust); `GRAPHWALKER_JAR`, `GRAPHWALKER_JAVA` (Java).
+3. Kurulumun ayar dosyası.
+
+Özet (koşu sayısı, kapsama, tohum, sürüm, ulaşılamayanlar) standart hataya yazılır.
 
 ### Nasıl üretilir?
 
@@ -192,17 +217,17 @@ Java ve jar: `--java` / `--jar` > ortam değişkenleri (`GRAPHWALKER_JAVA`, `GRA
 
 - **Ulaşılabilen kısım.** GraphWalker'a yalnızca başlangıçtan ulaşılabilen node ve edge'ler verilir: ulaşılamayan bir edge'i hiçbir yol kapsayamaz (GraphWalker'ın `a_star`'ı orada bitmez). Ulaşılamayanlar panelde ve komut satırında ayrıca söylenir.
 - **Adlar id'dir.** GraphWalker `reached_edge`'i adla arar; kayıtta aynı adlı edge'ler olabilir (iki `e_Resize`). Planlama modelinde her edge'in adı id'sidir; yollar doğrudan id olarak döner.
-- **Çıkmaz node.** `random` çıkış edge'i olmayan bir node'a varınca GraphWalker `NoPathFoundException` verir; o ana kadarki yol 1. koşu olur (`planner.deadEnd` o node). Kapsanmamış her edge (node) için başlangıçtan `a_star(reached_edge(e))` ile yeni koşu açılır, her koşudan sonra kapsananlar düşer. Başlangıçtan en uzak olanlar önce işlenir: onların en kısa yolu yakındakileri de kapsar, koşu sayısı azalır.
-- **Tohum.** `random` tohumla çalışır (`offline --seed`); tohum verilmezse rastgele seçilir ve senaryoya yazılır (`planner.seed`): aynı tohum, aynı graph'ta aynı koşuları verir. `a_star` rastgele değildir.
-- **Üst sınır.** `length(N)` (N = 20 × edge sayısı + 20), `random`'un bir döngüde uzayıp gitmesine karşıdır; sınıra varılırsa kalanlar `a_star` koşularıyla kapsanır. Her GraphWalker çağrısı 30 sn ile sınırlıdır; her çağrı Java'nın açılışıyla yaklaşık 1 sn sürer.
-- Senaryo dosyasında `planner`: `{ engine: "graphwalker", goal, generator, seed, deadEnd?, target? }`.
+- **Çıkmaz node.** `random` çıkış edge'i olmayan bir node'a varınca GraphWalker hata verir. Java sürümü `NoPathFoundException ... element: <node>` yazar; Rust sürümü `No path found from vertex '<node>'` yazıp 1 koduyla çıkar. O ana kadarki yol 1. koşu olur (`planner.deadEnd` o node). Kapsanmamış her edge (node) için başlangıçtan `a_star(reached_edge(e))` ile yeni koşu açılır, her koşudan sonra kapsananlar düşer. Başlangıçtan en uzak olanlar önce işlenir: onların en kısa yolu yakındakileri de kapsar, koşu sayısı azalır.
+- **Tohum.** `random` tohumla çalışır (`offline --seed`). Tohum verilmezse rastgele seçilir ve senaryoya yazılır (`planner.seed`). Aynı tohum, aynı graph'ta **aynı sürümle** aynı koşuları verir. İki sürümün rastgele sayı üreteci farklı olduğu için hangi sürümün kullanıldığı da senaryoya yazılır (`planner.cli`). Tohum 1 ya da daha büyük olmalı: Rust sürümünde 0 "rastgele" demektir. `a_star` rastgele değildir.
+- **Üst sınır.** `length(N)` (N = 20 × edge sayısı + 20), `random`'un bir döngüde uzayıp gitmesine karşıdır; sınıra varılırsa kalanlar `a_star` koşularıyla kapsanır. Her GraphWalker çağrısı 30 sn ile sınırlıdır. Java sürümünde her çağrı, Java'nın açılışı yüzünden yaklaşık 1 sn sürer.
+- Senaryo dosyasında `planner`: `{ engine: "graphwalker", cli: "java" | "rust", goal, generator, seed, deadEnd?, target? }`. Rust ile üretilen senaryonun panel özetinde "GraphWalker (Rust)" yazar.
 
 **Sınırlar:**
 
 - `random` uzun koşular üretebilir (tüm node'lar için aynı edge'lerden defalarca geçer). İyileştirme: hedef başına generator seçimi (`quick_random`, `weighted_random`).
 - Kurulum yalnızca Windows içindir (kayıt anahtarı); macOS / Linux'ta host manifesti başka bir klasöre yazılır. Komut satırı her yerde çalışır.
-- Jar'ı kullanıcı verir. Chrome Web Store dağıtımında kurulumun jar'ı kendisi indirmesi (GitHub sürümü) daha uygun olur; ileride değişebilir.
-- Host Node.js ile çalışır; Node'u olmayan kullanıcı için host tek bir `.exe`'ye derlenebilir ya da Java'yla yazılabilir (Java zaten gerekli).
+- Jar'ı ya da `graphwalker.exe`'yi kullanıcı verir. Rust sürümünü kullanıcı kendisi derler, çünkü hazır CLI sürümü yok. Chrome Web Store dağıtımında kurulumun jar'ı kendisi indirmesi (GitHub sürümü) daha uygun olur; ileride değişebilir.
+- Host Node.js ile çalışır; Node'u olmayan kullanıcı için host tek bir `.exe`'ye derlenebilir ya da Java'yla yazılabilir (Java sürümünde Java zaten gerekli).
 
 ---
 
@@ -276,6 +301,6 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `lib/scenario.js` | Girdi: senaryo dosyası ya da model ve yol; eklentinin `scenario.js`'i (kapsama) |
 | `lib/report.js` | Raporlar: `report.json`, `report.html`, `junit.xml` |
 | `plan.js` | Planlayıcının komut satırı: modelden GraphWalker ile senaryo |
-| `planner/graphwalker.js` | Planlayıcı: ulaşılabilen kısım, GraphWalker `offline` çağrıları, çıkmaz node, tohum; Java ve jar'ı bulmak |
+| `planner/graphwalker.js` | Planlayıcı: ulaşılabilen kısım, GraphWalker `offline` çağrıları (Java ya da Rust sürümü), çıkmaz node, tohum; Java'yı bulmak |
 | `planner/host.js` | Native messaging host: panelin isteğini planlayıcıya iletir |
-| `planner/install.js`, `install-planner.cmd` | Host kurulumu: Java ve jar, dosyalar, kayıt anahtarı, deneme |
+| `planner/install.js`, `install-planner.cmd` | Host kurulumu: GraphWalker (jar ve Java ya da `graphwalker.exe`), dosyalar, kayıt anahtarı, deneme |
