@@ -15,7 +15,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
 // monitor-types.js tamamen saf: olduğu gibi yüklenir
 const typesSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-types.js'), 'utf8');
 // monitor-store.js storage ve panel'e bağlı; yalnızca saf fonksiyonlar adlarıyla çıkarılır
-const monitorsSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-store.js'), 'utf8');
+// Satır sonları \n'e çevrilir: Windows'ta core.autocrlf dosyayı \r\n ile çıkarır, desenler \n arar
+const monitorsSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-store.js'), 'utf8').replace(/\r\n/g, '\n');
 const pick = (name) => {
   const match = monitorsSource.match(new RegExp(`\\n(?:async )?function ${name}\\([^]*?\\n}\\n`));
   if (!match) throw new Error(`monitor-store.js'te ${name} bulunamadı`);
