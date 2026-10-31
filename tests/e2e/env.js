@@ -24,4 +24,11 @@ function outDir(name) {
   return dir;
 }
 
-module.exports = { chromium, REPO, EXT, CHROME, outDir };
+// Panelde oynatma: "Koşuyu oynat"tan sonra açılan temizlik penceresinde "Temizlemeden oynat"
+// (sidepanel/panel.js > TEMİZLİK). Pencere maskeli değer kontrolünden sonra açılır.
+async function skipCleanup(panel) {
+  await panel.waitForFunction(() => document.getElementById('cleanup-dialog').open, null, { timeout: 10000 });
+  await panel.evaluate(() => document.getElementById('btn-cleanup-skip').click());
+}
+
+module.exports = { chromium, REPO, EXT, CHROME, outDir, skipCleanup };

@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
-const { chromium, REPO, EXT, CHROME, outDir } = require('./env');
+const { chromium, REPO, EXT, CHROME, outDir, skipCleanup } = require('./env');
 const OUT = outDir('multiclick');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -127,6 +127,7 @@ const types = (actions) => actions.filter((a) => !a.auto).map((a) => a.type + (a
     await page.bringToFront();
     await sleep(800);
     await panel.evaluate(() => { replayResult = null; document.getElementById('replay-slow').checked = false; document.getElementById('btn-replay').click(); });
+    await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
     await sleep(800);
     if (await panel.evaluate(() => !document.getElementById('replay-check').hidden)) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
     await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 60000 });

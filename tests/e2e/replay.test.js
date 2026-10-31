@@ -4,7 +4,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { chromium, REPO, EXT, CHROME, outDir } = require('./env');
+const { chromium, REPO, EXT, CHROME, outDir, skipCleanup } = require('./env');
 
 const ZOOM = Number(process.argv.find((a) => a.startsWith('--zoom='))?.slice(7) ?? 1);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -144,6 +144,7 @@ function check(name, ok, detail = '') {
     await page0.bringToFront();
     await sleep(800);
     await panel.evaluate(() => document.getElementById('btn-replay').click());
+    await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
     await sleep(800);
     const warn = await panel.evaluate(() => ({ hidden: document.getElementById('replay-check').hidden, text: document.getElementById('replay-check-text').textContent }));
     check('yanlış başlangıç: uyarı kartı', !warn.hidden && warn.text.includes("Başlangıç node'ları aynı değil") && warn.text.includes('doğru sonuç vermeyecektir'), warn.text);
@@ -155,6 +156,7 @@ function check(name, ok, detail = '') {
     await sleep(800);
     const started = Date.now();
     await panel.evaluate(() => document.getElementById('btn-replay').click());
+    await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
     await sleep(500);
     const card = await panel.evaluate(() => (document.getElementById('replay-check').hidden ? null : document.getElementById('replay-check-reasons').textContent));
     check('başlangıç doğru: yalnızca bekleyen aksiyon uyarısı', card === null || (card.includes('silinecek') && !card.includes('beklenen')), String(card));
@@ -196,6 +198,7 @@ function check(name, ok, detail = '') {
     await page0.bringToFront();
     await sleep(800);
     await panel.evaluate(() => document.getElementById('btn-replay').click());
+    await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
     await sleep(500);
     // bekleyen 1 aksiyon var: uyarı kartı
     const warn2 = await panel.evaluate(() => ({ hidden: document.getElementById('replay-check').hidden, reasons: document.getElementById('replay-check-reasons').textContent }));
@@ -227,6 +230,7 @@ function check(name, ok, detail = '') {
     await page0.bringToFront();
     await sleep(800);
     await panel.evaluate(() => { document.getElementById('replay-slow').checked = true; document.getElementById('btn-replay').click(); });
+    await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
     await sleep(500);
     if (await panel.evaluate(() => !document.getElementById('replay-check').hidden)) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
     await sleep(1500);

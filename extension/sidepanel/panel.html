@@ -253,6 +253,25 @@
   <!-- AYARLAR penceresi (sağ üstteki çark açar). Hangi aksiyon tipleri kaydedilsin, hangi
        etkileşimli türler state'e girsin. Listeleri panel.js, settings.js'ten doldurur.
        Değişiklik "Kaydet"e basılınca uygulanır. "Sıfırla" ayarları silmez. -->
+  <!-- OYNATMADAN ÖNCE TEMİZLİK (panel.js > TEMİZLİK): "Koşuyu oynat" açar. Senaryonun her sitesi
+       ve altında silinebilecek veriler; seçim senaryoya kaydedilir. Siteleri panel.js doldurur. -->
+  <dialog id="cleanup-dialog" class="settings cleanup" aria-labelledby="cleanup-title">
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="cleanup-title">Oynatmadan önce temizlik</h2>
+        <button id="btn-cleanup-close" class="icon" title="Vazgeç" aria-label="Vazgeç">✕</button>
+      </div>
+      <p class="hint">Panelde oynatma bu tarayıcıda çalışır; site önceki oturumdan kalan verileriyle açılır (giriş yapılmış, sepet dolu…). Seçili veriler oynatmadan önce silinir ve sekme koşunun başlangıç adresine gider. Seçim bu senaryoya kaydedilir. Bir verinin üzerine gelince ne olduğu yazar.</p>
+      <div id="cleanup-sites"></div>
+      <p class="hint">Silinen veri geri gelmez ve bu tarayıcının kendisinden silinir: çerezler silinirse o sitedeki oturumunuz kapanır. Çerezler sitenin alan adının tamamı için silinir.</p>
+      <div class="toolbar">
+        <button id="btn-cleanup-run" disabled>Temizle ve oynat</button>
+        <button id="btn-cleanup-skip" class="primary">Temizlemeden oynat</button>
+        <button id="btn-cleanup-cancel">Vazgeç</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="settings-dialog" class="settings" aria-labelledby="settings-title">
     <div class="dialog-body">
       <div class="title-row">

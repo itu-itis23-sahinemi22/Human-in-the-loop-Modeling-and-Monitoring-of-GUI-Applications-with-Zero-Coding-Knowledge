@@ -1258,9 +1258,9 @@ function noteScenarioRemoval(next) {
 async function persistScenario({ copy = true } = {}) {
   if (!scenario.id) return;
   if (copy) scenario.graph = scenarioSnapshot(scenarioGraph(), scenario.runs, scenario.graph);
-  const { id, name, start, planner, runs } = scenario;
+  const { id, name, start, planner, runs, cleanup } = scenario;
   const sent = JSON.stringify(runs); // koşular yerinde değişir: gönderilen hâli
-  const response = await chrome.runtime.sendMessage({ type: 'SAVE_SCENARIO', scenario: { id, name, start, planner, runs, copy } });
+  const response = await chrome.runtime.sendMessage({ type: 'SAVE_SCENARIO', scenario: { id, name, start, planner, runs, cleanup, copy } });
   if (response?.error) return showMessage(response);
   if (scenario.id !== id) return;
   const renamed = response?.name && scenario.name !== response.name;
@@ -1600,11 +1600,13 @@ $('btn-scenario-clear').onclick = () => {
 
 // Senaryo dosyası: model dosyasıyla aynı klasöre indirilmesi beklenir (runner model yolunu
 // senaryoya göre çözer). Dosya adı model ve senaryo adından: SwagLabs-GirisAkisi.json. start
-// yalnızca graph'ın başlangıcı dışında bir node seçildiyse yazılır.
+// yalnızca graph'ın başlangıcı dışında bir node seçildiyse, cleanup (oynatmadan önce temizlik)
+// yalnızca bir şey seçildiyse yazılır.
 $('btn-scenario-download').onclick = () => {
   const runs = scenario.runs.filter((r) => r.length);
   const graph = scenarioGraph();
   const model = modelName();
+  const cleanup = normalizeCleanup(scenario.cleanup);
   downloadJson(`${model}-${toPascalCase(scenario.name ?? '') || 'Senaryo'}.json`, {
     format: SCENARIO_FORMAT,
     name: scenario.name,
@@ -1613,6 +1615,7 @@ $('btn-scenario-download').onclick = () => {
     planner: scenario.planner,
     runs,
     coverage: coverageOf(graph, runs),
+    ...(Object.keys(cleanup).length && { cleanup }), // panelde oynatmadan önce temizlik (runner kullanmaz)
     graph: scenario.graph, // senaryo graph'ı (runner kullanmaz)
   });
 };
@@ -1632,7 +1635,7 @@ $('scenario-file').onchange = async () => {
     const problem = runProblem({ ...scenarioGraph(), start: start ?? state.startNodeId }, json.runs);
     if (problem) throw new Error(`Senaryo bu graph'la uyuşmuyor: ${problem}`);
     const name = json.name ?? file.name.replace(/\.json$/i, '');
-    await createScenario({ name, start, planner: json.planner ?? { engine: 'manual' }, runs: json.runs.map((run) => [...run]) },
+    await createScenario({ name, start, planner: json.planner ?? { engine: 'manual' }, runs: json.runs.map((run) => [...run]), cleanup: normalizeCleanup(json.cleanup) },
       { notice: `"${name}" yüklendi: ${json.runs.length} koşu.` });
   } catch (error) {
     showMessage({ error: `Senaryo yüklenemedi: ${error.message}` });
@@ -1754,6 +1757,8 @@ function renderDetailsScenarios(item, readOnly) {
 let replay = null;       // sürüyorsa oynatma (replay.js > startReplay)
 let replayResult = null;  // son oynatmanın sonucu ve hangi koşu için olduğu (runKey)
 let replayStart = null;   // uyarı kartı açıkken başlatılmayı bekleyen oynatma { tab, edges }
+let cleanupStart = null;  // temizlik penceresi açıkken başlatılmayı bekleyen oynatma { tab, edges } (TEMİZLİK)
+let cleaning = false;     // oynatmadan önce site verileri siliniyor: Koşuyu oynat kilitli
 const replaySecrets = {}; // maskeli alanların değerleri: yalnızca panel açıkken bellekte, saklanmaz
 
 // Oynatılan graph senaryonun kendi graph'ıdır (kopya; scenario.js > scenarioSnapshot), ana graph
@@ -1785,7 +1790,7 @@ function renderReplay() {
   const problem = runProblem(replayGraph(), scenario.runs);
   $('btn-replay').hidden = running;
   $('btn-replay-stop').hidden = !running;
-  $('btn-replay').disabled = !edges.length || Boolean(problem) || Boolean(state.pending) || Boolean(replayStart);
+  $('btn-replay').disabled = !edges.length || Boolean(problem) || Boolean(state.pending) || Boolean(replayStart) || cleaning;
   $('btn-replay').title = state.pending ? 'Önce bekleyen "aynı node mu?" sorusunu cevaplayın.' : edges.length ? '' : 'Önce koşuya edge ekleyin.';
   $('replay-slow').disabled = running;
   renderReplaySecrets(edges, running);
@@ -1875,7 +1880,8 @@ function renderReplaySecrets(edges, running) {
   for (const input of $('replay-secrets').querySelectorAll('input')) input.disabled = running;
 }
 
-// "Koşuyu oynat": önce kontroller. Uyarı varsa kart açılır, kullanıcı karar verir.
+// "Koşuyu oynat": önce kontroller, sonra temizlik penceresi (TEMİZLİK), sonra başlangıç
+// kontrolü. Uyarı varsa kart açılır, kullanıcı karar verir.
 $('btn-replay').onclick = async () => {
   const edges = replayEdges();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1883,8 +1889,136 @@ $('btn-replay').onclick = async () => {
   const missing = maskedKeys(edges).filter((key) => !replaySecrets[key]);
   if (missing.length) return showMessage({ error: `Koşuda maskeli (******) alanlar var. Oynatmadan önce değerlerini girin: ${missing.join(', ')}` });
   showMessage(null);
-  checkReplay(tab, edges);
+  openCleanup(tab, edges);
 };
+
+// -----------------------------------------------------------------------------
+// TEMİZLİK: oynatmadan önce senaryonun sitelerindeki verileri silmek (cleanup-dialog)
+// -----------------------------------------------------------------------------
+// "Koşuyu oynat" önce bu pencereyi açar. Pencerede senaryonun graph'ındaki her site
+// (scenario.js > cleanupSites) ve altında silinebilecek veriler (CLEANUP_TYPES) listelenir. Site
+// kutusu altındaki türlerin hepsini işaretler ya da kaldırır; bazıları seçiliyse yarım görünür.
+// Seçim senaryoya kaydedilir (scenario.cleanup, iki oynat düğmesinde de; Vazgeç kaydetmez) ve
+// pencere bir dahaki sefere onunla açılır; ilk açılışta hiçbir şey seçili değildir.
+//   Temizle ve oynat   : seçili veriler silinir (chrome.browsingData, site bazında); sekme
+//                        başlangıç node'unun adresine gider, çünkü silinen veri ancak sayfa yeniden
+//                        yüklenince etkisini gösterir.
+//   Temizlemeden oynat : doğrudan başlangıç kontrolü (checkReplay).
+// Ayrıntı ve kaynaklar: docs/08-site-verileri.md
+
+function openCleanup(tab, edges) {
+  cleanupStart = { tab, edges };
+  const sites = cleanupSites(replayGraph());
+  const saved = normalizeCleanup(scenario.cleanup);
+  $('cleanup-title').textContent = `Oynatmadan önce temizlik · "${scenario.name}"`;
+  $('cleanup-sites').replaceChildren(...(sites.length
+    ? sites.map((site) => cleanupSiteItem(site, saved[site.origin] ?? []))
+    : [Object.assign(document.createElement('p'), { className: 'hint', textContent: "Senaryonun node'larında web sitesi adresi yok; temizlenecek bir şey yok." })]));
+  renderCleanup();
+  $('cleanup-dialog').showModal();
+}
+
+// Bir site: başlıkta site kutusu, altında silinebilecek veriler.
+function cleanupSiteItem({ origin, start }, selected) {
+  const item = document.createElement('fieldset');
+  item.className = 'cleanup-site';
+  item.dataset.origin = origin;
+  const legend = document.createElement('legend');
+  legend.innerHTML = '<label><input type="checkbox" class="cleanup-all"> <b></b> <span class="muted"></span></label>';
+  legend.querySelector('b').textContent = origin;
+  legend.querySelector('.muted').textContent = start ? '(başlangıç)' : '';
+  const list = document.createElement('div');
+  list.className = 'checklist';
+  for (const { type, text, hint } of CLEANUP_TYPES) {
+    const label = document.createElement('label');
+    label.title = hint;
+    label.innerHTML = '<input type="checkbox"> <span></span>';
+    Object.assign(label.querySelector('input'), { value: type, checked: selected.includes(type) });
+    label.querySelector('span').textContent = text;
+    list.append(label);
+  }
+  item.append(legend, list);
+  return item;
+}
+
+// Penceredeki seçim: { origin: [tür, ...] } (boş siteler yazılmaz).
+function cleanupSelection() {
+  const selection = {};
+  for (const site of $('cleanup-sites').querySelectorAll('.cleanup-site')) {
+    const types = [...site.querySelectorAll('.checklist input:checked')].map((box) => box.value);
+    if (types.length) selection[site.dataset.origin] = types;
+  }
+  return selection;
+}
+
+// Site kutuları (hepsi / bazıları / hiçbiri) ve düğmeler seçime uyar: bir şey seçili değilse
+// "Temizle ve oynat" pasif, "Temizlemeden oynat" ana düğmedir.
+function renderCleanup() {
+  for (const site of $('cleanup-sites').querySelectorAll('.cleanup-site')) {
+    const boxes = [...site.querySelectorAll('.checklist input')];
+    const on = boxes.filter((box) => box.checked).length;
+    Object.assign(site.querySelector('.cleanup-all'), { checked: on > 0 && on === boxes.length, indeterminate: on > 0 && on < boxes.length });
+  }
+  const any = Object.keys(cleanupSelection()).length > 0;
+  $('btn-cleanup-run').disabled = !any;
+  $('btn-cleanup-run').classList.toggle('primary', any);
+  $('btn-cleanup-skip').classList.toggle('primary', !any);
+}
+
+$('cleanup-sites').onchange = (event) => {
+  const site = event.target.closest('.cleanup-site');
+  if (site && event.target.classList.contains('cleanup-all')) {
+    for (const box of site.querySelectorAll('.checklist input')) box.checked = event.target.checked;
+  }
+  renderCleanup();
+};
+
+// Pencere kapanır; seçim (verildiyse) senaryoya yazılır. Döner: bekleyen oynatma.
+function closeCleanup(selection = null) {
+  const pending = cleanupStart;
+  cleanupStart = null;
+  $('cleanup-dialog').close();
+  if (selection && JSON.stringify(selection) !== JSON.stringify(normalizeCleanup(scenario.cleanup))) {
+    scenario.cleanup = selection;
+    persistScenario({ copy: false });
+  }
+  return pending;
+}
+
+$('btn-cleanup-skip').onclick = () => {
+  const pending = closeCleanup(cleanupSelection());
+  if (pending) checkReplay(pending.tab, pending.edges);
+};
+
+$('btn-cleanup-run').onclick = async () => {
+  const selection = cleanupSelection();
+  const pending = closeCleanup(selection);
+  if (!pending) return;
+  cleaning = true;
+  renderReplay();
+  try {
+    await cleanSites(pending.tab, selection);
+  } catch (error) {
+    return showMessage({ error: `Site verileri temizlenemedi: ${error.message}` });
+  } finally {
+    cleaning = false;
+    renderReplay();
+  }
+  await checkReplay(pending.tab, pending.edges);
+};
+
+$('btn-cleanup-cancel').onclick = () => closeCleanup();
+$('btn-cleanup-close').onclick = () => closeCleanup();
+$('cleanup-dialog').onclose = () => { cleanupStart = null; }; // Esc
+
+// Seçili verileri siler ve sekmeyi başlangıç node'unun adresine götürür. Site başka bir adrese
+// yönlendirirse (ör. başlangıç giriş ister) başlangıç kontrolü farkı söyler.
+async function cleanSites(tab, selection) {
+  for (const [origin, types] of Object.entries(selection)) {
+    await chrome.browsingData.remove({ origins: [origin] }, Object.fromEntries(types.map((type) => [type, true])));
+  }
+  await goToAddress(tab.id, replayNode(replayGraph().start).url);
+}
 
 // Oynatmadan önceki kontroller: ekran senaryonun başlangıç node'u mu, bekleyen aksiyonlar
 // silinecek mi. Sorun yoksa oynatma başlar (startIfClear); varsa kart açılır. Sekme başlangıç

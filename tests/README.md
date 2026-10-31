@@ -38,6 +38,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `replay` | Panelde oynatma: şifre, başlangıç uyarısı, geçen ve kalan koşu, durdurma (`--zoom=1.5` ile yakınlaştırmada) |
 | `replay-start` | Senaryonun başlangıç node'u, runner'ın reddi, oynatmanın görünen alanı kayıttakine getirmesi (`--small-screen` ile pencere büyüyemezken) |
 | `scenario-replay` | Senaryonun kendi graph'ından oynatma: ana graph değişince kopyanın oynatılması, oynatma kartında fark ve "Ana graph'tan yenile", `startReplay`'e verilen senaryo bilgisi |
+| `site-data` | Oynatmadan önce temizlik ([docs/08](../docs/08-site-verileri.md)): penceredeki siteler ve veri türleri, varsayılan seçimsiz, site kutusu (hepsi / yarım), Vazgeç'in kaydetmemesi, temizlemeden oynatınca başlangıcın tutmaması, kısmi temizlikte kalan verinin başlangıcı bozması, "localStorage ve sessionStorage"ın ikisini birden silmesi, tam temizlikte oynatmanın geçmesi, seçimin senaryoda saklanması, seçilmeyen sitenin verisine dokunulmaması |
 | `filter` | Aksiyon filtresi: bekleyen ve edge listelerinde türleri gizleme, korunan sıra numaraları, ayrı filtreler, otomatik beklemenin ayrı türü, hatırlama |
 | `buffer` | Bekleyen aksiyonları silme: uyarı, bayat liste, karar beklerken kilit, runner ve panelde oynatma |
 | `return-to-start` | "Başlangıç node'una dön": adres, boyutu oynatmanın kurması, gezinmenin kayda girmesi, yönlendirme, okunamayan sayfa |
@@ -56,4 +57,4 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 
 ## Yeni test
 
-`tests/e2e/<ad>.test.js` olarak ekleyin; `run-all.js` kendiliğinden bulur. Ortak ortam `env.js`'tedir (`REPO`, `EXT`, `CHROME`, `outDir(ad)`). Mevcut testlerdeki desen: yerel `http` sunucusu, `chromium.launchPersistentContext` ile eklentiyi yükleme, panel sayfasını sekmede açıp `chrome.runtime.sendMessage` ile background'a mesaj gönderme, storage'dan state okuma (`graph:<aktif id>`).
+`tests/e2e/<ad>.test.js` olarak ekleyin; `run-all.js` kendiliğinden bulur. Ortak ortam `env.js`'tedir (`REPO`, `EXT`, `CHROME`, `outDir(ad)`, `skipCleanup(panel)`). Panelde oynatan test "Koşuyu oynat"tan sonra açılan temizlik penceresini `skipCleanup(panel)` ile geçer (**Temizlemeden oynat**). Mevcut testlerdeki desen: yerel `http` sunucusu, `chromium.launchPersistentContext` ile eklentiyi yükleme, panel sayfasını sekmede açıp `chrome.runtime.sendMessage` ile background'a mesaj gönderme, storage'dan state okuma (`graph:<aktif id>`).

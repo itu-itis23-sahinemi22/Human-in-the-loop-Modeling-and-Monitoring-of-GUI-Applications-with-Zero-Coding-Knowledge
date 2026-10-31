@@ -5,7 +5,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { chromium, EXT, CHROME } = require('./env');
+const { chromium, EXT, CHROME, skipCleanup } = require('./env');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -60,6 +60,7 @@ function check(name, ok, detail = '') {
       await page0.bringToFront();
       await sleep(800);
       await panel.evaluate(() => { replayResult = null; document.getElementById('btn-replay').click(); });
+      await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
       await sleep(800);
     };
     const waitResult = async () => {

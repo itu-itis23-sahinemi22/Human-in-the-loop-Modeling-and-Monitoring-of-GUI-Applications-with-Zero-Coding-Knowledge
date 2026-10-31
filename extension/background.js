@@ -265,7 +265,7 @@ function backupProblem(data) {
 // SENARYOLAR: graph'ın test yolları
 // -----------------------------------------------------------------------------
 // Senaryoyu panel kurar (elle yol, yükleme, planlayıcı), background graph'ın içinde saklar:
-// state.scenarios = [{ id, name, start, planner, runs, graph, created, updated }]. Alanlar senaryo
+// state.scenarios = [{ id, name, start, planner, runs, cleanup, graph, created, updated }]. Alanlar senaryo
 // dosyasıyla aynıdır (scenario.js). Yürünebilirlik burada denetlenmez: graph sonradan
 // değişebilir, panel yürünemeyen senaryoyu işaretler. Id'yi panel verir (çalışma kopyası
 // kayıttan önce de seçili olabilsin); ad graph içinde tekildir.
@@ -290,7 +290,8 @@ async function saveScenario(state, data) {
   const problem = scenarioProblem(data);
   if (problem) throw new Error(`Senaryo kaydedilemedi: ${problem}`);
   const name = data.name?.trim() ? uniqueScenarioName(state, data.name.trim(), scenario.id) : scenario.name;
-  Object.assign(scenario, { name, ...scenarioFields(data), updated: Date.now() });
+  // Temizlik seçimi gönderilmediyse (ör. listede başka senaryonun adı değişti) olduğu gibi kalır.
+  Object.assign(scenario, { name, ...scenarioFields({ cleanup: scenario.cleanup, ...data }), updated: Date.now() });
   if (data.copy || !scenario.graph) scenario.graph = snapshotOf(state, scenario, scenario.graph);
   await save(state);
   return { name, graph: scenario.graph };
@@ -307,8 +308,9 @@ function snapshotOf(state, scenario, previous = null) {
   return scenarioSnapshot({ start, nodes: state.nodes, edges: state.edges }, scenario.runs, previous);
 }
 
-function scenarioFields({ start = null, planner = null, runs }) {
-  return { start, planner: planner ?? { engine: 'manual' }, runs: runs.map((run) => [...run]) };
+// cleanup: oynatmadan önce silinecek site verileri (scenario.js > CLEANUP_TYPES; panel.js > TEMİZLİK).
+function scenarioFields({ start = null, planner = null, runs, cleanup = null }) {
+  return { start, planner: planner ?? { engine: 'manual' }, runs: runs.map((run) => [...run]), cleanup: normalizeCleanup(cleanup) };
 }
 
 function scenarioProblem(data) {

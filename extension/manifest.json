@@ -5,7 +5,7 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtafLjGQqZ8UCqKtR3Mv/xPYz97osI/TJWss6SsVUYNj2VqRTQOgUEmYmKY+Ww5gCuepb/fmexev+xAdL3dRFAgcdPYE+lcvVbCnJ89qfFBMegLDTE6VUBVPi4dbwv0ihcrtQPJlsKDc3XVA8N6yvd1sg9XLMRX26XM5S+yI/cLdiPNrRS4k3WL2mzzDsul15+rOlnEeBebUW5t0ekd2xY0NnW5ufy/euBeunOiF6S8aTnZGZj+KB0VT1LFS7w3l6iQXlGdSOXnRt/fpfMapoJ79a0itMD87A6bKfb21stJa9iVQhfeyU7X/y7ng7mTkjNJBwbqM6ttj0cqMnQ205DQIDAQAB",
   "description": "Web sitesinde gezerken, kullanıcının işaretlediği durumlardan yönlü bir graph (node + edge) çıkarır.",
 
-  "permissions": ["sidePanel", "storage", "unlimitedStorage", "webNavigation", "debugger", "nativeMessaging"],
+  "permissions": ["sidePanel", "storage", "unlimitedStorage", "webNavigation", "debugger", "nativeMessaging", "browsingData"],
   "host_permissions": ["<all_urls>"],
 
   "background": {
