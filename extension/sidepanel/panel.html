@@ -58,7 +58,7 @@
     <!-- Son silmeyi (node, edge ya da edge'den aksiyon) geri alır; kısayolu Ctrl+Z -->
     <button id="btn-undo" disabled>Geri al</button>
     <button id="btn-export" title="Graph'ı GraphWalker JSON modeli olarak indirir (Studio'da açılır, CLI ile çalışır)">GraphWalker JSON</button>
-    <button id="btn-reset" class="danger">Sıfırla</button>
+    <button id="btn-reset" class="danger">Sıfırla</button> 
   </div>
 
   <!-- Background'dan gelen hata (kırmızı) ya da bilgi (mavi) mesajı -->
@@ -152,11 +152,9 @@
       <div id="replay-check" class="card highlight" hidden>
         <p id="replay-check-text"></p>
         <ul id="replay-check-reasons" class="reasons"></ul>
-        <!-- Pencere büyüyemediğinde: yan paneli ne kadar daraltmak gerektiği (sürükledikçe güncellenir) -->
-        <p id="replay-fit-guide" class="fit-guide" role="status" hidden></p>
         <div class="toolbar">
-          <!-- Sekme başlangıç node'unun adresinde değilse ya da görünen alan node'un kaydedildiği
-               andakinden farklıysa: sekme o adrese gider, yakınlaştırması ve pencere boyutu ona getirilir -->
+          <!-- Sekme başlangıç node'unun adresinde değilse: sekme o adrese gider (görünen alanı
+               oynatma kendisi kurar, replay.js > fitStart) -->
           <button id="btn-replay-fit" hidden>Başlangıç node'una dön</button>
           <button id="btn-replay-anyway" class="primary">Yine de oynat</button>
           <button id="btn-replay-cancel">Vazgeç</button>
@@ -179,6 +177,11 @@
     <label class="field">İsim <input id="details-name" spellcheck="false"></label>
     <img id="details-shot" alt="">
     <p id="details-noshot" class="hint" hidden>Ekran görüntüsü yok: bu node ana graph'tan silinmiş.</p>
+    <!-- Edge'in aksiyonları; filtre işaretlenen türleri gizler (panel.js > AKSİYON FİLTRESİ) -->
+    <div id="details-actions-head" class="list-head" hidden>
+      <span class="muted small">Aksiyonlar</span>
+      <details id="details-filter" class="action-filter"><summary>Filtrele</summary><div class="filter-menu"></div></details>
+    </div>
     <ol id="details-actions" class="actions"></ol>
     <!-- Ana graph görünümünde: bu node'u / edge'i koşularında kullanan senaryolar (tıklayınca o senaryonun graph'ı) -->
     <p id="details-scenarios" class="small" hidden></p>
@@ -194,7 +197,10 @@
 
   <!-- Son node'dan beri yapılan, henüz edge'e dönüşmemiş aksiyonlar -->
   <section class="card">
-    <h2>Bekleyen aksiyonlar <span id="buffer-count" class="badge"></span></h2>
+    <div class="list-head">
+      <h2>Bekleyen aksiyonlar <span id="buffer-count" class="badge"></span></h2>
+      <details id="buffer-filter" class="action-filter"><summary>Filtrele</summary><div class="filter-menu"></div></details>
+    </div>
     <ol id="buffer" class="actions"></ol>
   </section>
 
@@ -260,6 +266,8 @@
         <p class="hint">Açıkken iki aksiyon arasındaki boşluk "Bekle" aksiyonu olarak kaydedilir ve kayıt sekmesinin ekranı sürekli izlenir. Ekran beklerken kendiliğinden değişirse (ör. oturum zaman aşımı) bekleme o anda biter ve "ekranı değiştirdi" işaretini alır; böyle bir bekleme alt sınırdan kısa da olsa kaydedilir.</p>
         <label class="option"><input type="checkbox" id="settings-record-waits"> <span>Beklemeleri kaydet</span></label>
         <label class="option">Alt sınır <input type="number" id="settings-min-wait" min="0" step="0.5"> saniye</label>
+        <p class="hint">Edge kaydedilirken her aksiyonun arkasına bu süre kadar bir bekleme otomatik eklenir ("otomatik eklendi"); edge hep bir beklemeyle biter. Aksiyonun arkasında kaydedilmiş bir bekleme varsa o kendi süresiyle kalır. Süre değişince yalnızca yeni kaydedilen edge'ler etkilenir.</p>
+        <label class="option">Aksiyon sonrası bekleme <input type="number" id="settings-auto-wait" min="0" max="60000" step="1"> ms</label>
       </fieldset>
       <fieldset>
         <legend>State'e dahil edilecek etkileşimli elementler</legend>

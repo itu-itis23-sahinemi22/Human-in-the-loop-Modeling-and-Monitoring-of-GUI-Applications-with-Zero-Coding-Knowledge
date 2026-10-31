@@ -90,7 +90,7 @@ function check(name, ok, detail = '') {
     const sepet = byName('v_Sepet');
     const eLogin = s.edges.find((e) => e.source === login.id);
     const eDevam = s.edges.find((e) => e.source === telefon.id);
-    const kinds = (edge) => edge.actions.map((a) => a.type).filter((t) => t !== 'resize').join('+'); // bazı ortamlarda pencere boyutu değişimi de kaydedilir
+    const kinds = (edge) => edge.actions.filter((a) => !a.auto).map((a) => a.type).filter((t) => t !== 'resize').join('+'); // bazı ortamlarda pencere boyutu değişimi de kaydedilir
     check('kayıt: 3 node, 2 edge; Devam edge\'inde yazma + tıklama', s.nodes.length === 3 && s.edges.length === 2 && kinds(eDevam) === 'input+click', s.edges.map(kinds).join(' | '));
 
     // ---- Monitörler (storage'a doğrudan; menü monitors.test.js'te sınanıyor) ----
@@ -111,7 +111,7 @@ function check(name, ok, detail = '') {
     await panel.evaluate(() => { document.getElementById('monitors').open = true; });
     check('8 monitör yüklendi (1 kapalı); aksiyona bağlı olanların kapsamı aksiyonu söylüyor, silinmiş aksiyon işaretli', (await text('#monitors-badge')) === '8' && (await $('#monitors-list .monitor.disabled').count()) === 1
       && (await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent))).some((t) => t === `Edge: ${eDevam.name} · 1. Yaz Fill Telefon`)
-      && (await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent))).some((t) => t === `Edge: ${eDevam.name} · 2. Tıkla Devam`)
+      && (await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent))).some((t) => t === `Edge: ${eDevam.name} · 3. Tıkla Devam`)
       && (await panel.$$eval('#monitors-list .monitor .scope.orphan', (els) => els.map((e) => e.textContent))).some((t) => t.includes('aksiyon bulunamadı (6. Yok)')), (await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent))).join(' | '));
 
     // ---- Senaryo: iki edge tek koşu ----
@@ -156,7 +156,7 @@ function check(name, ok, detail = '') {
     check('Error Text (tüm model): adım 2\'de kırmızı (500 metni)', row('Error Text · /').status === 'fail' && row('Error Text · /').trail.join(',') === 'ok,fail' && row('Error Text · /').detail.includes('Adım 2') && row('Error Text · /').detail.includes('500'), row('Error Text · /').detail);
     check('Input Validation (edge\'in tamamı): yalnızca Devam adımında, kırmızı, yazılan değer', row('Telefon 5 ile').status === 'fail' && row('Telefon 5 ile').trail.join(',') === 'fail' && row('Telefon 5 ile').scope === `Edge: ${eDevam.name}` && row('Telefon 5 ile').detail.includes('03121234567'), row('Telefon 5 ile').detail);
     check('aksiyona bağlı Input Validation (1. aksiyon): kırmızı, kapsamda aksiyon, ayrıntıda aksiyon 1/N', row('Yazınca telefon').status === 'fail' && row('Yazınca telefon').scope === `Edge: ${eDevam.name} · 1. Yaz Fill Telefon` && /aksiyon 1\/\d+: Fill Telefon/.test(row('Yazınca telefon').detail) && row('Yazınca telefon').shot, row('Yazınca telefon').detail);
-    check('aksiyona bağlı Error Text (Devam tıklanınca; sıra yanlış kaydedilmiş, hedefle bulundu): kırmızı, 500 metni, aksiyon 2/N', row('Devam tıklanınca').status === 'fail' && row('Devam tıklanınca').scope === `Edge: ${eDevam.name} · 2. Tıkla Devam` && /aksiyon 2\/\d+: Devam/.test(row('Devam tıklanınca').detail) && row('Devam tıklanınca').detail.includes('500'), row('Devam tıklanınca').detail);
+    check('aksiyona bağlı Error Text (Devam tıklanınca; sıra yanlış kaydedilmiş, hedefle bulundu): kırmızı, 500 metni, aksiyon 3/N (arada otomatik bekleme)', row('Devam tıklanınca').status === 'fail' && row('Devam tıklanınca').scope === `Edge: ${eDevam.name} · 3. Tıkla Devam` && /aksiyon 3\/\d+: Devam/.test(row('Devam tıklanınca').detail) && row('Devam tıklanınca').detail.includes('500'), row('Devam tıklanınca').detail);
     check('aksiyonu silinmiş monitör: yeşil (kırmızı değil), "aksiyon edge\'de bulunamadı"', row('aksiyonu silinmiş').status === 'ok' && row('aksiyonu silinmiş').detail.includes("aksiyon edge'de bulunamadı") && row('aksiyonu silinmiş').scope.includes('aksiyon bulunamadı'), row('aksiyonu silinmiş').detail);
     check('Error Text (node Telefon, eski kayıtta "warning"): tek adım, yeşil', row('Telefon ekranında').status === 'ok' && row('Telefon ekranında').trail.join(',') === 'ok' && row('Telefon ekranında').scope === 'Node: v_Telefon' && row('Telefon ekranında').detail.includes('bozulma yok'), row('Telefon ekranında').detail);
     check('adım izi başlıkları adım ve edge adını söylüyor', row('Font Size').titles[0].startsWith(`Adım 1 (${eLogin.name} → v_Telefon)`) && row('Font Size').titles[1].startsWith(`Adım 2 (${eDevam.name} → v_Sepet)`), row('Font Size').titles.join(' | '));
@@ -174,7 +174,7 @@ function check(name, ok, detail = '') {
     const alarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
     const alarmOf = (id) => alarms?.items.find((a) => a.monitorId === id);
     check('uyarılar storage\'da (monitor-alarms:<graph>): 5 uyarı, her biri görüntülü', alarms?.format === 'graph-recorder-monitor-alarms/v1' && alarms.items.length === 5 && alarms.items.every((a) => a.screenshot?.startsWith('data:image/jpeg') && a.source === 'replay'), JSON.stringify(alarms?.items.map((a) => [a.monitorId, a.where, a.url])));
-    check('aksiyona bağlı uyarılar doğru anda: yazınca Telefon sayfasında, Devam tıklanınca Sepet sayfasında', alarmOf('m6')?.url === base + '/telefon' && alarmOf('m6').where.includes('aksiyon 1/') && alarmOf('m7')?.url === base + '/sepet' && alarmOf('m7').where.includes('aksiyon 2/') && !alarmOf('m8'), JSON.stringify([alarmOf('m6')?.where, alarmOf('m7')?.where]));
+    check('aksiyona bağlı uyarılar doğru anda: yazınca Telefon sayfasında, Devam tıklanınca Sepet sayfasında', alarmOf('m6')?.url === base + '/telefon' && alarmOf('m6').where.includes('aksiyon 1/') && alarmOf('m7')?.url === base + '/sepet' && alarmOf('m7').where.includes('aksiyon 3/') && !alarmOf('m8'), JSON.stringify([alarmOf('m6')?.where, alarmOf('m7')?.where]));
     check('Input Validation uyarısı: Telefon sayfasında, "Devam" tıklanmadan (aksiyon bilgisiyle)', alarmOf('m3')?.url === base + '/telefon' && alarmOf('m3').where.startsWith('Adım 2') && /aksiyon \d+\/\d+: /.test(alarmOf('m3').where) && alarmOf('m3').text.includes('03121234567'), JSON.stringify([alarmOf('m3')?.where, alarmOf('m3')?.url]));
     check('Font Size uyarısı Telefon ekranında (adım 1), Error Text uyarısı Sepet ekranında (adım 2)', alarmOf('m1')?.url === base + '/telefon' && alarmOf('m1').where.startsWith('Adım 1') && alarmOf('m2')?.url === base + '/sepet' && alarmOf('m2').where.startsWith('Adım 2') && alarmOf('m1').action === null, JSON.stringify([alarmOf('m1')?.url, alarmOf('m2')?.url]));
     const ivShot = await panel.evaluate(() => { const li = [...document.querySelectorAll('#monitor-run-list .led-row')].find((x) => x.textContent.includes('Telefon 5 ile')); li.querySelector('img.shot').click(); const t = document.getElementById('monitor-shot-text').textContent; document.getElementById('btn-monitor-shot-close').click(); return t; });

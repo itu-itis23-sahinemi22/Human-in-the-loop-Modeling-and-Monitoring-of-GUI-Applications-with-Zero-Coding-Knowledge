@@ -6,8 +6,9 @@
 // tarayıcıda yapar; burada:
 //   - Başlangıç sayfası kullanıcının sorumluluğudur: oynatma sayfaya kendisi gitmez. Panel
 //     önce ekranı koşunun ilk node'uyla karşılaştırır, farklıysa uyarır; uyarı kartındaki
-//     buton sekmeyi başlangıç node'unun adresine ve görünen alanına getirir (goToAddress,
-//     fitViewport). Ekranın tutması yine kullanıcıya kalır (giriş gerektiren sayfa gibi).
+//     buton sekmeyi başlangıç node'unun adresine getirir (goToAddress). Ekranın tutması yine
+//     kullanıcıya kalır (giriş gerektiren sayfa gibi). Görünen alanı oynatma kendisi kurar
+//     (fitStart): başlangıç node'unun kaydedildiği boyut, panel ve pencereden bağımsız.
 //   - Fare ve klavye DevTools protokolüyle (chrome.debugger) gönderilir: gerçek kullanıcı
 //     olayı gibidir (isTrusted), CSS :hover ve sayfanın tuş dinleyicileri çalışır. Chrome
 //     oynatma boyunca üstte "hata ayıklama başlatıldı" çubuğu gösterir; çubukta "İptal"e
@@ -61,6 +62,7 @@ async function playRun(replay, edges, nodes) {
   chrome.debugger.onDetach.addListener(onDetach);
   try {
     await attach(replay, replay.tabId);
+    await fitStart(replay, nodes.get(edges[0]?.source));
     for (const [i, edge] of edges.entries()) {
       const step = replay.steps[i];
       const started = Date.now();
@@ -125,77 +127,42 @@ function compareScreen(node, screen, settings) {
   return { ok: Boolean(expected && actual) && url === node.urlKey && diff.length === 0, url, expectedUrl: node.urlKey, diff, screen };
 }
 
-// GÖRÜNEN ALANI KAYITTAKİNE GETİRMEK (oynatmadan önceki uyarı kartındaki buton). State ekrana
-// sığan elementlerden oluştuğu için oynatma kayıttaki boyutta yapılmalı. Taklit (DevTools'un
-// cihaz modu) yerine gerçek tarayıcı ayarlanır; ayar oynatmadan sonra da kalır, kayıt aynı
-// boyutta sürebilir:
+// BAŞLANGIÇ BOYUTU: oynatma, başlangıç node'unun kaydedildiği görünen alanda başlar. State ekrana
+// sığan elementlerden oluştuğu için boyut piksel piksel tutmalı. Pencereyi büyütmek yan panel,
+// kenarlıklar ve ekran ölçeği yüzünden birkaç piksel kaçırabilir (eklenti panelin genişliğini
+// değiştiremez); bu yüzden 'resize' aksiyonu gibi taklit kullanılır (DevTools'un cihaz modu):
+// panelden ve pencereden bağımsızdır, oynatma bitince kaldırılır (release).
 //   1. Piksel oranı = ekran ölçeği × yakınlaştırma: oran farklıysa sekmenin yakınlaştırması
-//      ayarlanır (Chrome bunu site başına saklar).
-//   2. Pencere boyutu ekranın bağımsız pikseli, görünen alan CSS pikselidir: fark yakınlaştırmayla
-//      çarpılıp pencereye eklenir. Yan panel ve kenarlıklar ölçüme dahil olduğu için birkaç
-//      denemede tutturulur. Pencere ekranın kullanılabilir alanına sığdırılır (Chrome ekranın
-//      dışına taşan pencereyi reddeder; panel aynı penceredeki ekranı görür).
-// Pencereye yalnızca işe yarayacaksa dokunulur: büyütülmüş ya da tam ekran pencere ekranı zaten
-// kaplar, daha da büyüyemez; normal pencere de ekrandan büyük olamaz. Görünen alanın büyümesi
-// gerekiyor ama pencere büyüyemiyorsa pencere olduğu gibi kalır ve eksik kalan miktar döner
-// (short, ekran pikseli): genişlik çoğu zaman yan paneli daraltarak kazanılır (eklenti panelin
-// genişliğini değiştiremez; kullanıcı sürükler). Sonuç başlangıçtakinden kötüyse pencere eski
-// haline döner.
-// Döner: { viewport: varılan görünen alan, short: { width, height } ya da null (tuttu) }.
-// Boyut ve yakınlaştırma değişimi kayıt sekmesindeyse aksiyon olarak kaydedilir (tarayıcı gerçekten değişti).
-async function fitViewport(tabId, target) {
-  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const measure = async () => (await chrome.tabs.sendMessage(tabId, { type: 'GET_FINGERPRINT' }, { frameId: 0 })).viewport;
-  const same = (v) => v.width === target.width && v.height === target.height;
-  const distance = (v) => Math.abs(v.width - target.width) + Math.abs(v.height - target.height);
+//      ayarlanır (Chrome bunu site başına saklar, oynatmadan sonra da kalır).
+//   2. Taklidin boyutu ekran pikseli, görünen alan CSS pikselidir; yakınlaştırmada ikisi ayrılır.
+//      Boyut kurulur, ölçülür, kalan fark yakınlaştırmayla çarpılıp düzeltilir.
+// Sonra ekran başlangıç node'uyla karşılaştırılır: tutmazsa ilk adıma uyarı yazılır, oynatma
+// sürer (uyarı kartındaki "Yine de oynat" gibi; ilk edge'in doğrulaması asıl sonucu verir).
+async function fitStart(replay, start) {
+  if (!start?.viewport) return;
+  const target = start.viewport;
+  const measure = async () => { await pause(replay, 200); return (await chrome.tabs.sendMessage(replay.tabId, { type: 'GET_FINGERPRINT' }, { frameId: 0 })).viewport; };
   let now = await measure();
   if (Math.abs(now.devicePixelRatio - target.devicePixelRatio) > 0.001) {
-    const screenScale = now.devicePixelRatio / await chrome.tabs.getZoom(tabId);
-    await chrome.tabs.setZoom(tabId, target.devicePixelRatio / screenScale);
-    await wait(400);
+    const screenScale = now.devicePixelRatio / await chrome.tabs.getZoom(replay.tabId);
+    await chrome.tabs.setZoom(replay.tabId, target.devicePixelRatio / screenScale);
     now = await measure();
   }
-  if (same(now)) return { viewport: now, short: null };
-
-  const { windowId } = await chrome.tabs.get(tabId);
-  const original = await chrome.windows.get(windowId);
-  const zoom = await chrome.tabs.getZoom(tabId);
-  const area = { left: screen.availLeft ?? 0, top: screen.availTop ?? 0, width: screen.availWidth, height: screen.availHeight };
-  const grow = { width: Math.round((target.width - now.width) * zoom), height: Math.round((target.height - now.height) * zoom) };
-  const filled = original.state !== 'normal'; // büyütülmüş ya da tam ekran: ekranı zaten kaplıyor
-  const short = {
-    width: Math.max(0, filled ? grow.width : original.width + grow.width - area.width),
-    height: Math.max(0, filled ? grow.height : original.height + grow.height - area.height),
-  };
-  if (short.width > 0 || short.height > 0) return { viewport: now, short };
-
-  const start = now;
-  if (filled) {
-    await chrome.windows.update(windowId, { state: 'normal' }); // büyütülmüş pencere boyutlandırılamaz
-    await wait(400);
+  const zoom = await chrome.tabs.getZoom(replay.tabId);
+  let size = { width: Math.round(target.width * zoom), height: Math.round(target.height * zoom) };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await cdp(replay, 'Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 0, mobile: false });
+    replay.emulated.add(replay.tabId);
     now = await measure();
+    if (now.width === target.width && now.height === target.height) break;
+    size = { width: size.width + Math.round((target.width - now.width) * zoom), height: size.height + Math.round((target.height - now.height) * zoom) };
   }
-  for (let attempt = 0; attempt < 4 && !same(now); attempt++) {
-    const win = await chrome.windows.get(windowId);
-    const width = Math.min(Math.round(win.width + (target.width - now.width) * zoom), area.width);
-    const height = Math.min(Math.round(win.height + (target.height - now.height) * zoom), area.height);
-    await chrome.windows.update(windowId, {
-      width, height,
-      left: Math.max(area.left, Math.min(win.left, area.left + area.width - width)),
-      top: Math.max(area.top, Math.min(win.top, area.top + area.height - height)),
-    });
-    await wait(400);
-    const before = now;
-    now = await measure();
-    if (now.width === before.width && now.height === before.height) break; // pencere daha fazla değişmiyor
+  const step = replay.steps[0];
+  if (now.width !== target.width || now.height !== target.height) {
+    step.warnings.push(`Görünen alan tam tutturulamadı: "${start.name}" ${target.width}×${target.height} boyutunda kaydedildi, ulaşılan ${now.width}×${now.height}.`);
   }
-  if (!same(now) && distance(now) >= distance(start)) {
-    await chrome.windows.update(windowId, filled ? { state: original.state } : { left: original.left, top: original.top, width: original.width, height: original.height });
-    await wait(400);
-    now = await measure();
-  }
-  if (same(now)) return { viewport: now, short: null };
-  return { viewport: now, short: { width: Math.max(0, Math.round((target.width - now.width) * zoom)), height: Math.max(0, Math.round((target.height - now.height) * zoom)) } };
+  const check = compareScreen(start, await inPage(replay, { op: 'settled' }), replay.settings);
+  if (!check.ok) step.warnings.push(`Oynatma başında ekran "${start.name}" node'una uymuyor: koşu doğru sonuç vermeyebilir.`);
 }
 
 // BAŞLANGIÇ NODE'UNUN ADRESİNE GİTMEK (uyarı kartındaki "Başlangıç node'una dön"). Sekme adrese
@@ -497,12 +464,14 @@ function cdp(replay, method, params) {
   return chrome.debugger.sendCommand({ tabId: replay.tabId }, method, params);
 }
 
-// Aktif sekmenin görünen kısmı; node'ların ekran görüntüsüyle aynı biçimde (background.js >
-// takeScreenshot). Alınamazsa null.
+// Aktif sekmenin görünen alanı; node'ların ekran görüntüsüyle aynı biçimde (background.js >
+// takeScreenshot). DevTools protokolüyle oynatmanın bağlı olduğu sekmeden alınır
+// (captureVisibleTab penceredeki seçili sekmeyi alır: kullanıcı başka sekmeye geçtiyse yanlış
+// ekran gelirdi). Taklit edilen boyutun tamamı çizilir. Alınamazsa null.
 async function capture(replay) {
   try {
-    const { windowId } = await chrome.tabs.get(replay.tabId);
-    return await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 40 });
+    const { data } = await cdp(replay, 'Page.captureScreenshot', { format: 'jpeg', quality: 40 });
+    return `data:image/jpeg;base64,${data}`;
   } catch {
     return null;
   }

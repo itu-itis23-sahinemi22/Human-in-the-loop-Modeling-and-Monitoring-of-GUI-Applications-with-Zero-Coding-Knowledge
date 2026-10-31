@@ -443,7 +443,7 @@ function renderDetails() {
   $('details-subtitle').textContent = node
     ? node.url + (node.viewport ? ' · ' + viewportText(node.viewport) : '')
     : `${nameOf(edge.source)} → ${nameOf(edge.target)} · ${edge.actions.length} aksiyon`
-      + (edge.recordedActions ? ` · düzenlendi (kayıtta ${edge.recordedActions.length})` : '');
+    + (edge.recordedActions ? ` · düzenlendi (kayıtta ${edge.recordedActions.length})` : '');
   // Kullanıcı o an yazıyorsa input'u ezme
   if (document.activeElement !== $('details-name')) $('details-name').value = item.name;
   $('details-name').readOnly = readOnly;
@@ -453,6 +453,8 @@ function renderDetails() {
   if (shot) $('details-shot').src = shot;
   $('details-noshot').hidden = !node || Boolean(shot);
   $('details-actions').replaceChildren(...(edge ? (readOnly ? edge.actions.map(actionItem) : editableActionItems(edge)) : []));
+  $('details-actions-head').hidden = !edge;
+  if (edge) applyActionFilter($('details-actions'), edge.actions, 'details', renderDetails);
   renderDetailsScenarios(item, readOnly);
   $('btn-show-main').hidden = !readOnly;
   for (const id of ['btn-save', 'btn-delete']) $(id).hidden = readOnly;
@@ -550,11 +552,13 @@ $('btn-merge-confirm').onclick = () => {
 // -----------------------------------------------------------------------------
 // Her aksiyon kayıt sırasında "state'i değiştirdi mi?" diye işaretlenir (changed; bkz.
 // background.js > observeScreen). İşaret yoksa (bu özellikten önce kaydedilmiş edge) ya da
-// aksiyonun sonrası görülemediyse (null) etki "bilinmiyor"dur.
+// aksiyonun sonrası görülemediyse (null) etki "bilinmiyor"dur. Otomatik eklenen bekleme
+// (background.js > withAutoWaits) ölçülmez, "otomatik eklendi" diye ayrı gösterilir.
 
-const EFFECT_TEXT = { changed: 'ekranı değiştirdi', unchanged: 'ekranı değiştirmedi', unknown: 'etkisi bilinmiyor', waiting: 'etkisi bekleniyor' };
+const EFFECT_TEXT = { changed: 'ekranı değiştirdi', unchanged: 'ekranı değiştirmedi', unknown: 'etkisi bilinmiyor', waiting: 'etkisi bekleniyor', auto: 'otomatik eklendi' };
 
 function effectOf(action) {
+  if (action.auto) return 'auto';
   return action.changed === true ? 'changed' : action.changed === false ? 'unchanged' : 'unknown';
 }
 
@@ -597,14 +601,14 @@ function addWaitEdit(li, action, key, redraw, save) {
   const span = li.querySelector('span');
   if (waitEdit?.key !== key) {
     const edit = iconButton('✎', 'Bekleme süresini değiştir', () => {
-      waitEdit = { key, value: (action.ms / 1000).toFixed(1) };
+      waitEdit = { key, value: String(action.ms / 1000) }; // yuvarlanmasın: 10 ms '0.0' olup 0'a kaydedilmesin
       redraw();
     });
     edit.classList.add('edit-wait');
     span.after(edit);
     return;
   }
-  const input = Object.assign(document.createElement('input'), { type: 'number', min: '0', max: '3600', step: '0.1', value: waitEdit.value, className: 'wait-input' });
+  const input = Object.assign(document.createElement('input'), { type: 'number', min: '0', max: '3600', step: '0.001', value: waitEdit.value, className: 'wait-input' });
   input.setAttribute('aria-label', 'Bekleme süresi (sn)');
   let done = false;
   const finish = (keep) => {
@@ -645,13 +649,13 @@ function confirmRemoval(text, reasons, remove) {
 
 function removalRisks(edge, i) {
   const effect = effectOf(edge.actions[i]);
-  if (effect === 'unchanged') return [];
+  if (effect === 'unchanged' || effect === 'auto') return [];
   if (effect === 'unknown') {
     return ['Bu aksiyonun ekrana etkisi bilinmiyor (eski bir kayıt ya da aksiyonun sonrası görülmeden başka bir aksiyon yapıldı).'];
   }
 
   const reasons = ['Bu aksiyon ekranı (etkileşimli element kümesini) değiştirmişti.'];
-  if (i === edge.actions.length - 1) {
+  if (i === edge.actions.findLastIndex((a) => !a.auto)) { // otomatik bekleme sonda olsa da
     reasons.push(`Edge'in son aksiyonu: edge'i hedef node'un (${nodeById(edge.target)?.name}) ekranına götüren aksiyon bu. Silinirse edge o ekrana varmaz.`);
   }
   return reasons;
@@ -713,7 +717,82 @@ function renderBuffer() {
     li.append(remove);
     return li;
   }));
+  applyActionFilter($('buffer'), state.buffer, 'buffer', renderBuffer);
 }
+
+// -----------------------------------------------------------------------------
+// AKSİYON FİLTRESİ: edge detayında ve "Bekleyen aksiyonlar"da işaretlenen türler gizlenir
+// -----------------------------------------------------------------------------
+// Yalnızca gösterimdir: aksiyon silinmez, oynatma ve dışa aktarma etkilenmez. Görünen satırlar
+// listedeki asıl sıra numarasını korur (1, 4, 5). Otomatik bekleme kaydedilen beklemeden ayrı
+// bir türdür. İki listenin ayrı filtresi vardır; edge filtresi bütün edge'lerde geçerlidir.
+// Seçim bu tarayıcıda hatırlanır (localStorage).
+const ACTION_FILTER_KEY = 'actionFilters';
+const actionFilters = loadActionFilters(); // { details: Set, buffer: Set } — gizlenen türler
+
+function loadActionFilters() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(ACTION_FILTER_KEY)) ?? {};
+  } catch {
+    // depolama kapalı ya da bozuk: filtre boş başlar
+  }
+  return { details: new Set(saved.details ?? []), buffer: new Set(saved.buffer ?? []) };
+}
+
+function saveActionFilters() {
+  try {
+    localStorage.setItem(ACTION_FILTER_KEY, JSON.stringify({ details: [...actionFilters.details], buffer: [...actionFilters.buffer] }));
+  } catch {
+    // depolama kapalıysa seçim sadece bu oturumda geçerli
+  }
+}
+
+function filterKey(action) {
+  return action.type === 'wait' && action.auto ? 'wait:auto' : action.type;
+}
+
+function filterText(key) {
+  return key === 'wait:auto' ? 'Bekle (otomatik)' : ACTION_TEXT[key] ?? key;
+}
+
+// list: çizilmiş liste (her aksiyona bir satır, aynı sırada); name: 'details' | 'buffer' (kutunun
+// id'si name-filter); redraw: işaret değişince listeyi yeniden çizer. Kutuda yalnızca listede
+// bulunan türler çıkar.
+function applyActionFilter(list, actions, name, redraw) {
+  const hidden = actionFilters[name];
+  [...list.children].forEach((li, i) => {
+    li.value = i + 1;
+    li.hidden = hidden.has(filterKey(actions[i]));
+  });
+  const count = actions.filter((a) => hidden.has(filterKey(a))).length;
+  const box = $(name + '-filter');
+  box.classList.toggle('active', count > 0);
+  box.querySelector('summary').textContent = count ? `Filtrele · ${count} gizli` : 'Filtrele';
+  const keys = [...new Set(actions.map(filterKey))];
+  const options = keys.map((key) => {
+    const input = Object.assign(document.createElement('input'), { type: 'checkbox', checked: hidden.has(key), value: key });
+    input.onchange = () => {
+      if (input.checked) hidden.add(key);
+      else hidden.delete(key);
+      saveActionFilters();
+      redraw();
+    };
+    const label = document.createElement('label');
+    label.append(input, filterText(key));
+    return label;
+  });
+  const hint = Object.assign(document.createElement('p'), { className: 'muted small', textContent: keys.length ? 'İşaretlenenler gizlenir:' : 'Listede aksiyon yok.' });
+  box.querySelector('.filter-menu').replaceChildren(hint, ...options);
+}
+
+// Kutu dışına tıklayınca kapanır. İşaret değişince kutu yeniden çizildiği için tıklanan satır
+// artık sayfada değildir; yol olayın başındaki haliyle (composedPath) kontrol edilir.
+document.addEventListener('click', (event) => {
+  for (const box of document.querySelectorAll('.action-filter[open]')) {
+    if (!event.composedPath().includes(box)) box.open = false;
+  }
+});
 
 // Ekranı değiştirmemiş aksiyon doğrudan silinir; diğerlerinde gerekçeli uyarı (edge düzenleme gibi).
 function bufferRemovalRisks(action) {
@@ -730,12 +809,12 @@ function actionItem(action) {
   const li = document.createElement('li');
   const value = action.type === 'input' ? ` = "${action.value}"`
     : action.type === 'scroll' ? ` → ${action.x}, ${action.y}`
-    : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
-    : action.type === 'resize' ? ` → ${viewportText(action.viewport)}`
-    : action.type === 'wait' ? ` → ${seconds(action.ms)}`
-    : action.type === 'tab' && action.by === 'page' ? ' · önceki aksiyon açtı'
-    : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
-    : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
+      : action.type === 'zoom' ? ` → %${Math.round(action.zoom * 100)}`
+        : action.type === 'resize' ? ` → ${viewportText(action.viewport)}`
+          : action.type === 'wait' ? ` → ${seconds(action.ms)}`
+            : action.type === 'tab' && action.by === 'page' ? ' · önceki aksiyon açtı'
+              : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
+                : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
   li.querySelector('b').textContent = ACTION_TEXT[action.type] ?? action.type;
   li.querySelector('span').textContent = action.label + value;
@@ -745,8 +824,9 @@ function actionItem(action) {
   return li;
 }
 
-// Süre: "3,2 sn"
+// Süre: "3,2 sn"; 1 sn'den kısaysa "10 ms" (otomatik bekleme)
 function seconds(ms) {
+  if (ms < 1000) return `${ms} ms`;
   return `${(ms / 1000).toFixed(1).replace('.', ',')} sn`;
 }
 
@@ -1329,7 +1409,7 @@ function renderScenario() {
   $('scenario-summary').textContent = problem
     ? `Senaryo graph'la uyuşmuyor: ${problem}`
     : `Kapsama: ${coverage.edges[0]}/${coverage.edges[1]} edge · ${coverage.nodes[0]}/${coverage.nodes[1]} node · ${filled.length} koşu`
-      + (scenario.planner?.engine === 'graphwalker' ? ` · ${plannerText(scenario.planner)}` : '');
+    + (scenario.planner?.engine === 'graphwalker' ? ` · ${plannerText(scenario.planner)}` : '');
   renderPlanner(graph, locked);
   const end = runEnd(graph, run);
   const next = problem ? [] : graph.edges.filter((e) => e.source === end);
@@ -1788,76 +1868,59 @@ $('btn-replay').onclick = async () => {
   checkReplay(tab, edges);
 };
 
-// Oynatmadan önceki kontroller: ekran senaryonun başlangıç node'u mu, görünen alan kayıttakiyle
-// aynı mı, bekleyen aksiyonlar silinecek mi. Sorun yoksa oynatma başlar (startIfClear); varsa
-// kart açılır. Sekme başlangıç node'unun adresinde (URL şablonu) değilse ya da görünen alan
-// node'un kaydedildiği andakinden farklıysa kartta "Başlangıç node'una dön" çıkar. Sayfa
+// Oynatmadan önceki kontroller: ekran senaryonun başlangıç node'u mu, bekleyen aksiyonlar
+// silinecek mi. Sorun yoksa oynatma başlar (startIfClear); varsa kart açılır. Sekme başlangıç
+// node'unun adresinde (URL şablonu) değilse kartta "Başlangıç node'una dön" çıkar. Sayfa
 // okunamıyorsa (tarayıcının kendi sayfası, eklentiden önce açılmış sayfa) adres farklıysa yine
 // kart açılır: başlangıca dönmek sayfayı da okunur yapar.
+// Görünen alan sorun değildir: oynatma onu başlangıç node'unun boyutuna kendisi getirir
+// (replay.js > fitStart). Boyut farklıysa ekran burada karşılaştırılmaz (state ekrana sığan
+// elementlerden oluşur, yanlış boyutta tutmayabilir); karşılaştırmayı oynatma boyutu kurduktan
+// sonra yapar.
 async function checkReplay(tab, edges, { startIfClear = true } = {}) {
   const start = nodeById(scenarioGraph().start);
   const page = await chrome.tabs.sendMessage(tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
   const address = page?.url ?? (await chrome.tabs.get(tab.id).catch(() => null))?.url ?? '';
   const addressDiffers = !sameAddress(address, start.url);
   if (!page && !addressDiffers) return showMessage({ error: 'Bu sekmeye erişilemedi. Sayfayı yenileyip (F5) tekrar deneyin. (chrome:// sayfaları desteklenmez.)' });
-  const check = page && compareScreen(start, page, settings);
   const viewportDiffers = Boolean(page && start.viewport) && viewportText(start.viewport) !== viewportText(page.viewport);
+  const check = page && !viewportDiffers && compareScreen(start, page, settings);
   const reasons = [
     ...(page ? [] : ['Bu sekmedeki sayfa okunamadı (tarayıcının kendi sayfası ya da eklenti yüklenmeden önce açılmış bir sayfa).']),
+    ...(page && addressDiffers && viewportDiffers ? [`Sekme başlangıç node'unun ("${start.name}") adresinde değil.`] : []),
     ...(check && !check.ok ? mismatchLines(check, start) : []),
-    ...(check?.ok && viewportDiffers ? [`Görünen alan farklı: başlangıç node'u ("${start.name}") ${viewportText(start.viewport)} boyutunda kaydedildi, sekme şu an ${viewportText(page.viewport)}. State ekrana sığan elementlerden oluştuğu için sonraki ekranlar tutmayabilir.`] : []),
     ...(state.buffer.length ? [`"Bekleyen aksiyonlar"daki ${state.buffer.length} aksiyon silinecek: oynatma kaydı durdurur.`] : []),
   ];
   if (!reasons.length) {
     closeReplayCheck();
-    return startIfClear ? runReplay(tab, edges) : showMessage({ notice: `Ekran "${start.name}" node'unun ekranı ve görünen alan kayıttakiyle aynı. "Koşuyu oynat"a basın.` });
+    return startIfClear ? runReplay(tab, edges) : showMessage({ notice: `Ekran "${start.name}" node'unun adresinde. "Koşuyu oynat"a basın.` });
   }
-  replayStart = { tab, edges, start, address: addressDiffers, viewport: viewportDiffers };
-  $('replay-check-text').textContent = check?.ok
-    ? 'Oynatmadan önce:'
-    : `Başlangıç node'ları aynı değil: bu sekme koşunun ilk node'unun ("${start.name}") ekranında değil. Koşu doğru sonuç vermeyecektir.`;
+  replayStart = { tab, edges, start };
+  $('replay-check-text').textContent = (check && !check.ok) || addressDiffers
+    ? `Başlangıç node'ları aynı değil: bu sekme koşunun ilk node'unun ("${start.name}") ekranında değil. Koşu doğru sonuç vermeyecektir.`
+    : 'Oynatmadan önce:';
   $('replay-check-reasons').replaceChildren(...reasons.map((text) => Object.assign(document.createElement('li'), { textContent: text })));
-  const canReturn = addressDiffers || viewportDiffers;
-  $('btn-replay-fit').hidden = !canReturn || Boolean(fitGuide); // yönlendirme sürerken buton bir şey değiştiremez
-  $('btn-replay-fit').textContent = "Başlangıç node'una dön (" + [
-    ...(addressDiffers ? ['adres'] : []),
-    ...(viewportDiffers ? [`boyut ${viewportText(start.viewport)}`] : []),
-  ].join(' ve ') + ')';
-  $('btn-replay-fit').title = addressDiffers ? `${start.url} adresine gider` + (start.viewport ? `, görünen alanı ${viewportText(start.viewport)} yapar` : '') : '';
-  $('btn-replay-fit').classList.toggle('primary', canReturn);
-  $('btn-replay-anyway').classList.toggle('primary', !canReturn);
+  $('btn-replay-fit').hidden = !addressDiffers;
+  $('btn-replay-fit').title = addressDiffers ? `${start.url} adresine gider` : '';
+  $('btn-replay-fit').classList.toggle('primary', addressDiffers);
+  $('btn-replay-anyway').classList.toggle('primary', !addressDiffers);
   $('btn-replay-anyway').hidden = !page; // okunamayan sayfada oynatma ilk adımda kalır
   $('replay-check').hidden = false;
   renderReplay();
 }
 
-// "Başlangıç node'una dön": sekme başlangıç node'unun adresine gider (adres farklıysa), ardından
-// yakınlaştırması ve pencere boyutu node'un kaydedildiği andakine getirilir (yakınlaştırma site
-// başına saklandığı için adres değişince görünen alan da değişebilir; yeniden ölçülür). Site
-// başka bir adrese yönlendirdiyse (giriş gerektiren sayfa) boyuta dokunulmaz, uyarı kalır.
-// Sonunda kontrol yeniden yapılır. Pencere büyüyemediği için görünen alan küçük kaldıysa
-// yönlendirme başlar.
+// "Başlangıç node'una dön": sekme başlangıç node'unun adresine gider. Site başka bir adrese
+// yönlendirdiyse (giriş gerektiren sayfa) uyarı kalır. Sonunda kontrol yeniden yapılır.
 $('btn-replay-fit').onclick = async () => {
   const pending = replayStart;
   if (!pending) return;
   const { tab, edges, start } = pending;
   $('btn-replay-fit').disabled = true;
   try {
-    if (pending.address) {
-      const screen = await goToAddress(tab.id, start.url).catch((error) => { throw new Error(`Adrese gidilemedi: ${error.message}`); });
-      if (!sameAddress(screen.url, start.url)) {
-        await checkReplay(tab, edges, { startIfClear: false });
-        return showMessage({ error: `Site başka bir adrese yönlendirdi: ${screen.url}. Başlangıç ekranına ("${start.name}") elle ulaşın (örneğin önce giriş yapın), sonra "Koşuyu oynat"a basın.` });
-      }
-    }
-    if (!start.viewport) return await checkReplay(tab, edges, { startIfClear: false });
-    const { viewport: reached, short } = await fitViewport(tab.id, start.viewport).catch((error) => { throw new Error(`Görünen alan ayarlanamadı: ${error.message}`); });
+    const screen = await goToAddress(tab.id, start.url).catch((error) => { throw new Error(`Adrese gidilemedi: ${error.message}`); });
     await checkReplay(tab, edges, { startIfClear: false });
-    if (short && (short.width > 0 || short.height > 0)) {
-      fitGuide = { tab, edges, target: start.viewport };
-      renderFitGuide(fitGuide, reached, await chrome.tabs.getZoom(tab.id));
-    } else if (viewportText(reached) !== viewportText(start.viewport)) {
-      showMessage({ error: `Görünen alan tam tutturulamadı: "${start.name}" ${viewportText(start.viewport)} boyutunda kaydedildi, ulaşılan ${viewportText(reached)}.` });
+    if (!sameAddress(screen.url, start.url)) {
+      showMessage({ error: `Site başka bir adrese yönlendirdi: ${screen.url}. Başlangıç ekranına ("${start.name}") elle ulaşın (örneğin önce giriş yapın), sonra "Koşuyu oynat"a basın.` });
     }
   } catch (error) {
     showMessage({ error: error.message });
@@ -1865,51 +1928,6 @@ $('btn-replay-fit').onclick = async () => {
     $('btn-replay-fit').disabled = false;
   }
 };
-
-// YÖNLENDİRME: pencere büyüyemediği için görünen alan küçük kaldı (pencere ekranı kaplıyor ya da
-// ekran yetmiyor). Genişlik çoğu zaman yan paneli daraltarak kazanılır; eklenti panelin genişliğini
-// değiştiremediği için kullanıcı sürükler. Panelin genişliği değiştikçe ('resize') sekmenin
-// görünen alanı yeniden ölçülür ve kalan miktar yazılır; tutunca kontrol yenilenir.
-let fitGuide = null; // { tab, edges, target }
-let fitGuideTimer = null;
-
-addEventListener('resize', () => {
-  if (!fitGuide) return;
-  clearTimeout(fitGuideTimer);
-  fitGuideTimer = setTimeout(updateFitGuide, 250);
-});
-
-async function updateFitGuide() {
-  const guide = fitGuide;
-  const page = guide && await chrome.tabs.sendMessage(guide.tab.id, { type: 'GET_FINGERPRINT' }, { frameId: 0 }).catch(() => null);
-  if (!page || fitGuide !== guide) return;
-  if (viewportText(page.viewport) === viewportText(guide.target)) {
-    stopFitGuide();
-    return checkReplay(guide.tab, guide.edges, { startIfClear: false });
-  }
-  renderFitGuide(guide, page.viewport, await chrome.tabs.getZoom(guide.tab.id));
-}
-
-// Kalan miktar ekran pikseliyle (CSS pikseli × yakınlaştırma): kullanıcının sürüklediği birim.
-function renderFitGuide(guide, now, zoom) {
-  const width = Math.round((guide.target.width - now.width) * zoom);
-  const height = Math.round((guide.target.height - now.height) * zoom);
-  const steps = [
-    ...(width > 0 ? [`Yan paneli kenarından sürükleyerek yaklaşık ${width} piksel daraltın.`] : []),
-    ...(width < 0 ? [`${-width} piksel fazla daralttınız; yan paneli biraz genişletin.`] : []),
-    ...(height > 0 ? [`Yükseklik ${height} piksel eksik: yer imleri çubuğunu ya da altta açık DevTools'u kapatın ya da pencereyi daha büyük bir ekrana taşıyın.`] : []),
-    ...(height < 0 ? [`Yükseklik ${-height} piksel fazla.`] : []),
-  ];
-  $('replay-fit-guide').textContent = `Pencere bu ekranda daha fazla büyüyemiyor. ${steps.join(' ')} Şu an ${viewportText(now)}, hedef ${viewportText(guide.target)}.`;
-  $('replay-fit-guide').hidden = false;
-  $('btn-replay-fit').hidden = true;
-}
-
-function stopFitGuide() {
-  fitGuide = null;
-  clearTimeout(fitGuideTimer);
-  $('replay-fit-guide').hidden = true;
-}
 
 $('btn-replay-anyway').onclick = () => {
   const start = replayStart;
@@ -1921,7 +1939,6 @@ $('btn-replay-stop').onclick = () => replay?.stop();
 
 function closeReplayCheck() {
   replayStart = null;
-  stopFitGuide();
   $('replay-check').hidden = true;
   renderReplay();
 }
@@ -2016,15 +2033,17 @@ for (const { id, items } of CHECKLISTS) {
 }
 $('settings-record-waits').onchange = renderSaveButton;
 $('settings-min-wait').oninput = renderSaveButton;
+$('settings-auto-wait').oninput = renderSaveButton;
 
 // İsteğe bağlı aksiyon tipleri (settings.js > ACTION_TYPES > optional): işaretlenenler saklanır.
 const OPTIONAL_ACTIONS = new Set(ACTION_TYPES.filter((a) => a.optional).map((a) => a.type));
 
 // Taslak: kutuların o anki hali ve bekleme seçenekleri. Listelerde işareti kaldırılanlar,
-// isteğe bağlı aksiyonlarda işaretlenenler saklanır. Geçersiz alt sınır (boş, negatif)
-// varsayılana döner.
+// isteğe bağlı aksiyonlarda işaretlenenler saklanır. Geçersiz alt sınır (boş, negatif) ve
+// geçersiz otomatik bekleme (boş, kesirli, 0-60000 dışı) varsayılana döner.
 function draftSettings() {
   const minWait = Number($('settings-min-wait').value);
+  const autoWait = Number($('settings-auto-wait').value);
   const boxes = (id) => [...$(id).querySelectorAll('input')];
   return {
     disabledActions: boxes('settings-actions').filter((b) => !b.checked && !OPTIONAL_ACTIONS.has(b.value)).map((b) => b.value),
@@ -2032,6 +2051,7 @@ function draftSettings() {
     disabledInteractables: boxes('settings-interactables').filter((b) => !b.checked).map((b) => b.value),
     recordWaits: $('settings-record-waits').checked,
     minWaitSeconds: $('settings-min-wait').value !== '' && minWait >= 0 ? minWait : DEFAULT_SETTINGS.minWaitSeconds,
+    autoWaitMs: $('settings-auto-wait').value !== '' && Number.isInteger(autoWait) && autoWait >= 0 && autoWait <= 60000 ? autoWait : DEFAULT_SETTINGS.autoWaitMs,
   };
 }
 
@@ -2039,7 +2059,8 @@ function isDirty() {
   const draft = draftSettings();
   const same = (a, b) => [...a].sort().join('\n') === [...b].sort().join('\n');
   return ['disabledActions', 'enabledActions', 'disabledInteractables'].some((key) => !same(draft[key], settings[key]))
-    || draft.recordWaits !== settings.recordWaits || draft.minWaitSeconds !== settings.minWaitSeconds;
+    || draft.recordWaits !== settings.recordWaits || draft.minWaitSeconds !== settings.minWaitSeconds
+    || draft.autoWaitMs !== settings.autoWaitMs;
 }
 
 // Kutuları kaydedilmiş ayarlara eşitler (taslağı atar).
@@ -2048,6 +2069,7 @@ function loadDraft() {
   for (const box of $('settings-interactables').querySelectorAll('input')) box.checked = !settings.disabledInteractables.includes(box.value);
   $('settings-record-waits').checked = settings.recordWaits;
   $('settings-min-wait').value = settings.minWaitSeconds;
+  $('settings-auto-wait').value = settings.autoWaitMs;
   renderSaveButton();
 }
 
@@ -2063,6 +2085,7 @@ async function saveSettings() {
   await send({ type: 'SET_SETTINGS', settings: draft });
   settings = { ...DEFAULT_SETTINGS, ...draft }; // storage bildirimi gelmeden buton doğru görünsün
   $('settings-min-wait').value = settings.minWaitSeconds;
+  $('settings-auto-wait').value = settings.autoWaitMs;
   renderSaveButton();
   $('settings-saved').hidden = false;
 }

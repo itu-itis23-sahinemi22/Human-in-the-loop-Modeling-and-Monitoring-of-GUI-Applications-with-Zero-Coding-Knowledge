@@ -1,4 +1,4 @@
-// "Başlangıç node'una dön": başka sitedeyken adrese ve boyuta getirme, gezinmenin kayda
+// "Başlangıç node'una dön": başka sitedeyken adrese getirme, gezinmenin kayda
 // GoTo olarak girmesi, giriş gerektiren başlangıçta yönlendirme uyarısı, okunamayan sayfa.
 // Kullanım: node tests/e2e/return-to-start.test.js [--headed]
 const http = require('http');
@@ -113,12 +113,11 @@ function check(name, ok, detail = '') {
     await tryReplay();
     let c = await card();
     check('başka sitede: kart, başlangıç aynı değil', !c.hidden && c.text.includes("Başlangıç node'ları aynı değil"), c.text);
-    check('buton: adres', c.fit && c.fitText.startsWith("Başlangıç node'una dön (adres"), c.fitText);
+    check('buton: adres', c.fit && c.fitText === "Başlangıç node'una dön", c.fitText);
     const bufferBefore = (await getState()).buffer.length;
     await pressReturn();
     const fitted = await page.evaluate(() => ({ url: location.href, width: innerWidth, height: innerHeight, devicePixelRatio }));
     check('başlangıç adresine gidildi', fitted.url === BASE + '/', fitted.url);
-    check('görünen alan kayıttakine getirildi', fitted.width === recorded.width && fitted.height === recorded.height && Math.abs(fitted.devicePixelRatio - recorded.devicePixelRatio) < 0.001, `${JSON.stringify(fitted)} kayıtta ${JSON.stringify(recorded)}`);
     c = await card();
     check('kartta yalnızca bekleyen aksiyon uyarısı kaldı', c.hidden ? c.message.includes('Koşuyu oynat') : (!c.fit && c.text === 'Oynatmadan önce:' && c.reasons.includes('silinecek') && !c.reasons.includes('beklenen')), JSON.stringify(c));
     s = await getState();
@@ -136,7 +135,7 @@ function check(name, ok, detail = '') {
     await sleep(600);
     await tryReplay();
     c = await card();
-    check('uygulama başlangıçlı senaryo: buton adres', !c.hidden && c.fit && c.fitText.includes('adres'), c.fitText);
+    check('uygulama başlangıçlı senaryo: buton adres', !c.hidden && c.fit, c.fitText);
     await pressReturn();
     c = await card();
     const landed = await page.evaluate(() => location.href);
@@ -159,16 +158,17 @@ function check(name, ok, detail = '') {
     check('"Yine de oynat" geri geldi', c.hidden || c.anyway);
     await panel.evaluate(() => document.getElementById('btn-replay-cancel').click());
 
-    // ---- Yalnızca boyut farklı: buton "boyut", adrese gidilmez ----
+    // ---- Yalnızca boyut farklı: kart boyut için buton göstermez, oynatma boyutu kendisi kurar ----
     await panel.evaluate(([w]) => chrome.windows.update(w, { width: 1000, height: 720 }), [windowId]);
     await sleep(600);
+    await panel.evaluate(() => { replayResult = null; });
     await tryReplay();
     c = await card();
-    check('yalnızca boyut: buton metni', c.fit && c.fitText === `Başlangıç node'una dön (boyut ${recorded.width}×${recorded.height})`, c.fitText);
-    const navigations = (await getState()).buffer.filter((a) => a.type === 'navigate').length;
-    await pressReturn();
-    const sized = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-    check('yalnızca boyut: getirildi, gezinme yok', sized.width === recorded.width && sized.height === recorded.height && (await getState()).buffer.filter((a) => a.type === 'navigate').length === navigations, JSON.stringify(sized));
+    check('yalnızca boyut: dön butonu ve boyut uyarısı yok', c.hidden || (!c.fit && !c.reasons.includes('Görünen alan')), JSON.stringify(c));
+    if (!c.hidden) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
+    await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 60000 });
+    const sized = await panel.evaluate(() => ({ status: replayResult.status, warnings: replayResult.steps.flatMap((x) => x.warnings) }));
+    check('yalnızca boyut: oynatma geçti, uyarı yok', sized.status === 'passed' && !sized.warnings.length, JSON.stringify(sized));
   } finally {
     await ctx.close();
     server.close();

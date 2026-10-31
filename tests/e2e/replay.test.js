@@ -105,7 +105,7 @@ function check(name, ok, detail = '') {
     await send({ type: 'RESOLVE_TAB', follow: true });
     const [T1] = await tabIdOf(BASE + '/docs');
     s = await createNode(T1);
-    const kinds = s.edges.map((e) => e.actions.map((a) => a.type + (a.type === 'input' ? `=${a.value}` : '')).join('+'));
+    const kinds = s.edges.map((e) => e.actions.filter((a) => !a.auto).map((a) => a.type + (a.type === 'input' ? `=${a.value}` : '')).join('+'));
     check('kayıt: 8 node, 7 edge', s.nodes.length === 8 && s.edges.length === 7, `${s.nodes.length} node, ${s.edges.length} edge`);
     check('kayıt: aksiyonlar', JSON.stringify(kinds) === JSON.stringify(['input=ali+input=******+click', 'click', 'input=m', 'input=true', 'key', 'hover', 'click+tab']), JSON.stringify(kinds));
     const nodes = s.nodes.length;
