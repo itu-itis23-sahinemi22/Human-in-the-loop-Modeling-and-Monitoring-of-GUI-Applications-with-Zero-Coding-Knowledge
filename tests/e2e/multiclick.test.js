@@ -29,6 +29,10 @@ function check(name, ok, detail = '') {
   if (!ok) failures++;
 }
 const types = (actions) => actions.filter((a) => !a.auto).map((a) => a.type + (a.type === 'multiclick' ? `×${a.count}` : '')).join(', ');
+// Panelde oynatmadan sonra görünen alan taklidi kalkar; sekmenin boyutu başlangıç node'unun
+// kaydedildiği boyuttan farklıysa ilk aksiyondan önce resize kaydedilir (docs/01-mimari.md >
+// Panelde oynatma > Başlangıç boyutu; ortama bağlı). Oynatmadan sonraki kontroller ona bakmaz.
+const afterReplay = (actions) => actions.filter((a) => a.type !== 'resize');
 
 (async () => {
   const server = http.createServer((req, res) => { res.setHeader('content-type', 'text/html'); res.end(PAGE); });
@@ -140,8 +144,8 @@ const types = (actions) => actions.filter((a) => !a.auto).map((a) => a.type + (a
     await page.dblclick('#text');
     await sleep(500);
     s = await getState();
-    check('metne çift tıklama: select (multiclick değil)', types(s.buffer) === 'select', types(s.buffer));
-    await send({ type: 'REMOVE_BUFFERED', index: 0, time: s.buffer[0].time });
+    check('metne çift tıklama: select (multiclick değil)', types(afterReplay(s.buffer)) === 'select', types(s.buffer));
+    await send({ type: 'CLEAR_BUFFER' }); // seçim ve varsa oynatma sonrası resize
 
     // ---- 5) Ayar kapalıyken her tıklama ayrı ----
     await send({ type: 'SET_SETTINGS', settings: { ...stored, disabledActions: ['multiclick'] } });
@@ -149,7 +153,8 @@ const types = (actions) => actions.filter((a) => !a.auto).map((a) => a.type + (a
     await page.dblclick('#like');
     await sleep(800);
     s = await getState();
-    check('Çoklu tıklama kapalı: iki ayrı click', types(s.buffer) === 'click, click' && s.buffer.every((a) => a.label === 'Begen'), `${types(s.buffer)} ${s.buffer.map((a) => a.label).join('|')}`);
+    const clicks = afterReplay(s.buffer);
+    check('Çoklu tıklama kapalı: iki ayrı click', types(clicks) === 'click, click' && clicks.every((a) => a.label === 'Begen'), `${types(s.buffer)} ${s.buffer.map((a) => a.label).join('|')}`);
     check('konsolda hata yok', errors.length === 0, errors.join(' | '));
   } finally {
     await ctx.close();
