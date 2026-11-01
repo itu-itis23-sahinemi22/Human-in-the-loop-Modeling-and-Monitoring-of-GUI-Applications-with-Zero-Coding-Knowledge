@@ -59,7 +59,12 @@ function check(name, ok, detail = '') {
       await page0.goto(BASE + '/');
       await page0.bringToFront();
       await sleep(800);
-      await panel.evaluate(() => { replayResult = null; document.getElementById('btn-replay').click(); });
+      // açık kalan başlangıç kartı (ör. "Ana graph'tan yenile"den sonra) "Koşuyu oynat"ı kilitler: önce Vazgeç
+      await panel.evaluate(() => {
+        replayResult = null;
+        if (!document.getElementById('replay-check').hidden) document.getElementById('btn-replay-cancel').click();
+        document.getElementById('btn-replay').click();
+      });
       await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
       await sleep(800);
     };
