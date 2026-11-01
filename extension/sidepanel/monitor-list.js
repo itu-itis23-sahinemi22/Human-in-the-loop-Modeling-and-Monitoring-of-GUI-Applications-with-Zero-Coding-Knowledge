@@ -304,7 +304,7 @@ function renderMonitorsNow() {
       : 'Henüz monitör yok. "Monitör ekle" ile tüm model için; graph\'ta bir node\'a ya da edge\'e sağ tıklayıp "Monitör ekle" ile tek öğe için kural tanımlayın.';
   $('monitors-orphans').hidden = !orphans.length;
   $('monitors-orphans').textContent = orphans.length
-    ? `${orphans.length} monitör sahipsiz: node'u ya da edge'i ${scenarioId ? 'senaryonun graph\'ında yok (koşular değişince kopyadan düşmüş olabilir)' : 'artık yok (silinmiş, birleştirilmiş ya da graph sıfırlanmış)'}. "Düzenle" ile başka bir öğeye taşıyın ya da silin. Sahipsiz monitörler dışa aktarılmaz.`
+    ? `${orphans.length} monitör sahipsiz: node'u ya da edge'i ${scenarioId ? 'senaryonun graph\'ında yok (ana graph\'tan silinip kopya yenilenmiş olabilir)' : 'artık yok (silinmiş, birleştirilmiş ya da graph sıfırlanmış)'}. "Düzenle" ile başka bir öğeye taşıyın ya da silin. Sahipsiz monitörler dışa aktarılmaz.`
     : '';
   $('btn-monitor-orphans').hidden = !orphans.length;
   $('btn-monitor-undo').disabled = !monitorUndo.length;

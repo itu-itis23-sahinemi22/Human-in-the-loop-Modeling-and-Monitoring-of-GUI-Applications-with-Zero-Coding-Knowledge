@@ -11,7 +11,8 @@
 //     monitörler de yedektedir (scenarioMonitors; senaryo id'leri de korunur).
 //   - "Senaryo indir" (panel.js > SENARYO): downloadJson() sarmalanır; senaryo dosyasında kopyadaki
 //     node / edge'lerin boş 'monitors: []' yuvaları o senaryonun monitörleriyle dolar, tamamı
-//     dosyanın 'monitors' alanında listelenir.
+//     dosyanın 'monitors' alanında listelenir. Senaryo kartındaki "Yükle…" bu monitörleri yeni
+//     senaryoya geri ekler (createScenario sarmalanır).
 // Detay: docs/07-monitorler.md > Veri modeli
 // =============================================================================
 
@@ -169,7 +170,7 @@ function applyPendingBackup() {
 
 
 // -----------------------------------------------------------------------------
-// SENARYO DOSYASI: Senaryo > "Senaryo indir" (panel.js > SENARYO)
+// SENARYO DOSYASI: Senaryo > "Senaryo indir" / "Yükle…" (panel.js > SENARYO)
 // -----------------------------------------------------------------------------
 // Senaryo dosyası senaryonun graph'ını (kopya) taşır; kopyadaki her node ve edge'in 'monitors: []'
 // yuvası (scenario.js > scenarioSnapshot) senaryoya özel monitörler için ayrılmıştır. Storage'daki
@@ -189,3 +190,35 @@ function withScenarioMonitors(data) {
 
 const downloadJsonWithoutMonitors = downloadJson; // panel.js
 downloadJson = (name, data) => downloadJsonWithoutMonitors(name, withScenarioMonitors(data));
+
+// "Yükle…" dosyayı yeni bir senaryo olarak ekler (yeni senaryo id'si verilir); dosyanın 'monitors'
+// alanındaki monitörler o senaryonun listesine yeni id'lerle eklenir (öğesi bu graph'ta olmayan
+// sahipsiz gelir). panel.js'in dosya kutusu capture aşamasında okunur (graph yedeğindeki gibi) ve
+// createScenario sarmalanır: dosyadan gelen senaryo oluşunca (koşuları dosyadakiyle aynıysa)
+// monitörler yazılır. Dosya bu graph'la yürünemediği için reddedilirse senaryo oluşmaz; bekleyen
+// monitörler bir sonraki createScenario'da koşular tutmadığı için atılır.
+let pendingScenarioFile = null; // Promise<{ runs, items } | null>: seçilen senaryo dosyasının monitörleri
+
+document.addEventListener('change', (event) => {
+  if (event.target !== $('scenario-file')) return;
+  const file = event.target.files[0];
+  pendingScenarioFile = file ? file.text().then((text) => {
+    const json = JSON.parse(text);
+    const items = json?.format === SCENARIO_FORMAT && Array.isArray(json.monitors?.items) ? json.monitors.items : [];
+    return items.length ? { runs: JSON.stringify(json.runs), items } : null;
+  }).catch(() => null) : null; // bozuk dosyayı panel.js kendisi bildirir
+}, true);
+
+const createScenarioWithoutMonitors = createScenario; // panel.js
+createScenario = async (fields, notice = null) => {
+  const pending = pendingScenarioFile;
+  pendingScenarioFile = null;
+  const id = await createScenarioWithoutMonitors(fields, notice);
+  const file = await pending;
+  if (!id || !file || file.runs !== JSON.stringify(fields.runs)) return id;
+  const result = importMonitorItems(file.items, id);
+  await saveScenarioMonitors();
+  showMessage({ notice: [notice?.notice, importSummary(result, 'Dosyadaki ')].filter(Boolean).join(' ') });
+  renderMonitors();
+  return id;
+};

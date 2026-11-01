@@ -274,7 +274,7 @@ function scenarioCopy(scenarioId) {
   if (!scenarioId) return null;
   const sc = scenario.id === scenarioId ? scenario : state.scenarios.find((s) => s.id === scenarioId);
   if (!sc) return null;
-  return sc.graph ?? scenarioSnapshot(scenarioGraphOf(sc), sc.runs);
+  return sc.graph ?? scenarioSnapshot(scenarioGraphOf(sc));
 }
 
 // Monitörün node / edge'lerinin bakıldığı graph: genel monitörde ana graph (state), senaryo
@@ -352,11 +352,20 @@ function edgeLabel(edge, graph = state) {
 // alan ("Ad") varken monitör sessizce öbür alana kaymamalı.
 // Bekleme aksiyonunun elementi yok ve Emir'in otomatik beklemeleri hep aynı süre ve etiketle gelir;
 // bekleme, ARKASINDAN GELDİĞİ aksiyonla tanınır (after: "Tıkla Login'den sonraki bekleme"; edge'in
-// başındaki bekleme için null). Süresi ayrıca saklanır (target "wait:<ms>"), ✎ ile değişse de bağ kopmaz.
+// başındaki bekleme için null). Aynı aksiyon edge'de birden çok kez olabilir (sihirbazda iki "İleri"):
+// o aksiyondan sonra gelen beklemeler içindeki sırası da saklanır (nth, 0'dan), bu beklemelerin
+// sayısıyla (count) ve süresi + aksiyonun etiketi kendisiyle aynı olanların sayısıyla (alike,
+// kendisi dahil). Süresi ayrıca saklanır (target "wait:<ms>"), ✎ ile değişse de bağ kopmaz.
 function monitorActionRef(action, index, actions = null) {
   if (!action) return null;
   const ref = { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: actionTarget(action) };
-  if (action.type === 'wait') ref.after = waitAnchor(actions, index);
+  if (action.type === 'wait') {
+    ref.after = waitAnchor(actions, index);
+    if (ref.after !== undefined) {
+      const siblings = waitsAfter(actions, ref.after);
+      Object.assign(ref, { nth: siblings.indexOf(index), count: siblings.length, alike: siblings.filter((i) => sameWait(actions, i, ref)).length });
+    }
+  }
   return ref;
 }
 
@@ -377,6 +386,22 @@ function waitAnchor(actions, index) {
   return null;
 }
 
+// İki beklemenin arkasından geldiği aksiyon aynı mı: tür + hedef (etiket değişmiş olabilir); edge
+// başı (null) yalnızca edge başıyla.
+function sameAnchor(a, b) {
+  return a && b ? a.type === b.type && a.target === b.target : a === b;
+}
+
+// Aynı aksiyondan sonra gelen beklemelerin edge'deki sıraları (baştan sona)
+function waitsAfter(actions, anchor) {
+  return actions.flatMap((a, i) => (a?.type === 'wait' && sameAnchor(waitAnchor(actions, i), anchor) ? [i] : []));
+}
+
+// i'deki bekleme monitörün beklemesinin ikizi mi: süresi ve arkasından geldiği aksiyonun etiketi de aynı
+function sameWait(actions, i, ref) {
+  return actionTarget(actions[i]) === ref.target && waitAnchor(actions, i)?.label === ref.after?.label;
+}
+
 function normalizeActionRef(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const index = Number(raw.index);
@@ -386,6 +411,8 @@ function normalizeActionRef(raw) {
     ref.after = raw.after && typeof raw.after === 'object'
       ? { type: String(raw.after.type ?? ''), label: String(raw.after.label ?? ''), target: raw.after.target == null ? null : String(raw.after.target) }
       : null;
+    const { nth, count, alike } = raw; // beklemenin sırası (monitorActionRef); ilk sürümün kayıtlarında yok
+    if ([nth, count, alike].every(Number.isInteger) && nth >= 0 && nth < count && alike >= 1 && alike <= count) Object.assign(ref, { nth, count, alike });
   }
   return ref;
 }
@@ -407,28 +434,24 @@ function resolveMonitorAction(ref, actions) {
   return i;
 }
 
-// Bekleme: arkasından geldiği aksiyonu aynı olan beklemeler aday olur (aksiyon: tür + hedef, etiket
-// değişmiş olabilir). Tek adaysa o; birden çoksa süresi aynı olan, o da birden çoksa kayıttaki
-// sıradaki; yine belirsizse -1 ("aksiyon bulunamadı"): monitör sessizce başka bir beklemeye kaymaz.
-// Bağ bilinmiyorsa (eski kayıt): yalnızca kayıttaki sırada aynı süreli bekleme.
+// Bekleme (ayrıntı: monitorActionRef). Adaylar: arkasından geldiği aksiyonu aynı olan beklemeler.
+//   - Aday sayısı kayıttakiyle aynıysa (count) aynı sıradaki (nth): önündeki aksiyonlar silinse ya
+//     da süresi ✎ ile değişse de doğru bekleme.
+//   - Sayı değiştiyse (bekleme ya da aksiyonu eklendi / silindi) hangisinin gittiği ancak beklemenin
+//     ikizi yoksa (alike 1) bilinir: süresi ve aksiyonun etiketi aynı tek aday.
+//   - Sırası kaydedilmemiş kayıt (ilk sürüm, nth yok): yalnızca tek aday. Bağı kaydedilmemiş eski
+//     kayıt (after yok): yalnızca kayıttaki sırada aynı süreli bekleme.
+// Belirsizse -1 ("aksiyon bulunamadı"): monitör sessizce başka bir beklemeye kaymaz (issue #5).
 function resolveWaitAction(ref, actions) {
-  const isWait = (a) => a && a.type === 'wait';
   if (ref.after === undefined) {
     const at = actions[ref.index];
-    return isWait(at) && actionTarget(at) === ref.target ? ref.index : -1;
+    return at?.type === 'wait' && actionTarget(at) === ref.target ? ref.index : -1;
   }
-  const sameAnchor = (anchor) => (ref.after === null ? anchor === null : Boolean(anchor) && anchor.type === ref.after.type && anchor.target === ref.after.target);
-  let candidates = actions.map((a, i) => (isWait(a) && sameAnchor(waitAnchor(actions, i)) ? i : -1)).filter((i) => i >= 0);
-  if (candidates.length > 1 && ref.after) { // aynı aksiyondan sonra birden çok bekleme: etiketi de aynı olan aksiyonu yeğle
-    const exact = candidates.filter((i) => waitAnchor(actions, i).label === ref.after.label);
-    if (exact.length) candidates = exact;
-  }
-  if (candidates.length > 1) {
-    const sameMs = candidates.filter((i) => actionTarget(actions[i]) === ref.target);
-    if (sameMs.length) candidates = sameMs;
-  }
-  if (candidates.length > 1 && candidates.includes(ref.index)) candidates = [ref.index];
-  return candidates.length === 1 ? candidates[0] : -1;
+  const siblings = waitsAfter(actions, ref.after);
+  if (ref.count === undefined) return siblings.length === 1 ? siblings[0] : -1;
+  if (siblings.length === ref.count) return siblings[ref.nth] ?? -1;
+  const twins = siblings.filter((i) => sameWait(actions, i, ref));
+  return ref.alike === 1 && twins.length === 1 ? twins[0] : -1;
 }
 
 // "1. Yaz Fill Username" (Emir'in edge kartındaki satırla aynı: ACTION_TEXT panel.js'te). Bekleme:

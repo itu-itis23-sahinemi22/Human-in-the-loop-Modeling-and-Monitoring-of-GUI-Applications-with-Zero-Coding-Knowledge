@@ -52,40 +52,47 @@ function coverageOf(graph, runs) {
   return { edges: [edges.size, graph.edges.length], nodes: [nodes.size, graph.nodes.length] };
 }
 
-// SENARYO GRAPH'I: koşuların geçtiği node'ların ve edge'lerin ana graph'tan kopyası; ileride
-// senaryoya özel monitörlerin bağlanacağı yer (her node ve edge'de monitors). Ana graph sonradan
-// değişse de kopya değişmez; koşular düzenlenince ya da "Ana graph'tan yenile" denince yeniden
-// alınır. Ekran görüntüleri kopyalanmaz (node id'siyle ana graph'tan okunur). Önceki kopyadaki
-// monitörler id'yle korunur. Background kaydederken, panel anında göstermek için aynısını alır.
-// graph: { start, nodes, edges } (ana graph; start senaryonun başlangıcı)
-function scenarioSnapshot(graph, runs, previous = null) {
-  const monitors = new Map([...(previous?.nodes ?? []), ...(previous?.edges ?? [])].map((x) => [x.id, x.monitors ?? []]));
+// KOŞULARIN KULLANDIĞI KISIM: koşuların geçtiği edge'ler, onların uçları ve başlangıç node'u.
+// graph: { start, nodes, edges } (ana graph ya da senaryo graph'ı). Senaryo graph'ı ana graph'ın
+// tamamı olduğu için değişiklik uyarısı, temizlik siteleri ve "Kullanan senaryolar" yalnızca bu
+// kısma bakar.
+function runSubgraph(graph, runs) {
   const used = new Set(runs.flat());
   const edges = graph.edges.filter((e) => used.has(e.id));
   const nodeIds = new Set([graph.start, ...edges.flatMap((e) => [e.source, e.target])]);
+  return { start: graph.start, nodes: graph.nodes.filter((n) => nodeIds.has(n.id)), edges };
+}
+
+// SENARYO GRAPH'I: ana graph'ın kopyası (bütün node'lar ve edge'ler). Koşular bu kopyanın üzerinde
+// kurulur (panelde senaryo sekmesi) ve oynatılır; senaryoya özel monitörler buna bağlanır (her node
+// ve edge'de monitors). Ana graph sonradan değişse de kopya değişmez; koşular düzenlenince ya da "Ana
+// graph'tan yenile" denince yeniden alınır. Ekran görüntüleri kopyalanmaz (node id'siyle ana graph'tan
+// okunur). Önceki kopyadaki monitörler id'yle korunur. Background kaydederken, panel anında göstermek
+// için aynısını alır.
+// graph: { start, nodes, edges } (ana graph; start senaryonun başlangıcı)
+function scenarioSnapshot(graph, previous = null) {
+  const monitors = new Map([...(previous?.nodes ?? []), ...(previous?.edges ?? [])].map((x) => [x.id, x.monitors ?? []]));
   const copy = (item) => {
     const { screenshot, monitors: _, ...rest } = item;
     return { ...rest, monitors: monitors.get(item.id) ?? [] };
   };
-  return {
-    start: graph.start,
-    nodes: graph.nodes.filter((n) => nodeIds.has(n.id)).map(copy),
-    edges: edges.map(copy),
-    copied: Date.now(),
-  };
+  return { start: graph.start, nodes: graph.nodes.map(copy), edges: graph.edges.map(copy), copied: Date.now() };
 }
 
-// Kopyadan sonra ana graph'ta değişenler: silinen ya da değişen (ad, URL şablonu, edge set,
-// uçlar, aksiyonlar) node ve edge'ler; koşuların kullandığı, ana graph'ta olan ama kopyada
-// olmayan edge'ler (ör. silme geri alındı). [{ kind, id, name, change: 'silindi' | 'değişti' | 'eklendi' }]
+// Kopyadan sonra ana graph'ta değişenler, koşuların kullandığı kısımda (runSubgraph): silinen ya da
+// değişen (ad, URL şablonu, edge set, uçlar, aksiyonlar) node ve edge'ler; koşuların kullandığı, ana
+// graph'ta olan ama kopyada olmayan edge'ler (ör. silme geri alındı). Kopyanın koşuların geçmediği
+// kısmındaki değişiklikler sayılmaz: oynatmayı etkilemez.
+// [{ kind, id, name, change: 'silindi' | 'değişti' | 'eklendi' }]
 function snapshotDrift(graph, snapshot, runs = []) {
   if (!snapshot) return [];
-  const copied = new Set(snapshot.edges.map((e) => e.id));
-  const added = graph.edges.filter((e) => runs.some((run) => run.includes(e.id)) && !copied.has(e.id))
+  const inCopy = new Set(snapshot.edges.map((e) => e.id));
+  const added = graph.edges.filter((e) => runs.some((run) => run.includes(e.id)) && !inCopy.has(e.id))
     .map((e) => ({ kind: 'edge', id: e.id, name: e.name, change: 'eklendi' }));
   const fields = { node: ['name', 'urlKey', 'elements'], edge: ['name', 'source', 'target', 'actions'] };
+  const used = runSubgraph(snapshot, runs);
   const drift = [];
-  for (const [kind, copied, live] of [['node', snapshot.nodes, graph.nodes], ['edge', snapshot.edges, graph.edges]]) {
+  for (const [kind, copied, live] of [['node', used.nodes, graph.nodes], ['edge', used.edges, graph.edges]]) {
     const byId = new Map(live.map((x) => [x.id, x]));
     for (const item of copied) {
       const now = byId.get(item.id);
@@ -133,7 +140,7 @@ function siteOrigin(url) {
 }
 
 // Senaryonun siteleri: graph'taki node'ların adreslerinin origin'leri, başlangıç node'unun sitesi
-// önce. graph: senaryonun graph'ı (scenarioSnapshot; node'larda url vardır).
+// önce. graph: senaryo graph'ının koşuların kullandığı kısmı (runSubgraph; node'larda url vardır).
 function cleanupSites(graph) {
   const start = siteOrigin(graph.nodes.find((n) => n.id === graph.start)?.url ?? '');
   const origins = new Set([start, ...graph.nodes.map((n) => siteOrigin(n.url ?? ''))].filter(Boolean));

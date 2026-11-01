@@ -269,9 +269,9 @@ function backupProblem(data) {
 // dosyasıyla aynıdır (scenario.js). Yürünebilirlik burada denetlenmez: graph sonradan
 // değişebilir, panel yürünemeyen senaryoyu işaretler. Id'yi panel verir (çalışma kopyası
 // kayıttan önce de seçili olabilsin); ad graph içinde tekildir.
-// graph: senaryo graph'ı, koşuların geçtiği kısmın ana graph'tan kopyası (scenario.js >
-// scenarioSnapshot). Yeni senaryoda ve koşular düzenlenince (panel copy: true gönderir; "Ana
-// graph'tan yenile" de böyle) yeniden alınır, yeniden adlandırmada alınmaz.
+// graph: senaryo graph'ı, ana graph'ın kopyası (scenario.js > scenarioSnapshot). Yeni senaryoda
+// ve koşular düzenlenince (panel copy: true gönderir; "Ana graph'tan yenile" de böyle) yeniden
+// alınır, yeniden adlandırmada alınmaz.
 async function newScenario(state, data) {
   const problem = scenarioProblem(data);
   if (problem) throw new Error(`Senaryo kaydedilemedi: ${problem}`);
@@ -305,7 +305,7 @@ function deleteScenario(state, id) {
 // Senaryonun başlangıcı silinmişse graph'ın başlangıcı (panel > scenarioGraphOf ile aynı kural).
 function snapshotOf(state, scenario, previous = null) {
   const start = state.nodes.some((n) => n.id === scenario.start) ? scenario.start : state.startNodeId;
-  return scenarioSnapshot({ start, nodes: state.nodes, edges: state.edges }, scenario.runs, previous);
+  return scenarioSnapshot({ start, nodes: state.nodes, edges: state.edges }, previous);
 }
 
 // cleanup: oynatmadan önce silinecek site verileri (scenario.js > CLEANUP_TYPES; panel.js > TEMİZLİK).
