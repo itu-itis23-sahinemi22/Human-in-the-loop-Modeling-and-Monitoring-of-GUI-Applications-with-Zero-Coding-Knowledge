@@ -129,26 +129,26 @@ function check(name, ok, detail = '') {
     await $('#monitor-cards .type-card[data-type="expectedText"]').click();
     await sleep(150);
     const options = await $('#monitor-action option').allTextContents();
-    check('aksiyon listesi: bekleme süresiyle ("Bekle 2,5 sn")', options.some((o) => /^\d+\. Bekle 2,5 sn$/.test(o)), options.join(' | '));
+    check('aksiyon listesi: bekleme süresiyle ve arkasından geldiği aksiyonla ("Bekle 2,5 sn (Tıkla SGK kaydı sonrası)")', options.some((o) => /^\d+\. Bekle 2,5 sn \(Tıkla SGK kaydı sonrası\)$/.test(o)), options.join(' | '));
     await $('#monitor-action').selectOption(String(waitIndex));
     await sleep(100);
-    check('bekleme seçilince ipucu: "bittikten hemen sonra", olmalı / olmamalı', (await text('#monitor-action-hint')).includes('Bekleme (2,5 sn) bittikten hemen sonra') && (await text('#monitor-action-hint')).includes('olmamalı'), await text('#monitor-action-hint'));
+    check('bekleme seçilince ipucu: süre + arkasından geldiği aksiyon, "bittikten hemen sonra", olmalı / olmamalı', (await text('#monitor-action-hint')).includes('Bekleme (2,5 sn, Tıkla SGK kaydı sonrası) bittikten hemen sonra') && (await text('#monitor-action-hint')).includes('olmamalı'), await text('#monitor-action-hint'));
     const modes = await $('[data-key="mode"] option').allTextContents();
     check('Kural: Ekranda olmalı / olmamalı (varsayılan olmalı)', modes.join('|') === 'Ekranda olmalı|Ekranda olmamalı' && (await $('[data-key="mode"] select').inputValue()) === 'present');
     await $('[data-key="text"] > label input').fill('Bekleyiniz');
     await $('[data-key="mode"] select').selectOption('absent');
     await sleep(100);
-    check('özet: "… Bekle 2,5 sn aksiyonundan hemen sonra: görünen yazıların hiçbirinde Bekleyiniz geçmemeli"', (await text('#monitor-summary')).includes(`${edge.name} edge'inin ${waitIndex + 1}. Bekle 2,5 sn aksiyonundan hemen sonra: görünen yazıların hiçbirinde Bekleyiniz geçmemeli`), await text('#monitor-summary'));
+    check('özet: "… Bekle 2,5 sn aksiyonundan hemen sonra: görünen yazıların hiçbirinde Bekleyiniz geçmemeli"', (await text('#monitor-summary')).includes(`${edge.name} edge'inin ${waitIndex + 1}. Bekle 2,5 sn (Tıkla SGK kaydı sonrası) aksiyonundan hemen sonra: görünen yazıların hiçbirinde Bekleyiniz geçmemeli`), await text('#monitor-summary'));
     await shot('form-bekleme', '#monitor-dialog');
     await $('#btn-monitor-save').evaluate((b) => b.click());
     await sleep(400);
     let m = (await store('monitors:' + await activeId()))['monitors:' + await activeId()];
-    check('kaydedildi: bekleme aksiyonuna bağlı (hedef wait:2500), kural absent, ad "… yok"', m.items.length === 1 && m.items[0].action?.type === 'wait' && m.items[0].action.target === 'wait:2500' && m.items[0].params.mode === 'absent'
-      && (await text('#monitors-list .monitor b')) === 'Expected Text · "Bekleyiniz" yok' && (await text('#monitors-list .monitor .scope')) === `Edge: ${edge.name} · ${waitIndex + 1}. Bekle 2,5 sn`, JSON.stringify(m.items[0]));
+    check('kaydedildi: bekleme aksiyonuna bağlı (hedef wait:2500, arkasından geldiği aksiyon: tıklama), kural absent, ad "… yok"', m.items.length === 1 && m.items[0].action?.type === 'wait' && m.items[0].action.target === 'wait:2500' && m.items[0].action.after?.target === 'button:sgk' && m.items[0].params.mode === 'absent'
+      && (await text('#monitors-list .monitor b')) === 'Expected Text · "Bekleyiniz" yok' && (await text('#monitors-list .monitor .scope')) === `Edge: ${edge.name} · ${waitIndex + 1}. Bekle 2,5 sn (Tıkla SGK kaydı sonrası)`, JSON.stringify(m.items[0]));
 
     // ---- Diğer monitörler storage'a ----
     const graphId = await activeId();
-    const ref = (i) => ({ index: i, type: A[i].type, label: A[i].label, target: A[i].type === 'wait' ? `wait:${A[i].ms}` : (A[i].target?.key ?? null) });
+    const ref = (i) => ({ index: i, type: A[i].type, label: A[i].label, target: A[i].type === 'wait' ? `wait:${A[i].ms}` : (A[i].target?.key ?? null), ...(A[i].type === 'wait' ? { after: { type: A[i - 1].type, label: A[i - 1].label, target: A[i - 1].target?.key ?? null } } : {}) }); // formun kaydettiği biçim (monitorActionRef)
     const M = [
       m.items[0],
       { id: 'w2', type: 'expectedText', scope: edge.id, action: ref(waitIndex), params: { text: 'Yazdır', mode: 'present', caseSensitive: false }, severity: 'error', enabled: true, name: 'Bekleme sonrası liste geldi' }, // listeyle gelen düğme ("SGK kayıtları" mesajın "SGK kayıtlarınız"ında da geçer)
@@ -193,7 +193,7 @@ function check(name, ok, detail = '') {
     await sleep(400);
     await panel.evaluate(() => { document.getElementById('monitors').open = true; });
     const scopes = await panel.$$eval('#monitors-list .monitor .scope', (els) => els.map((e) => e.textContent + (e.classList.contains('orphan') ? ' [SAHİPSİZ]' : '')));
-    check('bekleme 3 sn olunca monitörler aynı beklemeye bağlı ("Bekle 3 sn"), sahipsiz değil', scopes.filter((t) => t.endsWith(`${waitIndex + 1}. Bekle 3 sn`)).length === 3 && !scopes.some((t) => t.includes('SAHİPSİZ')), scopes.join(' | '));
+    check('bekleme 3 sn olunca monitörler aynı beklemeye bağlı ("Bekle 3 sn"), sahipsiz değil', scopes.filter((t) => t.endsWith(`${waitIndex + 1}. Bekle 3 sn (Tıkla SGK kaydı sonrası)`)).length === 3 && !scopes.some((t) => t.includes('SAHİPSİZ')), scopes.join(' | '));
     // Oynatma senaryonun graph'ını (kopya) oynatır: yeni süre "Ana graph'tan yenile" ile kopyaya alınır
     await panel.evaluate(() => persistScenario());
     await sleep(300);

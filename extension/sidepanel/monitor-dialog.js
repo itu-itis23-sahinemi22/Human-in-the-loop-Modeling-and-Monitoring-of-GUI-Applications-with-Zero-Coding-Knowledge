@@ -452,11 +452,11 @@ function renderActionPicks(ref = undefined) {
   const edge = edgeById($('monitor-edge').value, dialogGraph());
   const actions = edge?.actions ?? [];
   select.replaceChildren(new Option(actions.length ? 'Edge\'in tamamı (her aksiyondan sonra)' : 'Edge\'de aksiyon yok', ''));
-  select.append(...actions.map((a, i) => new Option(actionText(a, i) + (a.target?.key ? ` (${a.target.key})` : ''), String(i))));
+  select.append(...actions.map((a, i) => new Option(actionText(a, i, actions) + (a.target?.key ? ` (${a.target.key})` : ''), String(i))));
   if (ref !== undefined) {
     const i = ref ? resolveMonitorAction(ref, actions) : -1;
     select.value = i >= 0 ? String(i) : '';
-    if (ref && i < 0) showDialogError(`Monitörün aksiyonu (${ref.index + 1}. ${ref.label}) bu edge'de artık yok; listeden yeniden seçin.`);
+    if (ref && i < 0) showDialogError(`Monitörün aksiyonu (${actionRefText(ref)}) bu edge'de artık yok ya da tek başına bulunamıyor; listeden yeniden seçin.`);
   } else {
     select.value = [...select.options].some((o) => o.value === previous) ? previous : '';
   }
@@ -469,7 +469,7 @@ function renderActionHint() {
   const action = edge?.actions?.[i];
   $('monitor-action-hint').textContent = !edge?.actions?.length ? ''
     : i < 0 ? `Bu edge'de ${edge.actions.length} aksiyon var. Belirli bir aksiyondan hemen sonra kontrol için (ör. kullanıcı adı yazılınca, bekleme bitince) listeden seçin; seçilmezse her aksiyondan sonra kontrol edilir.`
-      : action.type === 'wait' ? `Bekleme (${waitSeconds(action.ms)}) bittikten hemen sonra kontrol edilir: yüklenmesi beklenen içerik gelmiş mi ("olmalı"), geçici mesaj gitmiş mi ("olmamalı", ör. "Bekleyiniz").`
+      : action.type === 'wait' ? `Bekleme (${waitSeconds(action.ms)}${(() => { const anchor = waitAnchor(edge.actions, i); return anchor ? `, ${anchorText(anchor)} sonrası` : anchor === null ? ', edge başında' : ''; })()}) bittikten hemen sonra kontrol edilir: yüklenmesi beklenen içerik gelmiş mi ("olmalı"), geçici mesaj gitmiş mi ("olmamalı", ör. "Bekleyiniz"). Monitör beklemeyi arkasından geldiği aksiyonla tanır; aksiyonlar silinse de o beklemeye bağlı kalır.`
         : `Yalnızca bu aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan).${action.type === 'input' && action.target?.key ? ` Alan: ${action.target.key}` : ''}`;
 }
 
@@ -548,7 +548,7 @@ function draftMonitor() {
   return {
     type: type.id,
     scope: radio === 'node' ? $('monitor-node').value : radio === 'edge' ? $('monitor-edge').value : 'global',
-    action: actionIndex >= 0 ? monitorActionRef(edge.actions?.[actionIndex], actionIndex) : null,
+    action: actionIndex >= 0 ? monitorActionRef(edge.actions?.[actionIndex], actionIndex, edge.actions) : null,
     params,
     severity: 'error', // arayüzde önem seçilmez: her bozulma kırmızı (monitor-types.js > MONITOR_SEVERITIES)
     enabled: $('monitor-enabled').checked,
@@ -567,8 +567,9 @@ function renderSummary() {
   const edge = kind === 'edge' ? edgeById(draft.scope, graph) : null;
   const scope = kind === 'global' ? { kind: 'global' }
     : kind === 'node' ? { kind: 'node', name: nodeIn(graph, draft.scope)?.name ?? '…' }
-      : { kind: 'edge', name: edge?.name ?? '…', action: draft.action ? actionText(edge.actions[draft.action.index], draft.action.index) : null };
+      : { kind: 'edge', name: edge?.name ?? '…', action: draft.action ? actionText(edge.actions[draft.action.index], draft.action.index, edge.actions) : null };
   if (dialogScenarioId) scope.scenario = dialogScenarioName() ?? '…';
+
   $('monitor-summary').replaceChildren(...monitorSentence(type, draft.params, scope, draft.enabled).map((part) => {
     if (typeof part === 'string') return part;
     const b = document.createElement('b');
