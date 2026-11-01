@@ -52,6 +52,28 @@
 .monitor .buttons .edit { padding: 2px 6px; font-size: 11px; }
 .hint.warn { color: var(--warn); }
 
+/* Senaryo görünümü: iki grup (senaryonun monitörleri, genel kurallar) ve "Genel" / "Senaryo" etiketi;
+   genel kural satırı salt okunur (düğmeler pasif, soluk) */
+.monitor-group-title { font-size: 12px; margin: 8px 0 2px; }
+.monitor-group-title[hidden] { display: none; }
+#monitors-general { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+#monitors-general[hidden], #monitors-scenario-note[hidden] { display: none; }
+.tag {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  vertical-align: 1px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+}
+.tag.scenario { color: var(--monitor); background: color-mix(in srgb, var(--monitor) 12%, transparent); }
+.monitor .body > .tag { float: left; margin-top: 2px; } /* adın (blok b) başına, aynı satırda */
+.monitor.readonly .buttons { opacity: 0.45; }
+
 /* Node detay kartındaki alt bölüm */
 .details-monitors { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .details-monitors h3 { font-size: 12px; margin: 0 0 4px; }

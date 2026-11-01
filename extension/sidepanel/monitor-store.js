@@ -19,7 +19,8 @@
 //   monitor-run.js     oynatmada kontrol ve ışık listesi, "Bu ekranda şimdi kontrol et"
 // Dosyalar klasik script'tir; birbirlerinin global fonksiyonlarını çağırırlar (modül yok: Emir'in
 // paneli de öyle). panel.js'in global'leri okunur / sarmalanır (state, activeGraph, scenarioView,
-// selectedId, renderDetails, cy, nodeById, showMessage, ACTION_TEXT, graphWalkerModel, graphBackup);
+// scenario, scenarioGraphOf, selectedId, renderDetails, cy, nodeById, showMessage, ACTION_TEXT,
+// graphWalkerModel, graphBackup, downloadJson; scenario.js'ten scenarioSnapshot, SCENARIO_FORMAT);
 // panel.js değişmez.
 //
 // Veri:
@@ -32,6 +33,8 @@
 //     Bir monitör bozulduğunda o anın ekran görüntüsü uyarıyla birlikte burada saklanır; graph'ın
 //     node ekran görüntülerine dokunulmaz, modele yazılmaz. Graph başına son MONITOR_ALARM_LIMIT
 //     uyarı tutulur (bkz. UYARILAR).
+//   - Ana graph'ın monitörleri GENEL kurallardır (her senaryoda kontrol edilir). Bir senaryoya özel
+//     monitörler ayrı anahtardadır: 'scenario-monitors:<graph id>' (bkz. SENARYOYA ÖZEL MONİTÖRLER).
 // Detay: docs/07-monitorler.md
 // =============================================================================
 
@@ -40,9 +43,12 @@ const MONITORS_FORMAT = 'graph-recorder-monitors/v1';
 const MONITOR_ALARMS_KEY_PREFIX = 'monitor-alarms:'; // chrome.storage.local > monitor-alarms:<graph id> (bkz. UYARILAR)
 const MONITOR_ALARMS_FORMAT = 'graph-recorder-monitor-alarms/v1';
 const MONITOR_ALARM_LIMIT = 20;                     // graph başına saklanan son uyarı sayısı (her biri ekran görüntülü)
+const SCENARIO_MONITORS_KEY_PREFIX = 'scenario-monitors:'; // chrome.storage.local > scenario-monitors:<graph id> (bkz. SENARYOYA ÖZEL MONİTÖRLER)
+const SCENARIO_MONITORS_FORMAT = 'graph-recorder-scenario-monitors/v1';
 
 let monitors = emptyMonitors();  // aktif graph'ın monitörleri: { format, nextId, items: [{ id, type, scope, params, severity, enabled, name, createdAt }] }
 let monitorAlarms = emptyAlarms(); // aktif graph'ın monitör uyarıları (ekran görüntüleriyle), bkz. UYARILAR
+let scenarioMonitors = emptyScenarioMonitors(); // aktif graph'ın senaryoya özel monitörleri: { format, scenarios: { senaryo id -> { nextId, items } } }
 let monitorsGraphId = null;      // monitörleri yüklü graph (storage > activeGraph)
 const monitorVerdicts = new Map(); // son kontrol sonuçları: monitör id -> { status: ok | fail | warn | skip, text } (monitor-run.js yazar)
 
@@ -154,7 +160,7 @@ async function addMonitorAlarms(list) {
     id: 'a' + monitorAlarms.nextId++, monitorId, at: Date.now(), source, where, text, url, screenshot, step, action,
   }));
   if (!alarms.length) return alarms;
-  const alive = new Set(monitors.items.map((m) => m.id));
+  const alive = new Set([...monitors.items, ...allScenarioMonitors()].map((m) => m.id));
   monitorAlarms.items = [...monitorAlarms.items.filter((a) => alive.has(a.monitorId)), ...alarms].slice(-MONITOR_ALARM_LIMIT);
   await saveMonitorAlarms();
   renderMonitors();
@@ -173,12 +179,146 @@ async function clearMonitorAlarms(monitorId) {
 }
 
 
-function monitorById(id) {
-  return monitors.items.find((m) => m.id === id);
+// -----------------------------------------------------------------------------
+// SENARYOYA ÖZEL MONİTÖRLER
+// -----------------------------------------------------------------------------
+// Ana graph'ın monitörleri (monitors) GENEL kurallardır: her senaryoda ve "şimdi kontrol et"te
+// kontrol edilir ("hiçbir ekranda 500 hatası olmasın"). Bir senaryonun kendi monitörleri yalnızca o
+// senaryo oynatılırken kontrol edilir: aynı login edge'inden geçen iki senaryo ("geçerli kullanıcı →
+// ürünler görünmeli", "geçersiz kullanıcı → hata mesajı görünmeli") farklı beklenti taşıyabilir.
+// Senaryo monitörü senaryonun kendi graph'ına bağlıdır (kopya; scenario.js > scenarioSnapshot):
+// kapsamdaki node / edge kopyada aranır, aksiyon bağı kopyanın aksiyonlarıyla çözülür; ana graph
+// kopyadan sonra değişse de monitör yerinde kalır (oynatma da kopyayı oynatır).
+//   chrome.storage.local > 'scenario-monitors:<graph id>' =
+//     { format, scenarios: { '<senaryo id>': { nextId, items: [monitör, ...] } } }
+// Monitör kayıtları genel monitörlerle aynı şekildedir; ayrıca scenarioId taşır ve id'leri senaryo
+// id'siyle başlar ("s1abc.m1"): uyarılar (monitor-alarms) ve kontrol sonuçları (monitorVerdicts)
+// aynı yapıda, genel monitörlerle çakışmadan durur. Kopyadaki node / edge'lerin 'monitors: []'
+// yuvaları (scenario.js) storage'da boş kalır (graph state'ini yalnızca background yazar); "Senaryo
+// indir" dosyasında doldurulur (monitor-export.js). Senaryo silinince monitörleri de silinir
+// (dropMonitorsOfDeletedScenarios); graph silinince anahtar silinir. Boşalan liste silinmez:
+// nextId sayması sürer, silinmiş bir monitörün id'si (ve uyarıları) yenisine geçmez.
+
+function scenarioMonitorsKey(graphId = monitorsGraphId) {
+  return SCENARIO_MONITORS_KEY_PREFIX + graphId;
 }
 
-function edgeById(id) {
-  return state.edges.find((e) => e.id === id);
+function emptyScenarioMonitors() {
+  return { format: SCENARIO_MONITORS_FORMAT, scenarios: {} };
+}
+
+function normalizeScenarioMonitors(raw) {
+  const data = raw && typeof raw === 'object' && raw.scenarios && typeof raw.scenarios === 'object' ? raw : emptyScenarioMonitors();
+  const scenarios = {};
+  for (const [id, list] of Object.entries(data.scenarios)) {
+    if (!id) continue;
+    const { nextId, items } = normalizeMonitors(list);
+    scenarios[id] = { nextId, items: items.map((m) => ({ ...m, scenarioId: id })) };
+  }
+  return { format: SCENARIO_MONITORS_FORMAT, scenarios };
+}
+
+async function saveScenarioMonitors() {
+  if (!monitorsGraphId) return;
+  try {
+    await chrome.storage.local.set({ [scenarioMonitorsKey()]: scenarioMonitors });
+  } catch (error) {
+    showMessage({ error: `Senaryo monitörleri kaydedilemedi: ${error.message}` });
+  }
+}
+
+// Monitörün listesi kaydedilir: genel (monitors:<graph>) ya da senaryolarınki (scenario-monitors:<graph>).
+function saveMonitorList(scenarioId = null) {
+  return scenarioId ? saveScenarioMonitors() : saveMonitors();
+}
+
+// Senaryonun listesi { nextId, items }; yoksa null (create: true ise boş liste açılır).
+function scenarioMonitorList(scenarioId, create = false) {
+  if (!scenarioId) return null;
+  let list = scenarioMonitors.scenarios[scenarioId];
+  if (!list && create) list = scenarioMonitors.scenarios[scenarioId] = { nextId: 1, items: [] };
+  return list ?? null;
+}
+
+function scenarioMonitorItems(scenarioId) {
+  return scenarioMonitorList(scenarioId)?.items ?? [];
+}
+
+// Bütün senaryoların monitörleri (uyarı temizliği, id arama, yedek)
+function allScenarioMonitors() {
+  return Object.values(scenarioMonitors.scenarios).flatMap((list) => list.items);
+}
+
+// Monitörün durduğu liste: genel liste ya da senaryosunun listesi (ekleme, silme, geri alma)
+function monitorListOf(m) {
+  return m.scenarioId ? scenarioMonitorList(m.scenarioId, true) : monitors;
+}
+
+// Yeni monitörün id'si: genel listede "m7", senaryoda "<senaryo id>.m3" (sayaç listenindir)
+function newMonitorId(scenarioId = null) {
+  const list = scenarioId ? scenarioMonitorList(scenarioId, true) : monitors;
+  return (scenarioId ? `${scenarioId}.m` : 'm') + list.nextId++;
+}
+
+// Senaryo görünümündeyse (panel.js > GÖRÜNÜM) seçili senaryonun id'si; ana graph görünümünde null.
+// Senaryo görünümünde liste o senaryonun monitörlerini (+ genel kuralları) gösterir, ekleme o
+// senaryoya yapılır, "şimdi kontrol et" ikisini birlikte kontrol eder.
+function monitorScenarioView() {
+  return scenarioView && scenario.id ? scenario.id : null;
+}
+
+// Senaryonun graph'ı (kopya): seçili senaryoda panelin çalışma kopyası (kayıttakinden yeni olabilir),
+// değilse kayıttaki; kopyası henüz yoksa (eski kayıt) anında alınır (panel.js > viewGraph ile aynı
+// kural). Senaryo yoksa (silinmiş) null.
+function scenarioCopy(scenarioId) {
+  if (!scenarioId) return null;
+  const sc = scenario.id === scenarioId ? scenario : state.scenarios.find((s) => s.id === scenarioId);
+  if (!sc) return null;
+  return sc.graph ?? scenarioSnapshot(scenarioGraphOf(sc), sc.runs);
+}
+
+// Monitörün node / edge'lerinin bakıldığı graph: genel monitörde ana graph (state), senaryo
+// monitöründe senaryonun kopyası (senaryo silinmişse null: monitör sahipsizdir).
+function monitorGraphOf(m) {
+  return m?.scenarioId ? scenarioCopy(m.scenarioId) : state;
+}
+
+// Görünümün graph'ı: senaryo görünümünde kopya, ana graph görünümünde state (seçili öğe, sağ tık menüsü).
+function monitorViewGraph() {
+  const scenarioId = monitorScenarioView();
+  return (scenarioId && scenarioCopy(scenarioId)) || state;
+}
+
+function nodeIn(graph, id) {
+  return graph?.nodes.find((n) => n.id === id);
+}
+
+function edgeIn(graph, id) {
+  return graph?.edges.find((e) => e.id === id);
+}
+
+// Silinen senaryoların monitörleri de silinir. Senaryo listesi graph state'indedir (background
+// yazar; panel.js > SENARYO); storage'daki graph değişince eski ve yeni listeler karşılaştırılır,
+// yalnızca listeden düşen id'lere bakılır ("Sıfırla" hepsini düşürür). Uyarıları bir sonraki uyarı
+// yazımında atılır (addMonitorAlarms). Döner: silinen senaryo id'leri.
+async function dropMonitorsOfDeletedScenarios(before, after) {
+  const alive = new Set((after?.scenarios ?? []).map((sc) => sc?.id));
+  const gone = (before?.scenarios ?? []).map((sc) => sc?.id).filter((id) => id && !alive.has(id) && scenarioMonitors.scenarios[id]);
+  if (!gone.length) return gone;
+  for (const id of gone) delete scenarioMonitors.scenarios[id];
+  dropMonitorUndo(gone); // monitor-list.js
+  await saveScenarioMonitors();
+  return gone;
+}
+
+
+function monitorById(id) {
+  return monitors.items.find((m) => m.id === id) ?? allScenarioMonitors().find((m) => m.id === id);
+}
+
+// Edge, verilen graph'ta (varsayılan ana graph; senaryo monitörü için kopya: monitorGraphOf)
+function edgeById(id, graph = state) {
+  return edgeIn(graph, id);
 }
 
 // Listede görünen ad: kullanıcı ad vermediyse tür + belirleyici parametre (monitor-types.js).
@@ -188,21 +328,21 @@ function monitorName(m) {
 }
 
 // Kapsamın bugünkü anlamı: tüm model, node, edge ya da sahipsiz (öğe silinmiş, birleştirilmiş,
-// graph sıfırlanmış).
-function scopeKind(scope) {
+// graph sıfırlanmış). graph: öğenin arandığı graph (senaryo monitöründe kopya; null = senaryo yok).
+function scopeKind(scope, graph = state) {
   if (scope === 'global') return 'global';
-  if (nodeById(scope)) return 'node';
-  if (edgeById(scope)) return 'edge';
+  if (nodeIn(graph, scope)) return 'node';
+  if (edgeIn(graph, scope)) return 'edge';
   return 'orphan';
 }
 
 function isOrphan(m) {
-  return scopeKind(m.scope) === 'orphan';
+  return scopeKind(m.scope, monitorGraphOf(m)) === 'orphan';
 }
 
 // "e_Login (v_Login → v_Telefon)"
-function edgeLabel(edge) {
-  return `${edge.name} (${nodeById(edge.source)?.name ?? edge.source} → ${nodeById(edge.target)?.name ?? edge.target})`;
+function edgeLabel(edge, graph = state) {
+  return `${edge.name} (${nodeIn(graph, edge.source)?.name ?? edge.source} → ${nodeIn(graph, edge.target)?.name ?? edge.target})`;
 }
 
 // EDGE'DEKİ AKSİYON (m.action): edge'in bir aksiyonuna bağlı monitör. Aksiyon, kayıttaki
@@ -261,7 +401,7 @@ function waitSeconds(ms) {
 // Monitörün aksiyon metni; aksiyon edge'de bulunamıyorsa kayıttaki bilgiyle ve uyarıyla
 function monitorActionText(m) {
   if (!m.action) return '';
-  const edge = edgeById(m.scope);
+  const edge = edgeById(m.scope, monitorGraphOf(m));
   const i = edge ? resolveMonitorAction(m.action, edge.actions) : -1;
   if (i >= 0) return actionText(edge.actions[i], i);
   return `aksiyon bulunamadı (${m.action.index + 1}. ${m.action.label})`;
@@ -269,16 +409,18 @@ function monitorActionText(m) {
 
 function isActionMissing(m) {
   if (!m.action) return false;
-  const edge = edgeById(m.scope);
+  const edge = edgeById(m.scope, monitorGraphOf(m));
   return !edge || resolveMonitorAction(m.action, edge.actions) < 0;
 }
 
+// Senaryo monitöründe node / edge senaryonun kopyasından okunur (adı kopyadaki ad).
 function scopeText(m) {
-  switch (scopeKind(m.scope)) {
-    case 'global': return 'Tüm model';
-    case 'node': return `Node: ${nodeById(m.scope).name}`;
-    case 'edge': return `Edge: ${edgeById(m.scope).name}` + (m.action ? ` · ${monitorActionText(m)}` : '');
-    default: return `Sahipsiz: öğe (${m.scope}) artık yok`;
+  const graph = monitorGraphOf(m);
+  switch (scopeKind(m.scope, graph)) {
+    case 'global': return m.scenarioId ? 'Senaryonun tamamı' : 'Tüm model';
+    case 'node': return `Node: ${nodeIn(graph, m.scope).name}`;
+    case 'edge': return `Edge: ${edgeIn(graph, m.scope).name}` + (m.action ? ` · ${monitorActionText(m)}` : '');
+    default: return !graph ? 'Sahipsiz: senaryosu artık yok' : `Sahipsiz: öğe (${m.scope}) ${m.scenarioId ? 'senaryonun graph\'ında yok' : 'artık yok'}`;
   }
 }
 
@@ -296,14 +438,14 @@ function paramsText(m) {
 }
 
 
-// Silinen graph'ın monitörleri ve uyarıları da silinir (graph listesi değişince: panel.js > GRAPH'LAR).
-// Yalnızca listeden düşen id'lere bakılır; storage'ın tamamı (bütün graph'lar ve ekran görüntüleri)
-// okunmaz. Liste sayı / ad değişiminde de yazıldığı için bu sık çalışır.
+// Silinen graph'ın monitörleri, senaryo monitörleri ve uyarıları da silinir (graph listesi değişince:
+// panel.js > GRAPH'LAR). Yalnızca listeden düşen id'lere bakılır; storage'ın tamamı (bütün graph'lar
+// ve ekran görüntüleri) okunmaz. Liste sayı / ad değişiminde de yazıldığı için bu sık çalışır.
 async function dropMonitorsOfDeletedGraphs(before, after) {
   const alive = new Set((after ?? []).map((g) => g.id));
   const gone = (before ?? []).map((g) => g.id).filter((id) => !alive.has(id));
   if (!gone.length) return;
-  await chrome.storage.local.remove(gone.flatMap((id) => [monitorsKey(id), alarmsKey(id)]));
+  await chrome.storage.local.remove(gone.flatMap((id) => [monitorsKey(id), alarmsKey(id), scenarioMonitorsKey(id)]));
 }
 
 
@@ -318,12 +460,11 @@ async function loadMonitors(graphId) {
   monitorsGraphId = graphId ?? null;
   resetMonitorListState(); // monitor-list.js
   monitorVerdicts.clear();
-  const [stored, alarms] = await Promise.all([
-    graphId ? chrome.storage.local.get(monitorsKey(graphId)).then((r) => r[monitorsKey(graphId)]) : null,
-    loadMonitorAlarms(graphId),
-  ]);
+  const read = (key) => (graphId ? chrome.storage.local.get(key).then((r) => r[key]) : null);
+  const [stored, storedScenario, alarms] = await Promise.all([read(monitorsKey(graphId)), read(scenarioMonitorsKey(graphId)), loadMonitorAlarms(graphId)]);
   if (graphId !== monitorsGraphId) return; // bu arada yine değişti
   monitors = normalizeMonitors(stored);
+  scenarioMonitors = normalizeScenarioMonitors(storedScenario);
   monitorAlarms = alarms;
   renderMonitors(); // monitor-list.js
 }
@@ -337,7 +478,10 @@ chrome.storage.onChanged.addListener((changes, area) => { // panel.js'in dinleyi
     return;
   }
   if (monitorsGraphId && changes[monitorsKey()]) monitors = normalizeMonitors(changes[monitorsKey()].newValue);
+  if (monitorsGraphId && changes[scenarioMonitorsKey()]) scenarioMonitors = normalizeScenarioMonitors(changes[scenarioMonitorsKey()].newValue);
   if (monitorsGraphId && changes[alarmsKey()]) monitorAlarms = normalizeAlarms(changes[alarmsKey()].newValue);
-  if (monitorsGraphId && (changes[monitorsKey()] || changes[alarmsKey()] || changes['graph:' + monitorsGraphId])) renderMonitors();
+  const graphChange = monitorsGraphId ? changes['graph:' + monitorsGraphId] : null;
+  if (graphChange) dropMonitorsOfDeletedScenarios(graphChange.oldValue, graphChange.newValue);
+  if (monitorsGraphId && (changes[monitorsKey()] || changes[scenarioMonitorsKey()] || changes[alarmsKey()] || graphChange)) renderMonitors();
   if (changes.graphs) dropMonitorsOfDeletedGraphs(changes.graphs.oldValue, changes.graphs.newValue);
 });

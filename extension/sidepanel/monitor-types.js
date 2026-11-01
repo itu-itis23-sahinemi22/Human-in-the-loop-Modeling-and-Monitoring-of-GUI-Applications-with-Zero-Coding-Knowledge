@@ -214,16 +214,17 @@ function monitorAutoName(type, params) {
 
 // Monitörün kullanıcıya okunan hali (formun altındaki özet). Parçalar dizisi döner:
 // düz metin ya da { b: 'vurgulanan değer' }; monitor-dialog.js bunları ekrana yazar.
-//   scope: { kind: 'global' } | { kind: 'node', name } | { kind: 'edge', name }
+//   scope: { kind: 'global' } | { kind: 'node', name } | { kind: 'edge', name, action?: '1. Yaz Fill Username' }
+//   scope.scenario: senaryoya özel monitörde senaryonun adı; cümle onunla başlar.
 function monitorSentence(type, params, scope, enabled) {
   const v = (value, fallback = '…') => ({ b: value === '' || value === null || value === undefined ? fallback : String(value) });
   const rx = (value) => v(value === '' || value == null ? '' : `/${value}/`);
-  // scope: { kind: 'global' } | { kind: 'node', name } | { kind: 'edge', name, action?: '1. Yaz Fill Username' }
-  const head = scope.kind === 'node' ? ['Testte ', v(scope.name), ' node\'una her varıldığında: ']
+  const where = scope.scenario ? [v(`"${scope.scenario}"`), ' senaryosunda, testte '] : ['Testte '];
+  const head = scope.kind === 'node' ? [...where, v(scope.name), ' node\'una her varıldığında: ']
     : scope.kind === 'edge' ? (scope.action
-      ? ['Testte ', v(scope.name), ' edge\'inin ', v(scope.action), ' aksiyonundan hemen sonra: ']
-      : ['Testte ', v(scope.name), ' edge\'inin her aksiyonundan sonra: '])
-      : ['Testte her adımdan sonra, her node\'da: '];
+      ? [...where, v(scope.name), ' edge\'inin ', v(scope.action), ' aksiyonundan hemen sonra: ']
+      : [...where, v(scope.name), ' edge\'inin her aksiyonundan sonra: '])
+      : [...where, 'her adımdan sonra, her node\'da: '];
   const body = (() => {
     switch (type.id) {
       case 'inputValidation': return [
