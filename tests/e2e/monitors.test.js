@@ -354,12 +354,14 @@ function check(name, ok, detail = '') {
     await panel.evaluate(() => document.querySelectorAll('#view-tabs button')[1].click());
     await sleep(500);
     await tap(telefon.id);
-    check('senaryo görünümü: Telefon kopyada haleli, alt bölüm salt okunur', await panel.evaluate(() => scenarioView) && await panel.evaluate((id) => cy.getElementById(id).hasClass('monitored'), telefon.id)
-      && (await $('#btn-node-monitor-add').isHidden()) && (await text('#details-monitors-hint')).includes('ana graph görünümünde') && (await $('#details-monitors-list .monitor .edit').first().isDisabled()));
+    // Genel kural senaryo görünümünde "Genel" etiketli ve salt okunur; ekleme o senaryoya yapılır (monitor-scenario.test.js)
+    check('senaryo görünümü: Telefon kopyada haleli, genel kural alt bölümde salt okunur, ekleme senaryoya', await panel.evaluate(() => scenarioView) && await panel.evaluate((id) => cy.getElementById(id).hasClass('monitored'), telefon.id)
+      && (await text('#btn-node-monitor-add')) === 'Bu node\'a bu senaryo için monitör ekle' && (await text('#details-monitors-hint')).includes('Ana graph sekmesinde')
+      && (await $('#details-monitors-list .monitor.readonly .tag').first().textContent()) === 'Genel' && (await $('#details-monitors-list .monitor .edit').first().isDisabled()));
     await panel.evaluate(() => document.querySelectorAll('#view-tabs button')[0].click());
     await sleep(400);
     await tap(telefon.id);
-    check('ana graph görünümü: ekleme yine açık', !(await $('#btn-node-monitor-add').isHidden()));
+    check('ana graph görünümü: ekleme genel kurala', (await text('#btn-node-monitor-add')) === 'Bu node\'a monitör ekle' && !(await $('#details-monitors-list .monitor .edit').first().isDisabled()));
 
     // ---- Panel yeniden açılınca kalıcılık ----
     await panel.reload();

@@ -3,21 +3,50 @@
 // -----------------------------------------------------------------------------
 // Monitör modülünün arayüz parçası (dosya düzeni: monitor-store.js başlığı). panel.html'e eklenmez;
 // bölümünü Senaryo bölümünün altına, "Bu öğenin monitörleri" alt bölümünü node / edge detay
-// kartına, sağ tık menüsünü ve pencereleri gövdeye kendisi kurar. Senaryo görünümü salt okunurdur
-// (panel.js > GÖRÜNÜM): öğenin monitörleri gösterilir, ekleme ana graph görünümünde yapılır.
-// Senaryo kopyasındaki node ve edge'lerin 'monitors' alanı (scenario.js) senaryoya özel monitörler
-// için ayrılmıştır; bu modül ona dokunmaz.
+// kartına, sağ tık menüsünü ve pencereleri gövdeye kendisi kurar.
+// Ana graph görünümünde liste genel kurallardır (ana graph'ın monitörleri). Senaryo görünümünde
+// (panel.js > GÖRÜNÜM; monitor-store.js > SENARYOYA ÖZEL MONİTÖRLER) iki grup vardır: üstte o
+// senaryonun kendi monitörleri (eklenir, düzenlenir, silinir), altında "Genel kurallar" (salt okunur,
+// "Genel" etiketli; ana graph sekmesinde düzenlenir). Ekleme (buton, sağ tık, detay kartı) senaryo
+// görünümünde o senaryoya yapılır; senaryo görünümünün salt okunurluğu graph'ın kendisi içindir.
 // Detay: docs/07-monitorler.md
 // =============================================================================
 
 let monitorFilter = 'all'; // listede gösterilen kapsam: 'all' | 'global' | 'selected' (seçili node / edge)
-let monitorUndo = [];      // silinen monitörler, eski yerleriyle (en yenisi sonda); graph'a özel
+let monitorUndo = [];      // silinen monitörler, eski yerleriyle (en yenisi sonda); graph'a özel. Giriş: [{ item, index, scenarioId }]
 let clearArmed = false;    // "Tümünü sil" iki adımlı onay
 
 // Graph değişince (monitor-store.js > loadMonitors) liste durumu sıfırlanır
 function resetMonitorListState() {
   monitorFilter = 'all';
   monitorUndo = [];
+}
+
+// Silinen senaryoların monitörleri geri alma yığınından düşer (monitor-store.js > dropMonitorsOfDeletedScenarios)
+function dropMonitorUndo(scenarioIds) {
+  const gone = new Set(scenarioIds);
+  monitorUndo = monitorUndo.map((entries) => entries.filter((e) => !gone.has(e.scenarioId))).filter((entries) => entries.length);
+}
+
+// Listede gösterilen monitörler: senaryo görünümünde o senaryonunkiler, ana graph görünümünde genel
+// kurallar. Ekleme ve "Tümünü sil" de bu listeye yapılır.
+function viewMonitors() {
+  const scenarioId = monitorScenarioView();
+  return scenarioId ? scenarioMonitorItems(scenarioId) : monitors.items;
+}
+
+// Senaryo görünümünde listelenen genel kurallar (salt okunur); ana graph görünümünde boş (liste zaten onlar).
+function viewGeneralMonitors() {
+  return monitorScenarioView() ? monitors.items : [];
+}
+
+// Satırdaki etiket: genel kural mı, senaryo monitörü mü ("Genel" / "Senaryo"; karışık listelerde)
+function monitorTag(m) {
+  const tag = document.createElement('span');
+  tag.className = 'tag ' + (m.scenarioId ? 'scenario' : 'general');
+  tag.textContent = m.scenarioId ? 'Senaryo' : 'Genel';
+  tag.title = m.scenarioId ? 'Senaryoya özel monitör: yalnızca bu senaryo oynatılırken kontrol edilir' : 'Genel kural (ana graph\'ın monitörü): her senaryoda kontrol edilir; Ana graph sekmesinde düzenlenir';
+  return tag;
 }
 
 // Tıklanabilir ama düğme olmayan öğe (küçük görüntü, adım karesi): klavyeyle de açılsın
@@ -99,17 +128,28 @@ function iconElement(group, small = false) {
 // eklenmez, buradan kurulur)
 // -----------------------------------------------------------------------------
 
+const MONITORS_HINT_MAIN = 'Monitör: test her adımdan sonra kontrol edilen bir kural. Koşu oynatılırken her monitör yeşil (kural bozulmadı) ya da kırmızı (bozuldu: adım numarası ve ekran görüntüsüyle) yanar. "Tüm model" monitörleri her node\'da, node monitörleri o node\'a varılınca, edge monitörleri o edge oynatılınca (istenirse edge\'in seçilen aksiyonundan hemen sonra) kontrol edilir. Graph\'ta bir node\'a ya da edge\'e sağ tıklayıp "Monitör ekle" diyebilirsiniz. Buradaki monitörler genel kurallardır: her senaryoda kontrol edilir; bir senaryoya özel monitör için o senaryonun sekmesine geçin.';
+const MONITORS_HINT_SCENARIO = 'Bu senaryoya özel monitörler: yalnızca bu senaryo oynatılırken, senaryonun kendi graph\'ında (kopyada) kontrol edilir. Aynı edge\'den geçen başka bir senaryo başka bir beklenti taşıyabilir. Genel kurallar (ana graph\'ın monitörleri) bu senaryoda da kontrol edilir; aşağıda listelenir, Ana graph sekmesinde düzenlenir.';
+
 const MONITORS_SECTION_HTML = `
   <summary>Monitörler <span id="monitors-badge" class="badge"></span></summary>
-  <p class="hint">Monitör: test her adımdan sonra kontrol edilen bir kural. Koşu oynatılırken her monitör yeşil (kural bozulmadı) ya da kırmızı (bozuldu: adım numarası ve ekran görüntüsüyle) yanar. "Tüm model" monitörleri her node'da, node monitörleri o node'a varılınca, edge monitörleri o edge oynatılınca (istenirse edge'in seçilen aksiyonundan hemen sonra) kontrol edilir. Graph'ta bir node'a ya da edge'e sağ tıklayıp "Monitör ekle" diyebilirsiniz.</p>
+  <p id="monitors-hint" class="hint"></p>
   <div id="monitors-filter" class="segmented" role="group" aria-label="Kapsam">
     <button data-filter="all">Tümü</button>
     <button data-filter="global">Tüm model</button>
     <button data-filter="selected">Seçili öğe</button>
   </div>
+  <h4 id="monitors-own-title" class="monitor-group-title" hidden>Bu senaryonun monitörleri <span id="monitors-own-badge" class="badge"></span></h4>
   <ul id="monitors-list" class="monitor-list"></ul>
   <p id="monitors-empty" class="hint"></p>
   <p id="monitors-orphans" class="hint warn" hidden></p>
+  <p id="monitors-scenario-note" class="hint" hidden></p>
+  <div id="monitors-general" hidden>
+    <h4 class="monitor-group-title">Genel kurallar <span id="monitors-general-badge" class="badge"></span></h4>
+    <p class="hint">Ana graph'ın monitörleri; her senaryoda kontrol edilir. Ana graph sekmesinde düzenlenir.</p>
+    <ul id="monitors-general-list" class="monitor-list"></ul>
+    <p id="monitors-general-empty" class="hint"></p>
+  </div>
   <div class="toolbar">
     <button id="btn-monitor-add" class="primary">Monitör ekle</button>
     <button id="btn-monitor-check" title="Oynatma yapmadan, açık sekmedeki ekranda tüm model ve seçili öğenin monitörlerini hemen kontrol eder">Bu ekranda şimdi kontrol et</button>
@@ -212,11 +252,13 @@ function renderMonitors() {
   renderMonitorsNow();
 }
 
-// Graph'ta seçili öğe (node ya da edge) ve türü; yoksa null.
+// Graph'ta seçili öğe (node ya da edge) ve türü; yoksa null. Senaryo görünümünde öğe kopyadan
+// okunur (çizilen graph odur; ana graph'ta sonradan silinmiş olabilir).
 function selectedItem() {
-  const node = nodeById(selectedId);
+  const graph = monitorViewGraph(); // monitor-store.js
+  const node = nodeIn(graph, selectedId);
   if (node) return { kind: 'node', item: node };
-  const edge = edgeById(selectedId);
+  const edge = edgeIn(graph, selectedId);
   if (edge) return { kind: 'edge', item: edge };
   return null;
 }
@@ -228,77 +270,108 @@ function renderMonitorsNow() {
   }
   applyPendingBackup();
   const selected = selectedItem();
-  const items = monitors.items;
+  const scenarioId = monitorScenarioView(); // senaryo görünümü: o senaryonun monitörleri + genel kurallar
+  const items = viewMonitors();
+  const general = viewGeneralMonitors();
   const orphans = items.filter(isOrphan);
   $('monitors-badge').textContent = items.length || '';
+  $('monitors-hint').textContent = scenarioId ? MONITORS_HINT_SCENARIO : MONITORS_HINT_MAIN;
+  $('monitors-own-title').hidden = !scenarioId;
+  $('monitors-own-badge').textContent = items.length || '';
   $('btn-monitor-add').disabled = !monitorsGraphId;
+  $('btn-monitor-add').textContent = scenarioId ? 'Bu senaryoya monitör ekle' : 'Monitör ekle';
+  $('btn-monitor-load').hidden = Boolean(scenarioId); // dosyadan yükleme genel listeye
+  $('btn-monitor-clear').title = scenarioId ? 'Bu senaryonun bütün monitörlerini siler; genel kurallara dokunmaz' : '';
 
   // Kapsam filtresi: "Seçili öğe" yalnızca graph'ta bir node ya da edge seçiliyken
   if (monitorFilter === 'selected' && !selected) monitorFilter = 'all';
   for (const button of $('monitors-filter').querySelectorAll('button')) {
     button.classList.toggle('active', button.dataset.filter === monitorFilter);
+    if (button.dataset.filter === 'global') button.textContent = scenarioId ? 'Senaryonun tamamı' : 'Tüm model';
     if (button.dataset.filter === 'selected') {
       button.disabled = !selected;
       button.title = selected ? '' : 'Önce graph\'ta bir node ya da edge seçin';
       button.textContent = selected ? `Seçili ${selected.kind === 'node' ? 'node' : 'edge'} (${selected.item.name})` : 'Seçili öğe';
     }
   }
-  const shown = items.filter((m) => monitorFilter === 'all' || (monitorFilter === 'global' ? m.scope === 'global' : m.scope === selected?.item.id));
+  const inFilter = (m) => monitorFilter === 'all' || (monitorFilter === 'global' ? m.scope === 'global' : m.scope === selected?.item.id);
+  const shown = items.filter(inFilter);
   $('monitors-list').replaceChildren(...shown.map((m) => monitorItem(m)));
   $('monitors-empty').textContent = shown.length ? '' : items.length
     ? 'Bu kapsamda monitör yok.'
-    : 'Henüz monitör yok. "Monitör ekle" ile tüm model için; graph\'ta bir node\'a ya da edge\'e sağ tıklayıp "Monitör ekle" ile tek öğe için kural tanımlayın.';
+    : scenarioId
+      ? 'Bu senaryoya özel monitör yok. "Bu senaryoya monitör ekle" ile senaryonun tamamı için; graph\'ta bir node\'a ya da edge\'e sağ tıklayıp "bu senaryo için monitör ekle" ile tek öğe için kural tanımlayın.'
+      : 'Henüz monitör yok. "Monitör ekle" ile tüm model için; graph\'ta bir node\'a ya da edge\'e sağ tıklayıp "Monitör ekle" ile tek öğe için kural tanımlayın.';
   $('monitors-orphans').hidden = !orphans.length;
   $('monitors-orphans').textContent = orphans.length
-    ? `${orphans.length} monitör sahipsiz: node'u ya da edge'i artık yok (silinmiş, birleştirilmiş ya da graph sıfırlanmış). "Düzenle" ile başka bir öğeye taşıyın ya da silin. Sahipsiz monitörler dışa aktarılmaz.`
+    ? `${orphans.length} monitör sahipsiz: node'u ya da edge'i ${scenarioId ? 'senaryonun graph\'ında yok (koşular değişince kopyadan düşmüş olabilir)' : 'artık yok (silinmiş, birleştirilmiş ya da graph sıfırlanmış)'}. "Düzenle" ile başka bir öğeye taşıyın ya da silin. Sahipsiz monitörler dışa aktarılmaz.`
     : '';
   $('btn-monitor-orphans').hidden = !orphans.length;
   $('btn-monitor-undo').disabled = !monitorUndo.length;
   $('btn-monitor-clear').disabled = !items.length;
   if (!items.length) disarmClear();
 
+  // Senaryo görünümü: genel kurallar ikinci grupta, salt okunur
+  $('monitors-general').hidden = !scenarioId;
+  if (scenarioId) {
+    const shownGeneral = general.filter(inFilter);
+    $('monitors-general-badge').textContent = general.length || '';
+    $('monitors-general-list').replaceChildren(...shownGeneral.map((m) => monitorItem(m, { readOnly: true, tag: true })));
+    $('monitors-general-empty').textContent = shownGeneral.length ? '' : general.length ? 'Bu kapsamda genel kural yok.' : 'Genel kural yok.';
+  }
+  // Ana graph görünümü: senaryolara özel monitör varsa not (senaryo sekmesinde görünürler)
+  const perScenario = scenarioId ? [] : state.scenarios.map((sc) => [sc.name, scenarioMonitorItems(sc.id).length]).filter(([, n]) => n);
+  $('monitors-scenario-note').hidden = !perScenario.length;
+  $('monitors-scenario-note').textContent = perScenario.length
+    ? `Ayrıca senaryolara özel ${perScenario.reduce((sum, [, n]) => sum + n, 0)} monitör var (${perScenario.map(([name, n]) => `${name}: ${n}`).join(', ')}); senaryonun sekmesinde görünür ve yalnızca o senaryo oynatılırken kontrol edilir.`
+    : '';
+
   renderDetailsMonitors(selected);
   markGraph();
 }
 
-// Detay kartındaki alt bölüm: yalnızca bir node ya da edge seçiliyken. Senaryo görünümünde
-// (panel.js > GÖRÜNÜM; kopya salt okunur) öğenin monitörleri gösterilir ama eklenmez.
+// Detay kartındaki alt bölüm: yalnızca bir node ya da edge seçiliyken. Senaryo görünümünde öğenin
+// bu senaryoya özel monitörleri (eklenir, düzenlenir) ve genel kuralları ("Genel" etiketli, salt
+// okunur) birlikte listelenir.
 function renderDetailsMonitors(selected) {
   $('details-monitors').hidden = !selected;
   if (!selected) return;
   const { kind, item } = selected;
-  const readOnly = Boolean(scenarioView);
-  const own = monitors.items.filter((m) => m.scope === item.id);
-  const global = monitors.items.filter((m) => m.scope === 'global' && m.enabled).length;
-  $('details-monitors-title').firstChild.textContent = kind === 'node' ? 'Bu node\'un monitörleri ' : 'Bu edge\'in monitörleri ';
-  $('details-monitors-badge').textContent = own.length || '';
-  $('details-monitors-list').replaceChildren(...own.map((m) => monitorItem(m)));
-  $('details-monitors-hint').textContent = (own.length ? '' : `Bu ${kind === 'node' ? 'node' : 'edge'}'e özel monitör yok. `)
-    + (global && kind === 'node' ? `Tüm model için tanımlı ${global} etkin monitör bu node'da da kontrol edilir. ` : '')
-    + (readOnly ? 'Monitörler ana graph görünümünde eklenir ve düzenlenir.' : '');
-  $('btn-node-monitor-add').textContent = kind === 'node' ? 'Bu node\'a monitör ekle' : 'Bu edge\'e monitör ekle';
-  $('btn-node-monitor-add').hidden = readOnly;
-  for (const button of $('details-monitors-list').querySelectorAll('button, input')) button.disabled = readOnly && !button.classList.contains('alarms-open'); // uyarılar salt okunur bilgi: görünümde de açılır
+  const scenarioId = monitorScenarioView();
+  const own = viewMonitors().filter((m) => m.scope === item.id);
+  const general = viewGeneralMonitors().filter((m) => m.scope === item.id);
+  const global = monitors.items.filter((m) => m.scope === 'global' && m.enabled).length + (scenarioId ? viewMonitors().filter((m) => m.scope === 'global' && m.enabled).length : 0);
+  const noun = kind === 'node' ? 'node' : 'edge';
+  $('details-monitors-title').firstChild.textContent = `Bu ${noun}'${kind === 'node' ? 'un' : 'in'} monitörleri `;
+  $('details-monitors-badge').textContent = own.length + general.length || '';
+  $('details-monitors-list').replaceChildren(...own.map((m) => monitorItem(m, { tag: Boolean(scenarioId) })), ...general.map((m) => monitorItem(m, { readOnly: true, tag: true })));
+  $('details-monitors-hint').textContent = (own.length ? '' : scenarioId ? `Bu senaryoda bu ${noun}'e özel monitör yok. ` : `Bu ${noun}'e özel monitör yok. `)
+    + (global && kind === 'node' ? `${scenarioId ? 'Senaryonun tamamı ve tüm model' : 'Tüm model'} için tanımlı ${global} etkin monitör bu node'da da kontrol edilir. ` : '')
+    + (scenarioId ? 'Genel kurallar Ana graph sekmesinde düzenlenir.' : '');
+  $('btn-node-monitor-add').textContent = `Bu ${noun}'${kind === 'node' ? 'a' : 'e'}${scenarioId ? ' bu senaryo için' : ''} monitör ekle`;
 }
 
 // Tek monitör satırı: etkin kutusu, ikon + ad / kapsam / parametreler, son kontrol sonucu (LED),
-// Düzenle / Sil
-function monitorItem(m) {
+// Düzenle / Sil. readOnly: senaryo görünümündeki genel kural (düğmeler pasif; uyarılar yine açılır).
+// tag: "Genel" / "Senaryo" etiketi (karışık listelerde).
+function monitorItem(m, { readOnly = false, tag = false } = {}) {
   const li = document.createElement('li');
   const orphan = isOrphan(m);
   const type = monitorType(m.type);
-  li.className = 'monitor' + (m.enabled ? '' : ' disabled') + (orphan ? ' orphan' : '');
+  li.className = 'monitor' + (m.enabled ? '' : ' disabled') + (orphan ? ' orphan' : '') + (readOnly ? ' readonly' : '');
   li.innerHTML = '<input type="checkbox" class="toggle" title="Etkin">'
     + '<div class="body"><b></b><small class="scope"></small><small class="params"></small><small class="verdict" hidden></small><div class="alarms" hidden></div></div>'
     + '<span class="buttons"><button class="edit">Düzenle</button><button class="icon delete" title="Sil" aria-label="Sil">✕</button></span>';
   const toggle = li.querySelector('.toggle');
   toggle.checked = m.enabled;
   toggle.setAttribute('aria-label', `${monitorName(m)} etkin`);
+  toggle.disabled = readOnly;
   toggle.onchange = async () => {
     m.enabled = toggle.checked;
-    await saveMonitors();
+    await saveMonitorList(m.scenarioId); // monitor-store.js
     renderMonitors();
   };
+  if (tag) li.querySelector('.body').prepend(monitorTag(m)); // adın önünde (b'nin metni ad olarak kalır)
   if (type) li.querySelector('b').append(iconElement(monitorGroup(type), true));
   li.querySelector('b').append(monitorName(m));
   li.querySelector('.scope').textContent = scopeText(m);
@@ -343,10 +416,12 @@ function monitorItem(m) {
     button.onclick = () => openMonitorAlarms(m);
     row.append(button);
   }
-  li.querySelector('.edit').disabled = !type;
-  li.querySelector('.edit').title = type ? '' : 'Bu tür artık tanımlı değil; yalnızca silinebilir.';
+  li.querySelector('.edit').disabled = !type || readOnly;
+  li.querySelector('.edit').title = readOnly ? 'Genel kural: Ana graph sekmesinde düzenlenir' : type ? '' : 'Bu tür artık tanımlı değil; yalnızca silinebilir.';
   li.querySelector('.edit').onclick = () => openMonitorDialog({ id: m.id });
   li.querySelector('.edit').setAttribute('aria-label', `${monitorName(m)} düzenle`);
+  li.querySelector('.delete').disabled = readOnly;
+  li.querySelector('.delete').title = readOnly ? 'Genel kural: Ana graph sekmesinde silinir' : 'Sil';
   li.querySelector('.delete').onclick = () => deleteMonitors([m]);
   li.querySelector('.delete').setAttribute('aria-label', `${monitorName(m)} sil`);
   return li;
@@ -385,8 +460,9 @@ function applyGraphMonitorStyle() {
   sheet.update();
 }
 
+// Senaryo görünümünde senaryonun kendi monitörleri de haleler (genel kurallarla birlikte).
 function markGraph() {
-  const monitored = new Set(monitors.items.filter((m) => m.enabled && m.scope !== 'global').map((m) => m.scope));
+  const monitored = new Set([...monitors.items, ...viewMonitors()].filter((m) => m.enabled && m.scope !== 'global').map((m) => m.scope));
   cy.elements().forEach((el) => el.toggleClass('monitored', monitored.has(el.id())));
 }
 
@@ -402,24 +478,29 @@ cy.on('add', () => { // graph yeniden kuruldu: adlar ve işaretler yenilensin
 // SAĞ TIK MENÜSÜ: node'a sağ tık → "Bu node'a monitör ekle" ve monitörlerini
 // göster; edge'e sağ tık → "Bu aksiyona monitör ekle"; boş alana sağ tık → "Tüm modele monitör
 // ekle". Cytoscape'in 'cxttap' olayı (sağ tık; dokunmatikte uzun basma). Tarayıcının kendi menüsü
-// graph alanında açılmaz. Senaryo görünümünde (salt okunur) yalnızca "monitörlerini göster".
+// graph alanında açılmaz. Senaryo görünümünde ekleme o senaryoya yapılır ("… bu senaryo için
+// monitör ekle"); sayım senaryonun monitörleri + genel kurallar.
 function openContextMenu(event) {
   const menu = $('monitor-context-menu');
   const target = event.target === cy ? null : event.target;
   const kind = !target ? 'global' : target.isNode() ? 'node' : 'edge';
   const id = target?.id() ?? null;
-  const readOnly = Boolean(scenarioView);
-  const exists = kind === 'global' || (kind === 'node' ? nodeById(id) : edgeById(id));
-  const count = kind === 'global' ? monitors.items.filter((m) => m.scope === 'global').length : monitors.items.filter((m) => m.scope === id).length;
+  const scenarioId = monitorScenarioView();
+  const graph = monitorViewGraph();
+  const exists = kind === 'global' || (kind === 'node' ? nodeIn(graph, id) : edgeIn(graph, id));
+  const scope = kind === 'global' ? 'global' : id;
+  const count = [...viewMonitors(), ...viewGeneralMonitors()].filter((m) => m.scope === scope).length;
   const name = target?.data('label') ?? '';
   const items = [
-    ...(readOnly || !exists ? [] : [{
-      text: kind === 'node' ? `"${name}" node'una monitör ekle` : kind === 'edge' ? `"${name}" edge'ine monitör ekle` : 'Tüm modele monitör ekle',
+    ...(!exists ? [] : [{
+      text: kind === 'node' ? `"${name}" node'una${scenarioId ? ' bu senaryo için' : ''} monitör ekle`
+        : kind === 'edge' ? `"${name}" edge'ine${scenarioId ? ' bu senaryo için' : ''} monitör ekle`
+          : scenarioId ? 'Bu senaryonun tamamına monitör ekle' : 'Tüm modele monitör ekle',
       primary: true,
-      onclick: () => { if (target) selectInGraph(id); openMonitorDialog({ scope: id ?? 'global' }); },
+      onclick: () => { if (target) selectInGraph(id); openMonitorDialog({ scope: id ?? 'global', scenarioId }); },
     }]),
     {
-      text: kind === 'global' ? `Tüm model monitörlerini göster (${count})` : `Monitörlerini göster (${count})`,
+      text: kind === 'global' ? `${scenarioId ? 'Senaryonun tamamı' : 'Tüm model'} monitörlerini göster (${count})` : `Monitörlerini göster (${count})`,
       onclick: () => {
         if (target) selectInGraph(id);
         monitorFilter = kind === 'global' ? 'global' : 'selected';
@@ -490,30 +571,41 @@ cy.on('tap pan zoom', closeContextMenu);
 // SİLME ve GERİ ALMA
 // -----------------------------------------------------------------------------
 
+// Her monitör kendi listesinden silinir (genel liste ya da senaryosunun listesi; monitor-store.js >
+// monitorListOf); dokunulan listeler kaydedilir. Geri alma girişi listesini de hatırlar.
 async function deleteMonitors(list) {
-  const entries = list.map((m) => ({ item: m, index: monitors.items.indexOf(m) })).filter((e) => e.index >= 0);
+  const entries = list.map((m) => ({ item: m, index: monitorListOf(m).items.indexOf(m), scenarioId: m.scenarioId ?? null })).filter((e) => e.index >= 0);
   if (!entries.length) return;
   monitorUndo.push(entries);
-  monitors.items = monitors.items.filter((m) => !list.includes(m));
-  await saveMonitors();
+  for (const store of new Set(entries.map((e) => monitorListOf(e.item)))) store.items = store.items.filter((m) => !list.includes(m));
+  await saveTouchedLists(entries);
   showMessage({ notice: entries.length === 1 ? `"${monitorName(entries[0].item)}" silindi. Geri almak için "Silmeyi geri al".` : `${entries.length} monitör silindi. Geri almak için "Silmeyi geri al".` });
   renderMonitors();
+}
+
+async function saveTouchedLists(entries) {
+  if (entries.some((e) => !e.scenarioId)) await saveMonitors();
+  if (entries.some((e) => e.scenarioId)) await saveScenarioMonitors();
 }
 
 $('btn-monitor-undo').onclick = async () => {
   const entries = monitorUndo.pop();
   if (!entries) return;
-  for (const { item, index } of [...entries].sort((a, b) => a.index - b.index)) {
-    monitors.items.splice(Math.min(index, monitors.items.length), 0, item);
+  // Senaryosu bu arada silinmiş monitör geri gelmez (dropMonitorUndo bunları düşürür; emniyet)
+  const alive = entries.filter((e) => !e.scenarioId || state.scenarios.some((sc) => sc.id === e.scenarioId));
+  for (const { item, index } of [...alive].sort((a, b) => a.index - b.index)) {
+    const store = monitorListOf(item);
+    store.items.splice(Math.min(index, store.items.length), 0, item);
   }
-  await saveMonitors();
-  showMessage({ notice: entries.length === 1 ? `"${monitorName(entries[0].item)}" geri getirildi.` : `${entries.length} monitör geri getirildi.` });
+  await saveTouchedLists(alive);
+  showMessage({ notice: alive.length === 1 ? `"${monitorName(alive[0].item)}" geri getirildi.` : `${alive.length} monitör geri getirildi.` });
   renderMonitors();
 };
 
-$('btn-monitor-orphans').onclick = () => deleteMonitors(monitors.items.filter(isOrphan));
+$('btn-monitor-orphans').onclick = () => deleteMonitors(viewMonitors().filter(isOrphan));
 
-// "Tümünü sil": panel.js'teki Sıfırla gibi iki adımlı (3 sn içinde ikinci tıklama)
+// "Tümünü sil": panel.js'teki Sıfırla gibi iki adımlı (3 sn içinde ikinci tıklama). Görünümdeki
+// listeyi siler: senaryo görünümünde o senaryonun monitörlerini, genel kurallara dokunmaz.
 let clearTimer = null;
 $('btn-monitor-clear').onclick = () => {
   if (!clearArmed) {
@@ -523,7 +615,7 @@ $('btn-monitor-clear').onclick = () => {
     return;
   }
   disarmClear();
-  deleteMonitors([...monitors.items]);
+  deleteMonitors([...viewMonitors()]);
 };
 
 function disarmClear() {
