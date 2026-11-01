@@ -43,7 +43,7 @@ Oynatmadan önce temizlik · "Giriş akışı"
 [Temizle ve oynat]  [Temizlemeden oynat]  [Vazgeç]
 ```
 
-- **Siteler:** Senaryonun graph'ındaki node'ların adreslerinden gelir. Her biri bir **origin**dir, yani şema + alan adı + port: `https://www.saucedemo.com`, `http://127.0.0.1:8765`. Başlangıç node'unun sitesi en üsttedir. Koşu birden fazla siteye gidiyorsa hepsi listelenir. Her sitede aynı yedi tür vardır.
+- **Siteler:** Senaryonun koşularının geçtiği node'ların adreslerinden gelir (senaryo graph'ı ana graph'ın tamamıdır; koşuların gitmediği siteler listelenmez). Her biri bir **origin**dir, yani şema + alan adı + port: `https://www.saucedemo.com`, `http://127.0.0.1:8765`. Başlangıç node'unun sitesi en üsttedir. Koşu birden fazla siteye gidiyorsa hepsi listelenir. Her sitede aynı yedi tür vardır.
 - **Site kutusu:** Altındaki türlerin hepsini birlikte işaretler ya da kaldırır. Bazıları seçiliyse yarım görünür (yukarıda ▣).
 - **Açıklamalar:** Bir türün üzerine gelince ne olduğu kısaca yazar.
 - **Kaydetme:** Seçim **senaryoya kaydedilir** (`scenario.cleanup`). Pencere bir dahaki sefere aynı seçimle açılır. İlk açılışta hiçbir şey seçili değildir, çünkü silmek geri alınamaz. Seçim senaryo dosyasına ve graph yedeğine de girer ([04 > Senaryo dosyası](04-veri-modeli.md#senaryo-dosyası)).
@@ -141,7 +141,7 @@ checkReplay: başlangıç kontrolü ▸ oynatma (01 > Panelde oynatma)
 ```
 
 - **Türler ve açıklamalar:** `extension/scenario.js > CLEANUP_TYPES`. Panel, background ve runner bu dosyayı ortak kullanır. Türlerin adları `chrome.browsingData`'nın veri türü adlarıdır (`cookies`, `cache`, `cacheStorage`, `localStorage`, `indexedDB`, `serviceWorkers`, `fileSystems`). `localStorage` panelde "localStorage ve sessionStorage" diye görünür ([neden](#localstorage-ve-sessionstorage)).
-- **Siteler:** `scenario.js > cleanupSites` (node adreslerinin origin'leri, `siteOrigin`). Seçim `normalizeCleanup` ile doğrulanır: bozuk origin, bilinmeyen tür ve boş liste atılır.
+- **Siteler:** `scenario.js > cleanupSites` (koşuların geçtiği node'ların adreslerinin origin'leri: `runSubgraph`, `siteOrigin`). Seçim `normalizeCleanup` ile doğrulanır: bozuk origin, bilinmeyen tür ve boş liste atılır.
 - **Pencere ve silme:** `extension/sidepanel/panel.js > TEMİZLİK` (`openCleanup`, `cleanSites`).
 - **İzin:** `manifest.json > permissions > browsingData` ([02 > İzinler](02-teknolojiler.md)).
 - **Saklama:** `state.scenarios[].cleanup` ve senaryo dosyasındaki `cleanup` ([04 > Senaryo dosyası](04-veri-modeli.md#senaryo-dosyası)). Biçim: `{ "https://www.saucedemo.com": ["cookies", "localStorage"] }`.
