@@ -20,6 +20,7 @@ let activeGraphId = null;
 let settings = DEFAULT_SETTINGS; // settings.js
 let selectedId = null;   // graph'ta tıklanan node/edge
 let busy = false;        // "Node oluştur" isteği sürerken butonu kilitlemek için
+let nodeShortcut = '';   // "Node oluştur" kısayolu (manifest.json > commands), butonun ipucunda
 let lastGraphKey = '';   // graph değişmediyse yeniden çizmemek için
 
 // Aksiyon tiplerinin ekranda görünen adları (settings.js). Bekleme listede yok: Ayarlar'da
@@ -215,7 +216,8 @@ function renderStatus() {
   // Beklemeler kaydediliyorsa ekran beklerken değişmiş olabilir; karar background'ındır.
   const noActions = state.nodes.length > 0 && state.buffer.length === 0 && !settings.recordWaits;
   $('btn-node').disabled = busy || Boolean(state.pending) || noActions || Boolean(replay);
-  $('btn-node').title = replay ? 'Panelde oynatma sürüyor.' : noActions ? 'Bekleyen aksiyon yok: önce sayfada bir aksiyon yap.' : '';
+  $('btn-node').title = replay ? 'Panelde oynatma sürüyor.' : noActions ? 'Bekleyen aksiyon yok: önce sayfada bir aksiyon yap.'
+    : nodeShortcut ? `Kısayol: ${nodeShortcut}` : '';
 }
 
 // Kayda katılmamış sekme sorusu (background.js > SEKMELER). Sekmeyi kayıt sekmesi açtıysa
@@ -1055,6 +1057,26 @@ $('btn-node').onclick = async () => {
   busy = false;
   renderStatus();
 };
+
+// KISAYOL (manifest.json > commands, varsayılan Alt+N): "Node oluştur"a basar. Tuşu Chrome yakalar;
+// sayfa da panel de görmez, bu yüzden kayda girmez. Kullanıcı tuşu chrome://extensions/shortcuts'tan
+// değiştirebilir; butonun ipucu atanmış tuşu gösterir. Ctrl+N olamaz: Chrome kendi kısayollarını
+// (yeni pencere) eklentiye vermez. Panel her pencerede ayrıdır: kısayola basılan penceredeki panel çalışır.
+chrome.commands.onCommand.addListener((command, tab) => onShortcut(command, tab));
+
+async function onShortcut(command, tab) {
+  if (command !== 'create-node' || busy) return; // önceki basış sürüyor
+  const own = await chrome.windows.getCurrent();
+  if (tab && tab.windowId !== own.id) return;
+  // Buton kilitliyse nedeni söylenir (ipucundaki metin); sessizce hiçbir şey olmasın
+  if ($('btn-node').disabled) return showMessage({ notice: state.pending ? 'Önce "aynı node mu?" sorusunu cevaplayın.' : $('btn-node').title });
+  $('btn-node').click();
+}
+
+chrome.commands.getAll().then((commands) => {
+  nodeShortcut = commands.find((c) => c.name === 'create-node')?.shortcut ?? '';
+  renderStatus();
+});
 
 $('btn-new').onclick = () => send({ type: 'RESOLVE', targetId: null });
 

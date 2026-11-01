@@ -26,5 +26,12 @@
 
   "action": {
     "default_title": "Graph Recorder panelini aç"
+  },
+
+  "commands": {
+    "create-node": {
+      "suggested_key": { "default": "Alt+N" },
+      "description": "Node oluştur (panel açıkken)"
+    }
   }
 }

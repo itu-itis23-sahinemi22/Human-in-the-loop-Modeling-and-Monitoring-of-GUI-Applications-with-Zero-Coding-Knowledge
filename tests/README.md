@@ -42,6 +42,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `filter` | Aksiyon filtresi: bekleyen ve edge listelerinde türleri gizleme, korunan sıra numaraları, ayrı filtreler, otomatik beklemenin ayrı türü, hatırlama |
 | `buffer` | Bekleyen aksiyonları silme: uyarı, bayat liste, karar beklerken kilit, runner ve panelde oynatma |
 | `dom-tree` | Ekrandaki elementler kartı ([docs/01](../docs/01-mimari.md#ekrandaki-elementler-dom-ağacı)): yalnızca ekranda görünenler (gizli, 1 px, taşma dışı, ekran dışı atılır), sarmalayıcıların katlanması, satırın üzerine gelince sayfada çerçeve (sayfanın DOM izleyicisine görünmeden), kayda dokunmama, node oluşturulurken çerçevenin kalkması, aksiyondan ve kaydırmadan sonra yenilenme, kapatılan dalın kapalı kalması, okunamayan sayfa |
+| `shortcuts` | "Node oluştur" kısayolu: Chrome'un Alt+N'i ataması, butonun ipucu, kısayolun node oluşturması, başka pencerenin kısayolunun yok sayılması, buton kilitliyken nedeninin söylenmesi (gerçek tuş basışı denenmez; panelin dinleyicisi çağrılır) |
 | `return-to-start` | "Başlangıç node'una dön": adres, boyutu oynatmanın kurması, gezinmenin kayda girmesi, yönlendirme, okunamayan sayfa |
 | `saucedemo-return` | Gerçek saucedemo'da istemci tarafı yönlendirmenin söylenmesi (internet ister) |
 | `graphs` | Birden fazla graph: otomatik ad, geçiş onayı, sekme sorusu, yeniden adlandırma, yedek ve yükleme, silme, eski kaydın taşınması |

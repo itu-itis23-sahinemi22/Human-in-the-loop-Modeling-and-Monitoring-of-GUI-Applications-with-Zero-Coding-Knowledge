@@ -91,7 +91,7 @@ Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşiml
 
 ### `manifest.json`: Kimlik kartı
 
-Chrome'a "bu eklenti nedir, hangi dosya hangi ortamda çalışır, hangi izinlere ihtiyaç duyar" bilgisini verir. İzinlerin tek tek gerekçesi: [02-teknolojiler.md](02-teknolojiler.md#hangi-izin-neden-gerekli). `key` alanı eklentinin kimliğini sabitler (`limihkoliileclgenbfinjjkgimopjen`): paketlenmemiş eklentinin kimliği normalde klasör yolundan gelir; planlayıcının host'u yalnızca bu kimliğe izin verir ([Senaryolar > GraphWalker](#graphwalker-ile-üretim)).
+Chrome'a "bu eklenti nedir, hangi dosya hangi ortamda çalışır, hangi izinlere ihtiyaç duyar" bilgisini verir. `commands`, "Node oluştur" kısayolunu (`Alt+N`) tanımlar ([Node oluştur akışı](#node-oluştur-akışı)). İzinlerin tek tek gerekçesi: [02-teknolojiler.md](02-teknolojiler.md#hangi-izin-neden-gerekli). `key` alanı eklentinin kimliğini sabitler (`limihkoliileclgenbfinjjkgimopjen`): paketlenmemiş eklentinin kimliği normalde klasör yolundan gelir; planlayıcının host'u yalnızca bu kimliğe izin verir ([Senaryolar > GraphWalker](#graphwalker-ile-üretim)).
 
 ---
 
@@ -166,6 +166,8 @@ Background her mesaja üç cevaptan biriyle döner:
 ## "Node oluştur" akışı
 
 Projenin kalbi `background.js` içindeki `createNode()` ve `commit()` fonksiyonlarıdır.
+
+**Kısayol:** `Alt+N` (`manifest.json > commands`) aynı butona basar (`panel.js > onShortcut`). Tuşu Chrome yakalar: sayfa da panel de görmez, bu yüzden "Bekleyen aksiyonlar"a `Press Alt+N` girmez. Panel her pencerede ayrıdır; yalnızca kısayola basılan penceredeki panel çalışır. Buton kilitliyse (bekleyen aksiyon yok, soru bekliyor, oynatma sürüyor) nedeni mesaj olarak gösterilir. Butonun ipucu atanmış tuşu gösterir (`chrome.commands.getAll`); kullanıcı tuşu `chrome://extensions/shortcuts`'tan değiştirebilir. Ctrl+N olamaz: Chrome kendi kısayollarını (yeni pencere) eklentiye atamaz, sayfaya da göndermez.
 
 ```
 Kullanıcı          panel.js              background.js                 content.js

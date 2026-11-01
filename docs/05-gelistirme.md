@@ -327,7 +327,7 @@ Proje "build adımı yok, bağımlılık yok" ilkesini korusun diye bu test beti
 1. ~~**Replay**~~: yapıldı. Runner, modeldeki bir yolu tarayıcıda oynatıp her adımı kayıttaki state tanımıyla doğruluyor ([runner/README.md](../runner/README.md)). Sonraki adımlar: `select` ve `clipboard` aksiyonlarını oynatmak, yeni sekme açan akışlar, JSON/HTML rapor.
 2. **GraphWalker test kodu iskeleti:** `properties.uiActions`'tan her edge için test metodu üretmek ([04](04-veri-modeli.md#sonraki-adım-test-kodu-iskeleti)). Runner aynı işi kod üretmeden yapıyor; kod üretimi GraphWalker'ın kendi koşucusuyla (online mod, guard'lar) çalışmak için gerekir.
 3. **JSON içe aktarma:** Yarım kalan bir modele daha sonra devam edebilmek için.
-4. **Klavye kısayolu:** `chrome.commands` ile örneğin `Alt+N` = Node oluştur. Kullanıcı farenin panele gitmesine gerek kalmadan çalışır.
+4. ~~**Klavye kısayolu**~~: yapıldı: `Alt+N` = Node oluştur (`manifest.json > commands`; tuş `chrome://extensions/shortcuts`'tan değiştirilir). Ctrl+N olamaz: Chrome kendi kısayollarını (yeni pencere) eklentiye vermez. Sonraki adım: edge seçimi için kısayollar.
 5. ~~**Node birleştirme**~~: yapıldı ([01 > Node birleştirme](01-mimari.md#node-birleştirme)). Sonraki adım olabilir: tekrar eden edge'leri tek tıkla birleştirmek için isteğe bağlı bir araç (şu an yönetimi tamamen kullanıcıda).
 6. **Element anahtarı normalizasyonu ve kullanıcı kararlarından öğrenme:** Node sayısını kuralı bozmadan azaltmak ([03 > Geliştirme fikirleri](03-state-eslestirme.md#geliştirme-fikirleri-tez-için))
 7. **Kapsam genişletme:** iframe, Shadow DOM ve çoklu sekme desteği
