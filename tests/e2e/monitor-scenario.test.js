@@ -4,7 +4,8 @@
 // senaryonun kopyasına bağlıdır. Liste (iki grup, etiketler, salt okunur genel kurallar), form
 // (senaryo adı, kopyadan node listesi, "Bu senaryonun tamamı"), sağ tık menüsü, detay alt bölümü,
 // oynatmada ışık listesi (Genel / Senaryo), uyarılar, "şimdi kontrol et", "Senaryo indir"
-// dosyasında yuvaların dolması, graph yedeğiyle geri yükleme, senaryo ve graph silinince temizlik.
+// dosyasında yuvaların dolması ve "Yükle…" ile monitörlerin yeni senaryoya gelmesi, graph yedeğiyle
+// geri yükleme, senaryo ve graph silinince temizlik.
 // Kullanım: node tests/e2e/monitor-scenario.test.js [--headed]
 const http = require('http');
 const path = require('path');
@@ -138,7 +139,7 @@ function check(name, ok, detail = '') {
     const scenarios = (await getState()).scenarios;
     const A = scenarios.find((sc) => sc.name === 'Kısa');
     const B = scenarios.find((sc) => sc.name === 'Uzun');
-    check('iki senaryo kaydedildi, kopyaları var', A && B && A.graph?.edges.length === 1 && B.graph?.edges.length === 2, scenarios.map((sc) => sc.name).join(','));
+    check('iki senaryo kaydedildi, kopyaları ana graph\'ın tamamı (2 node, 2 edge)', A && B && A.graph?.nodes.length === 2 && A.graph.edges.length === 2 && B.graph?.edges.length === 2, scenarios.map((sc) => sc.name).join(','));
 
     // ---- Senaryo görünümü (Kısa): kendi listesi boş, genel kurallar salt okunur ----
     await showView(A.id);
@@ -157,7 +158,7 @@ function check(name, ok, detail = '') {
     await pickType('expectedText');
     const nodeOptions = await $('#monitor-node option').allTextContents();
     check('2. adım: "Bu senaryonun tamamı", node listesi kopyadan, senaryo ipucu', (await text('#monitor-scope-global-text')).startsWith('Bu senaryonun tamamı')
-      && nodeOptions.join(',') === 'v_Giris,v_Uygulama' && (await $('#monitor-edge option').count()) === 1 && (await text('#monitor-scope-hint')).includes('"Kısa" senaryosu oynatılırken'), nodeOptions.join(','));
+      && nodeOptions.join(',') === 'v_Giris,v_Uygulama' && (await $('#monitor-edge option').count()) === 2 && (await text('#monitor-scope-hint')).includes('"Kısa" senaryosu oynatılırken'), nodeOptions.join(','));
     await $('input[name="monitor-scope"][value="node"]').check();
     await $('#monitor-node').selectOption(uygulama.id);
     await $('[data-key="text"] > label input').fill('Hoş geldiniz');
@@ -249,6 +250,17 @@ function check(name, ok, detail = '') {
     check('senaryo dosyası: node yuvasında 1 monitör, listede 2, kopyada Giris yuvası boş', json.format === 'graph-recorder-scenario/v1' && slot.length === 1 && slot[0].id === `${B.id}.m1` && slot[0].scope === uygulama.id
       && json.monitors?.items.length === 2 && json.graph.nodes.find((n) => n.id === giris.id)?.monitors.length === 0 && json.runs.length === 1, JSON.stringify(json.monitors));
     check('panelin çalışma kopyası değişmedi', await panel.evaluate(() => scenario.graph.nodes.every((n) => n.monitors.length === 0)));
+
+    // ---- Senaryo kartında "Yükle…": dosyadaki monitörler yeni senaryoya gelir (yeni id'lerle) ----
+    await panel.setInputFiles('#scenario-file', file);
+    await sleep(800);
+    const loaded = (await getState()).scenarios.find((sc) => sc.name === 'Uzun (2)');
+    const loadedMonitors = loaded ? (await storedScenarioMonitors(graphId))?.scenarios?.[loaded.id]?.items ?? [] : [];
+    check('yüklenen senaryo dosyası: monitörleri yeni senaryoda (id\'leri onun), kapsamları aynı, mesajda sayı', Boolean(loaded) && loadedMonitors.length === 2 && loadedMonitors.every((m) => m.id.startsWith(`${loaded.id}.m`) && m.scenarioId === loaded.id)
+      && loadedMonitors.some((m) => m.scope === uygulama.id) && loadedMonitors.some((m) => m.scope === 'global') && (await text('#message')).includes('Dosyadaki 2 monitör de yüklendi'), `${await text('#message')} ${JSON.stringify(loadedMonitors.map((m) => [m.id, m.scope]))}`);
+    await send({ type: 'DELETE_SCENARIO', id: loaded?.id });
+    await sleep(500);
+    check('yüklenen senaryo silinince monitörleri de silindi', !(await storedScenarioMonitors(graphId))?.scenarios?.[loaded?.id]);
     await showView(null);
 
     // ---- Graph yedeği: senaryo monitörleri de yedekte; yükleyince senaryolarıyla geri gelir ----
