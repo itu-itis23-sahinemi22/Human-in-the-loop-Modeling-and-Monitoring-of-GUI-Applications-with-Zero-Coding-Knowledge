@@ -5,6 +5,9 @@
 // (monitor-types.js kataloğundan), sonra kapsam (tüm model / node / edge ve edge'deki aksiyon),
 // parametreler (tanımdan üretilen alanlar; element listesi, hazır desen çipleri, canlı deneme),
 // etkin anahtarı, isim ve özet cümlesi. Kaydedilmemiş değişiklikte kapatmadan önce sorar.
+// Senaryo monitörü (monitor-store.js > SENARYOYA ÖZEL MONİTÖRLER): pencere senaryo adıyla açılır,
+// node / edge / aksiyon listeleri senaryonun graph'ından (kopyadan) gelir, "Tüm model" seçeneği
+// "Bu senaryonun tamamı" olur; kayıt senaryonun listesine yapılır.
 // Detay: docs/07-monitorler.md > Kullanım
 // =============================================================================
 
@@ -30,7 +33,7 @@ const MONITOR_DIALOG_HTML = `
       </div>
       <fieldset id="monitor-scope-set">
         <legend>Kapsam</legend>
-        <label class="option"><input type="radio" name="monitor-scope" value="global"> <span>Tüm model: her node'da kontrol edilir</span></label>
+        <label class="option"><input type="radio" name="monitor-scope" value="global"> <span id="monitor-scope-global-text">Tüm model: her node'da kontrol edilir</span></label>
         <label class="option"><input type="radio" name="monitor-scope" value="node"> <span>Yalnızca bu node:</span> <select id="monitor-node" aria-label="Node"></select></label>
         <label class="option"><input type="radio" name="monitor-scope" value="edge"> <span>Yalnızca bu edge:</span> <select id="monitor-edge" aria-label="Edge"></select></label>
         <label class="option action-row" id="monitor-action-row"><span>Edge'deki aksiyon:</span> <select id="monitor-action" aria-label="Edge'deki aksiyon"></select></label>
@@ -91,23 +94,41 @@ let editingId = null;       // düzenlenen monitörün id'si; yeni monitörde nu
 let editingOrphan = false;  // düzenlenen monitör sahipsiz: kullanıcı yeni öğe seçmeli
 let dialogTypeId = null;    // 2. adımdaki tür; 1. adımda null
 let dialogScope = 'global'; // 2. adıma geçerken uygulanacak kapsam ('global', node id ya da edge id)
+let dialogScenarioId = null; // senaryo monitörü: senaryonun id'si (listeler kopyadan, kayıt senaryonun listesine); genel monitörde null
 let dialogInitial = null;   // açılıştaki taslak (kaydedilmemiş değişiklik kontrolü için)
 let dialogClean = true;     // pencere bilerek kapatılıyor (kaydedildi / vazgeçildi)
 
 // id verilirse o monitör düzenlenir (2. adım); scope verilirse ('global', node id ya da edge id)
-// yeni monitör o kapsamla açılır (1. adım: tür seçimi).
-function openMonitorDialog({ id = null, scope = null } = {}) {
+// yeni monitör o kapsamla açılır (1. adım: tür seçimi). scenarioId: yeni monitör o senaryoya özel
+// (verilmezse senaryo görünümündeyse görünümdeki senaryoya, ana graph görünümünde genel kural).
+function openMonitorDialog({ id = null, scope = null, scenarioId = undefined } = {}) {
   const existing = id ? monitorById(id) : null;
+  dialogScenarioId = existing ? existing.scenarioId ?? null : scenarioId === undefined ? monitorScenarioView() : scenarioId;
+  const sc = dialogScenarioId ? (scenario.id === dialogScenarioId ? scenario : state.scenarios.find((s) => s.id === dialogScenarioId)) : null;
+  if (dialogScenarioId && !sc) return showMessage({ error: 'Bu monitörün senaryosu artık yok.' });
   editingId = existing?.id ?? null;
   editingOrphan = Boolean(existing && isOrphan(existing));
   dialogScope = existing?.scope ?? scope ?? (selectedItem() ? selectedId : 'global');
   dialogClean = false;
-  $('monitor-title').textContent = existing ? 'Monitörü düzenle' : 'Monitör ekle';
+  $('monitor-title').textContent = sc
+    ? `${existing ? 'Senaryo monitörünü düzenle' : 'Senaryo monitörü ekle'} · "${sc.name}"`
+    : existing ? 'Monitörü düzenle' : 'Monitör ekle';
   $('btn-monitor-change-type').hidden = Boolean(existing); // tür değişmez: parametreleri başka türe taşınamaz
   showDialogError(null);
   $('monitor-dialog').showModal();
   if (existing) showParamsStep(existing.type, existing);
   else showTypeStep();
+}
+
+// Formun node / edge / aksiyon listelerinin graph'ı: senaryo monitöründe senaryonun kopyası, genel
+// monitörde ana graph (monitor-store.js > scenarioCopy). Senaryo silinmişse boş graph.
+function dialogGraph() {
+  return (dialogScenarioId ? scenarioCopy(dialogScenarioId) : state) ?? { nodes: [], edges: [] };
+}
+
+function dialogScenarioName() {
+  const sc = dialogScenarioId ? (scenario.id === dialogScenarioId ? scenario : state.scenarios.find((s) => s.id === dialogScenarioId)) : null;
+  return sc?.name ?? null;
 }
 
 // 1. ADIM: tür kartları (gruplu, aranabilir)
@@ -167,10 +188,13 @@ function showParamsStep(typeId, existing = null) {
   $('monitor-type-name').textContent = type.text;
   $('monitor-type-hint').textContent = `${type.hint} ${MONITOR_WHEN[type.when]?.hint ?? ''}`;
 
-  // Node ve edge listeleri: graph'taki öğeler oluşturulma sırasıyla; sahipsiz monitörün öğesi listede yok
-  $('monitor-node').replaceChildren(...state.nodes.map((n) => new Option(n.name, n.id)));
-  $('monitor-edge').replaceChildren(...state.edges.map((e) => new Option(edgeLabel(e), e.id)));
-  const kind = scopeKind(dialogScope);
+  // Node ve edge listeleri: graph'taki öğeler oluşturulma sırasıyla (senaryo monitöründe kopyadakiler);
+  // sahipsiz monitörün öğesi listede yok
+  const graph = dialogGraph();
+  $('monitor-node').replaceChildren(...graph.nodes.map((n) => new Option(n.name, n.id)));
+  $('monitor-edge').replaceChildren(...graph.edges.map((e) => new Option(edgeLabel(e, graph), e.id)));
+  $('monitor-scope-global-text').textContent = dialogScenarioId ? 'Bu senaryonun tamamı: senaryonun her node\'unda kontrol edilir' : 'Tüm model: her node\'da kontrol edilir';
+  const kind = scopeKind(dialogScope, graph);
   setScopeRadio(kind === 'node' || kind === 'edge' ? kind : existing && kind === 'orphan' ? 'node' : 'global');
   if (kind === 'node') $('monitor-node').value = dialogScope;
   if (kind === 'edge') $('monitor-edge').value = dialogScope;
@@ -202,10 +226,11 @@ function setScopeRadio(value) {
 function renderScopeState() {
   const type = monitorType(dialogTypeId);
   const allowed = monitorScopes(type);
+  const graph = dialogGraph();
   const radios = Object.fromEntries([...$('monitor-dialog').querySelectorAll('input[name="monitor-scope"]')].map((r) => [r.value, r]));
   radios.global.disabled = !allowed.global;
-  radios.node.disabled = !allowed.node || !state.nodes.length;
-  radios.edge.disabled = !allowed.edge || !state.edges.length;
+  radios.node.disabled = !allowed.node || !graph.nodes.length;
+  radios.edge.disabled = !allowed.edge || !graph.edges.length;
   if (radios[scopeRadio()].disabled) {
     const open = ['global', 'node', 'edge'].find((value) => !radios[value].disabled);
     if (open) radios[open].checked = true;
@@ -214,12 +239,13 @@ function renderScopeState() {
   $('monitor-edge').disabled = scopeRadio() !== 'edge' || radios.edge.disabled;
   $('monitor-action-row').hidden = scopeRadio() !== 'edge' || radios.edge.disabled;
   $('monitor-action-hint').hidden = $('monitor-action-row').hidden;
-  const names = { global: 'tüm model', node: 'tek node', edge: 'tek edge' };
+  const names = { global: dialogScenarioId ? 'senaryonun tamamı' : 'tüm model', node: 'tek node', edge: 'tek edge' };
   const allowedNames = Object.keys(allowed).filter((k) => allowed[k]).map((k) => names[k]);
   const hint = [
+    dialogScenarioId ? `Senaryo monitörü: yalnızca "${dialogScenarioName()}" senaryosu oynatılırken kontrol edilir. Node ve edge listesi senaryonun graph'ındandır (koşuların geçtiği kopya).` : '',
     allowedNames.length < 3 ? `Bu tür yalnızca ${allowedNames.join(' ya da ')} için tanımlanır.` : '',
-    !state.nodes.length ? 'Graph\'ta henüz node yok; node ya da edge monitörü için önce kayıt yapın.' : '',
-    editingOrphan ? 'Bu monitörün öğesi artık yok (sahipsiz): listeden yeni bir node ya da edge seçin ya da tüm modele alın.' : '',
+    !graph.nodes.length ? (dialogScenarioId ? 'Senaryonun graph\'ında node yok; önce koşu ekleyin.' : 'Graph\'ta henüz node yok; node ya da edge monitörü için önce kayıt yapın.') : '',
+    editingOrphan ? `Bu monitörün öğesi ${dialogScenarioId ? 'senaryonun graph\'ında' : 'artık'} yok (sahipsiz): listeden yeni bir node ya da edge seçin ya da ${dialogScenarioId ? 'senaryonun tamamına' : 'tüm modele'} alın.` : '',
   ].filter(Boolean).join(' ');
   $('monitor-scope-hint').textContent = hint;
   $('monitor-scope-hint').hidden = !hint;
@@ -423,14 +449,14 @@ function updateTester(wrap) {
 function renderActionPicks(ref = undefined) {
   const select = $('monitor-action');
   const previous = select.value;
-  const edge = edgeById($('monitor-edge').value);
+  const edge = edgeById($('monitor-edge').value, dialogGraph());
   const actions = edge?.actions ?? [];
   select.replaceChildren(new Option(actions.length ? 'Edge\'in tamamı (her aksiyondan sonra)' : 'Edge\'de aksiyon yok', ''));
-  select.append(...actions.map((a, i) => new Option(actionText(a, i) + (a.target?.key ? ` (${a.target.key})` : ''), String(i))));
+  select.append(...actions.map((a, i) => new Option(actionText(a, i, actions) + (a.target?.key ? ` (${a.target.key})` : ''), String(i))));
   if (ref !== undefined) {
     const i = ref ? resolveMonitorAction(ref, actions) : -1;
     select.value = i >= 0 ? String(i) : '';
-    if (ref && i < 0) showDialogError(`Monitörün aksiyonu (${ref.index + 1}. ${ref.label}) bu edge'de artık yok; listeden yeniden seçin.`);
+    if (ref && i < 0) showDialogError(`Monitörün aksiyonu (${actionRefText(ref)}) bu edge'de artık yok ya da tek başına bulunamıyor; listeden yeniden seçin.`);
   } else {
     select.value = [...select.options].some((o) => o.value === previous) ? previous : '';
   }
@@ -438,19 +464,19 @@ function renderActionPicks(ref = undefined) {
 }
 
 function renderActionHint() {
-  const edge = edgeById($('monitor-edge').value);
+  const edge = edgeById($('monitor-edge').value, dialogGraph());
   const i = $('monitor-action').value === '' ? -1 : Number($('monitor-action').value);
   const action = edge?.actions?.[i];
   $('monitor-action-hint').textContent = !edge?.actions?.length ? ''
     : i < 0 ? `Bu edge'de ${edge.actions.length} aksiyon var. Belirli bir aksiyondan hemen sonra kontrol için (ör. kullanıcı adı yazılınca, bekleme bitince) listeden seçin; seçilmezse her aksiyondan sonra kontrol edilir.`
-      : action.type === 'wait' ? `Bekleme (${waitSeconds(action.ms)}) bittikten hemen sonra kontrol edilir: yüklenmesi beklenen içerik gelmiş mi ("olmalı"), geçici mesaj gitmiş mi ("olmamalı", ör. "Bekleyiniz").`
+      : action.type === 'wait' ? `Bekleme (${waitSeconds(action.ms)}${(() => { const anchor = waitAnchor(edge.actions, i); return anchor ? `, ${anchorText(anchor)} sonrası` : anchor === null ? ', edge başında' : ''; })()}) bittikten hemen sonra kontrol edilir: yüklenmesi beklenen içerik gelmiş mi ("olmalı"), geçici mesaj gitmiş mi ("olmamalı", ör. "Bekleyiniz"). Monitör beklemeyi arkasından geldiği aksiyonla tanır; aksiyonlar silinse de o beklemeye bağlı kalır.`
         : `Yalnızca bu aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan).${action.type === 'input' && action.target?.key ? ` Alan: ${action.target.key}` : ''}`;
 }
 
 // Aksiyon seçilince: Input Validation gibi alan isteyen türde alan, aksiyonun hedefiyle dolar
 // (kullanıcı kendi yazdıysa dokunulmaz; data-auto ile ayırt edilir).
 function fillSelectorFromAction() {
-  const edge = edgeById($('monitor-edge').value);
+  const edge = edgeById($('monitor-edge').value, dialogGraph());
   const i = $('monitor-action').value === '' ? -1 : Number($('monitor-action').value);
   const action = edge?.actions?.[i];
   const key = action?.type === 'input' ? action.target?.key ?? action.selector ?? '' : '';
@@ -468,14 +494,15 @@ function fillSelectorFromAction() {
 }
 
 // Kapsamdaki ekranlar: node ise o node; edge ise edge'in çıktığı ve vardığı node'lar; tüm
-// model ise bütün node'lar.
+// model (senaryonun tamamı) ise graph'ın bütün node'ları.
 function scopeNodes() {
-  if (scopeRadio() === 'node') return [nodeById($('monitor-node').value)].filter(Boolean);
+  const graph = dialogGraph();
+  if (scopeRadio() === 'node') return [nodeIn(graph, $('monitor-node').value)].filter(Boolean);
   if (scopeRadio() === 'edge') {
-    const edge = edgeById($('monitor-edge').value);
-    return edge ? [...new Set([nodeById(edge.source), nodeById(edge.target)].filter(Boolean))] : [];
+    const edge = edgeById($('monitor-edge').value, graph);
+    return edge ? [...new Set([nodeIn(graph, edge.source), nodeIn(graph, edge.target)].filter(Boolean))] : [];
   }
-  return state.nodes;
+  return graph.nodes;
 }
 
 // Element listeleri: kapsamdaki ekranların kaydedilmiş etkileşimli elementleri (parmak izi
@@ -516,12 +543,12 @@ function draftMonitor() {
         : field.value.trim();
   }
   const radio = scopeRadio();
-  const edge = radio === 'edge' ? edgeById($('monitor-edge').value) : null;
+  const edge = radio === 'edge' ? edgeById($('monitor-edge').value, dialogGraph()) : null;
   const actionIndex = edge && $('monitor-action').value !== '' ? Number($('monitor-action').value) : -1;
   return {
     type: type.id,
     scope: radio === 'node' ? $('monitor-node').value : radio === 'edge' ? $('monitor-edge').value : 'global',
-    action: actionIndex >= 0 ? monitorActionRef(edge.actions?.[actionIndex], actionIndex) : null,
+    action: actionIndex >= 0 ? monitorActionRef(edge.actions?.[actionIndex], actionIndex, edge.actions) : null,
     params,
     severity: 'error', // arayüzde önem seçilmez: her bozulma kırmızı (monitor-types.js > MONITOR_SEVERITIES)
     enabled: $('monitor-enabled').checked,
@@ -530,15 +557,19 @@ function draftMonitor() {
 }
 
 // Özet cümlesi: "Testte v_Telefon node'una her varıldığında: input:phone alanının değeri /^0?5/ desenine uymalı…"
+// Senaryo monitöründe senaryo adıyla başlar: ""Giriş" senaryosunda, testte …".
 function renderSummary() {
   if (!dialogTypeId) return;
   const draft = draftMonitor();
   const type = monitorType(draft.type);
   const kind = scopeRadio();
-  const edge = kind === 'edge' ? edgeById(draft.scope) : null;
+  const graph = dialogGraph();
+  const edge = kind === 'edge' ? edgeById(draft.scope, graph) : null;
   const scope = kind === 'global' ? { kind: 'global' }
-    : kind === 'node' ? { kind: 'node', name: nodeById(draft.scope)?.name ?? '…' }
-      : { kind: 'edge', name: edge?.name ?? '…', action: draft.action ? actionText(edge.actions[draft.action.index], draft.action.index) : null };
+    : kind === 'node' ? { kind: 'node', name: nodeIn(graph, draft.scope)?.name ?? '…' }
+      : { kind: 'edge', name: edge?.name ?? '…', action: draft.action ? actionText(edge.actions[draft.action.index], draft.action.index, edge.actions) : null };
+  if (dialogScenarioId) scope.scenario = dialogScenarioName() ?? '…';
+
   $('monitor-summary').replaceChildren(...monitorSentence(type, draft.params, scope, draft.enabled).map((part) => {
     if (typeof part === 'string') return part;
     const b = document.createElement('b');
@@ -559,9 +590,9 @@ function validateDraft(draft) {
     if (problem) problems++;
   }
   if (problems) return 'Parametrelerde sorun var; işaretli alanları düzeltin.';
-  const kind = scopeKind(draft.scope);
-  if (kind === 'orphan') return scopeRadio() === 'edge' ? 'Bir edge seçin.' : 'Bir node seçin (graph\'ta node yoksa "Tüm model" seçin).';
-  if (!monitorScopes(type)[kind]) return `Bu tür ${{ global: 'tüm model', node: 'tek node', edge: 'tek edge' }[kind]} için tanımlanamaz.`;
+  const kind = scopeKind(draft.scope, dialogGraph());
+  if (kind === 'orphan') return scopeRadio() === 'edge' ? 'Bir edge seçin.' : `Bir node seçin (graph'ta node yoksa "${dialogScenarioId ? 'Bu senaryonun tamamı' : 'Tüm model'}" seçin).`;
+  if (!monitorScopes(type)[kind]) return `Bu tür ${{ global: dialogScenarioId ? 'senaryonun tamamı' : 'tüm model', node: 'tek node', edge: 'tek edge' }[kind]} için tanımlanamaz.`;
   if (kind === 'edge' && $('monitor-action').value !== '' && !draft.action) return 'Seçilen aksiyon bu edge\'de yok; listeden yeniden seçin.';
   return null;
 }
@@ -571,6 +602,8 @@ function showDialogError(text) {
   $('monitor-error').textContent = text ?? '';
 }
 
+// Kayıt: genel monitör genel listeye (monitors:<graph>), senaryo monitörü senaryonun listesine
+// (scenario-monitors:<graph>; id senaryo id'siyle başlar). Düzenlemede liste değişmez.
 async function saveMonitor() {
   if (!dialogTypeId) return;
   const draft = draftMonitor();
@@ -578,16 +611,18 @@ async function saveMonitor() {
   showDialogError(problem);
   if (problem) return;
   const existing = editingId ? monitorById(editingId) : null;
+  if (dialogScenarioId && !state.scenarios.some((sc) => sc.id === dialogScenarioId)) return showDialogError('Bu senaryo artık yok (silinmiş); monitör kaydedilemez.');
+  let saved = existing;
   if (existing) {
     Object.assign(existing, draft);
     monitorVerdicts.delete(existing.id); // kural değişti: eski sonuç geçersiz
   } else {
-    monitors.items.push({ id: 'm' + monitors.nextId++, ...draft, createdAt: new Date().toISOString() });
+    saved = { id: newMonitorId(dialogScenarioId), ...draft, ...(dialogScenarioId ? { scenarioId: dialogScenarioId } : {}), createdAt: new Date().toISOString() };
+    monitorListOf(saved).items.push(saved);
   }
-  await saveMonitors();
+  await saveMonitorList(dialogScenarioId);
   closeMonitorDialog();
-  const saved = existing ?? monitors.items.at(-1);
-  showMessage({ notice: `"${monitorName(saved)}" ${existing ? 'güncellendi' : 'eklendi'} (${scopeText(saved)}).` });
+  showMessage({ notice: `"${monitorName(saved)}" ${existing ? 'güncellendi' : 'eklendi'} (${dialogScenarioId ? `"${dialogScenarioName()}" senaryosu · ` : ''}${scopeText(saved)}).` });
   if (!existing) $('monitors').open = true;
   renderMonitors();
 }

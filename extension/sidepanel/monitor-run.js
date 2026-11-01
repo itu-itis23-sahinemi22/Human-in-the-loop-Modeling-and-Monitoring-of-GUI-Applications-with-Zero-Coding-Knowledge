@@ -50,12 +50,16 @@ function ledStatus(verdict) {
 // Koşunun monitör kontrolü. steps oynatmanın adımlarıyla aynı sırada; her adımın verdicts'i
 // monitör id -> { status, text, screenshot?, where?, alarmId? } (bozulduysa o anın görüntüsü ve
 // uyarı kaydı). monitors: bu koşuda geçerli etkin monitörler (tüm model, koşudaki bir edge ya da
-// koşunun vardığı bir node).
-function beginMonitorRun(edges) {
+// koşunun vardığı bir node): genel kurallar + oynatılan senaryonun kendi monitörleri (monitor-store.js
+// > SENARYOYA ÖZEL MONİTÖRLER). scenario: Emir'in startReplay'e verdiği { id, graph } (oynatılan
+// kopya; adım etiketlerinde node adları ondan okunur).
+function beginMonitorRun(edges, scenarioInfo = null) {
+  const applies = (m) => m.enabled && edges.some((e) => m.scope === 'global' || m.scope === e.id || m.scope === e.target);
   const run = {
     edges, replay: null, finished: false,
+    scenario: scenarioInfo?.id ? { id: scenarioInfo.id, graph: scenarioInfo.graph ?? null } : null,
     steps: edges.map((edge, index) => ({ index, edgeId: edge.id, target: edge.target, verdicts: new Map() })),
-    monitors: monitors.items.filter((m) => m.enabled && edges.some((e) => m.scope === 'global' || m.scope === e.id || m.scope === e.target)),
+    monitors: [...monitors.items.filter(applies), ...scenarioMonitorItems(scenarioInfo?.id ?? null).filter(applies)],
   };
   activeRun = run;
   return run;
@@ -117,10 +121,11 @@ function appliesTo(m, step) {
   return m.scope === 'global' || m.scope === step.edgeId || m.scope === step.target;
 }
 
-// startReplay sarmalanır: koşu başlarken monitörler seçilir; koşu bitince sonuçlar toplanır.
+// startReplay sarmalanır: koşu başlarken monitörler seçilir (genel + options.scenario'nun kendi
+// monitörleri); koşu bitince sonuçlar toplanır.
 const startReplayWithoutMonitors = startReplay; // replay.js
 startReplay = (options) => {
-  const run = beginMonitorRun(options.edges);
+  const run = beginMonitorRun(options.edges, options.scenario ?? null);
   const started = startReplayWithoutMonitors(options);
   run.replay = started;
   started.done.then((result) => finishMonitorRun(run, result)).catch(() => finishMonitorRun(run, null));
@@ -199,7 +204,7 @@ async function checkStepMonitors(run, replay, verdict) {
     if (step.verdicts.has(m.id)) continue; // aksiyon sırasında kontrol edildi (aksiyon tabanlı tür, aksiyona bağlı monitör)
     if (!monitorType(m.type)) { step.verdicts.set(m.id, verdictSkip('tür tanımlı değil')); continue; }
     if (m.action) { // yalnızca kendi aksiyonundan sonra kontrol edilir; buraya geldiyse o aksiyon oynatılmadı
-      step.verdicts.set(m.id, verdictSkip(resolveMonitorAction(m.action, edge?.actions) < 0 ? `aksiyon edge'de bulunamadı (${m.action.index + 1}. ${m.action.label})` : 'aksiyonu bu adımda oynatılmadı'));
+      step.verdicts.set(m.id, verdictSkip(resolveMonitorAction(m.action, edge?.actions) < 0 ? `aksiyon edge'de bulunamadı (${actionRefText(m.action)})` : 'aksiyonu bu adımda oynatılmadı'));
       continue;
     }
     if (m.scope === step.target && !arrived) { step.verdicts.set(m.id, verdictSkip('node\'a varılamadı: ekran beklenen node değil')); continue; }
@@ -335,10 +340,11 @@ function renderMonitorRun() {
   });
   $('monitor-run-list').replaceChildren(...rows);
   $('monitor-run-empty').hidden = run.monitors.length > 0;
-  $('monitor-run-empty').textContent = run.monitors.length ? '' : 'Bu koşuda geçerli etkin monitör yok. Monitörler bölümünden ya da graph\'ta sağ tıkla ekleyin.';
+  $('monitor-run-empty').textContent = run.monitors.length ? '' : 'Bu koşuda geçerli etkin monitör yok (ne genel kural ne bu senaryoya özel). Monitörler bölümünden ya da graph\'ta sağ tıkla ekleyin.';
+  const own = run.monitors.filter((m) => m.scenarioId).length;
   const parts = [counts.fail ? `${counts.fail} kırmızı` : '', counts.ok ? `${counts.ok} yeşil` : ''].filter(Boolean);
   $('monitor-run-summary').textContent = run.monitors.length
-    ? `${run.monitors.length} monitör · ${running ? 'kontrol ediliyor · ' : ''}${parts.join(' · ')}`
+    ? `${run.monitors.length} monitör${own ? ` (${run.monitors.length - own} genel, ${own} senaryo)` : ''} · ${running ? 'kontrol ediliyor · ' : ''}${parts.join(' · ')}`
     : '';
   $('monitor-run-summary').classList.toggle('running', running);
 }
@@ -365,12 +371,15 @@ function aggregateText(run, m) {
   return run.finished ? 'Kontrol edilemedi' : 'Bekliyor: adımı henüz oynatılmadı…';
 }
 
+// Oynatılan graph senaryonun kopyasıdır: varılan node'un adı kopyadan (panel.js > replayNode ile aynı kural)
 function stepLabel(run, step) {
   const edge = run.edges[step.index];
-  return `Adım ${step.index + 1} (${edge?.name ?? step.edgeId} → ${nodeById(step.target)?.name ?? step.target})`;
+  const target = run.scenario?.graph?.nodes.find((n) => n.id === step.target) ?? nodeById(step.target);
+  return `Adım ${step.index + 1} (${edge?.name ?? step.edgeId} → ${target?.name ?? step.target})`;
 }
 
-// Bir monitörün satırı: LED · ad / kapsam · adım izi (her adım bir kare) · ayrıntı · ekran görüntüsü
+// Bir monitörün satırı: LED · etiket (Genel / Senaryo) · ad / kapsam · adım izi (her adım bir kare) ·
+// ayrıntı · ekran görüntüsü
 function monitorLedRow(run, m, status) {
   const li = document.createElement('li');
   li.className = `led-row ${status}`;
@@ -381,6 +390,7 @@ function monitorLedRow(run, m, status) {
   led.setAttribute('role', 'img'); // aria-label düz bir span'da okunmaz
   led.setAttribute('aria-label', LED_TEXT[status]);
   const type = monitorType(m.type);
+  if (run.scenario) li.querySelector('.led-title').prepend(monitorTag(m)); // monitor-list.js; adın önünde
   if (type) li.querySelector('b').append(iconElement(monitorGroup(type), true));
   li.querySelector('b').append(monitorName(m));
   li.querySelector('.scope').textContent = scopeText(m);
@@ -422,8 +432,9 @@ function openShot(run, m, step) {
 // -----------------------------------------------------------------------------
 // "BU EKRANDA ŞİMDİ KONTROL ET" (Monitörler bölümü): oynatmasız, açık sekmede
 // -----------------------------------------------------------------------------
-// Tüm model monitörleri + graph'ta seçili node ya da edge'in monitörleri sayfada kontrol edilir.
-// Sonuç yine ikili (yeşil / kırmızı); kontrol edilemeyen monitörün nedeni satırında yazar.
+// Tüm model monitörleri + graph'ta seçili node ya da edge'in monitörleri sayfada kontrol edilir;
+// senaryo görünümünde o senaryonun monitörleri de (genel kurallarla birlikte). Sonuç yine ikili
+// (yeşil / kırmızı); kontrol edilemeyen monitörün nedeni satırında yazar.
 
 $('btn-monitor-check').onclick = async () => {
   if (liveChecking) return;
@@ -431,8 +442,9 @@ $('btn-monitor-check').onclick = async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return showMessage({ error: 'Açık sekme bulunamadı.' });
   const selected = selectedItem(); // monitor-list.js
-  const list = monitors.items.filter((m) => m.enabled && (m.scope === 'global' || (selected && m.scope === selected.item.id)));
-  if (!list.length) return showMessage({ notice: 'Kontrol edilecek etkin monitör yok: tüm model için ya da graph\'ta seçili öğe için bir monitör ekleyin.' });
+  const pool = [...monitors.items, ...scenarioMonitorItems(monitorScenarioView())]; // monitor-store.js
+  const list = pool.filter((m) => m.enabled && (m.scope === 'global' || (selected && m.scope === selected.item.id)));
+  if (!list.length) return showMessage({ notice: `Kontrol edilecek etkin monitör yok: ${monitorScenarioView() ? 'senaryonun tamamı, tüm model' : 'tüm model'} için ya da graph'ta seçili öğe için bir monitör ekleyin.` });
   liveChecking = true;
   $('btn-monitor-check').disabled = true;
   const graphId = monitorsGraphId; // monitor-store.js; kontrol sürerken graph değişirse sonuç yazılmaz

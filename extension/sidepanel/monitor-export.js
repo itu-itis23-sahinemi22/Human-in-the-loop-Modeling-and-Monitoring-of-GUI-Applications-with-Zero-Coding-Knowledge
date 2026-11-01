@@ -7,7 +7,11 @@
 //     edge'in properties.monitors alanına yazılır (GraphWalker bu alanları yok sayar).
 //   - "Yükle…": dışa aktarılmış bir JSON'daki monitörler mevcut listeye eklenir.
 //   - Graph yedeği (Graph'lar > Dışa aktar / Yükle…): graphBackup() sarmalanır; yedek yüklenince
-//     monitörler yeni graph'a geri gelir (node ve edge id'leri yedekte korunur).
+//     monitörler yeni graph'a geri gelir (node ve edge id'leri yedekte korunur). Senaryoya özel
+//     monitörler de yedektedir (scenarioMonitors; senaryo id'leri de korunur).
+//   - "Senaryo indir" (panel.js > SENARYO): downloadJson() sarmalanır; senaryo dosyasında kopyadaki
+//     node / edge'lerin boş 'monitors: []' yuvaları o senaryonun monitörleriyle dolar, tamamı
+//     dosyanın 'monitors' alanında listelenir.
 // Detay: docs/07-monitorler.md > Veri modeli
 // =============================================================================
 
@@ -44,7 +48,8 @@ graphWalkerModel = () => withMonitors(graphWalkerModelWithoutMonitors());
 // eklenir; bilinmeyen türler atlanır, öğesi bu graph'ta olmayanlar sahipsiz gelir.
 // Dosyadan gelen parametreler de formdaki gibi doğrulanır (monitorParamProblem): "min": "abc" gibi
 // bir kayıt yeşil yanan boş bir monitör olmasın diye atlanır (invalid sayılır).
-function importMonitorItems(list) {
+// scenarioId verilirse liste o senaryonun monitörleri olur (yedekten geri yükleme).
+function importMonitorItems(list, scenarioId = null) {
   const severities = new Set(MONITOR_SEVERITIES.map((s) => s.id));
   let unknown = 0;
   let invalid = 0;
@@ -56,11 +61,12 @@ function importMonitorItems(list) {
     if (type.params.some((p) => monitorParamProblem(p, params[p.key]))) { invalid++; continue; }
     const name = typeof raw.name === 'string' && raw.name.trim() && raw.name.trim() !== monitorAutoName(type, params) ? raw.name.trim() : null;
     added.push({
-      id: 'm' + monitors.nextId++, type: type.id, scope: raw.scope === 'global' ? 'global' : String(raw.scope ?? 'global'),
-      action: normalizeActionRef(raw.action), params, severity: severities.has(raw.severity) ? raw.severity : 'error', enabled: raw.enabled !== false, name, createdAt: new Date().toISOString(),
+      id: newMonitorId(scenarioId), type: type.id, scope: raw.scope === 'global' ? 'global' : String(raw.scope ?? 'global'),
+      action: normalizeActionRef(raw.action), params, severity: severities.has(raw.severity) ? raw.severity : 'error', enabled: raw.enabled !== false, name,
+      ...(scenarioId ? { scenarioId } : {}), createdAt: new Date().toISOString(),
     });
   }
-  monitors.items.push(...added);
+  (scenarioId ? scenarioMonitorList(scenarioId, true) : monitors).items.push(...added);
   return { added, unknown, invalid };
 }
 
@@ -104,10 +110,15 @@ $('monitor-file').onchange = async () => {
 // yedekteki tüm node'ları içeren, yedek seçildikten sonra oluşturulmuş ve henüz monitörü
 // olmayan bir graph'a yazılır.
 
+// Yedekte senaryoya özel monitörler senaryo id'sine göre: scenarioMonitors.scenarios[senaryo id] = [monitör, ...]
 const graphBackupWithoutMonitors = graphBackup; // panel.js
-graphBackup = () => ({ ...graphBackupWithoutMonitors(), monitors: { format: MONITORS_FORMAT, items: monitors.items.map(exportMonitor) } });
+graphBackup = () => ({
+  ...graphBackupWithoutMonitors(),
+  monitors: { format: MONITORS_FORMAT, items: monitors.items.map(exportMonitor) },
+  scenarioMonitors: { format: SCENARIO_MONITORS_FORMAT, scenarios: Object.fromEntries(Object.entries(scenarioMonitors.scenarios).filter(([, list]) => list.items.length).map(([id, list]) => [id, list.items.map(exportMonitor)])) },
+});
 
-let pendingBackup = null; // { at, nodeIds, items }: yüklenmeyi bekleyen yedeğin monitörleri
+let pendingBackup = null; // { at, nodeIds, items, scenarios }: yüklenmeyi bekleyen yedeğin monitörleri (genel + senaryo id -> liste)
 const PENDING_BACKUP_MS = 2 * 60 * 1000;
 
 document.addEventListener('change', async (event) => {
@@ -116,9 +127,11 @@ document.addEventListener('change', async (event) => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    const items = data?.monitors?.items;
-    pendingBackup = Array.isArray(items) && items.length && Array.isArray(data.nodes)
-      ? { at: Date.now(), nodeIds: data.nodes.map((n) => n?.id), items }
+    const items = Array.isArray(data?.monitors?.items) ? data.monitors.items : [];
+    const raw = data?.scenarioMonitors?.scenarios;
+    const scenarios = Object.fromEntries(Object.entries(raw && typeof raw === 'object' ? raw : {}).filter(([, list]) => Array.isArray(list) && list.length));
+    pendingBackup = (items.length || Object.keys(scenarios).length) && Array.isArray(data.nodes)
+      ? { at: Date.now(), nodeIds: data.nodes.map((n) => n?.id), items, scenarios }
       : null;
   } catch {
     pendingBackup = null; // bozuk dosyayı panel.js kendisi bildirir
@@ -126,17 +139,53 @@ document.addEventListener('change', async (event) => {
   if (pendingBackup) renderMonitors(); // uygulanması bir çizime bağlı; yeni graph'a geçiş onu zaten tetikler, burası emniyet
 }, true);
 
+// Yedekteki senaryo monitörleri yalnızca yeni graph'ta aynı id'yle var olan senaryolara yazılır
+// (background yedekteki senaryoları id'leriyle alır); senaryosu olmayanlar atlanır.
 function applyPendingBackup() {
   if (!pendingBackup) return;
   if (Date.now() - pendingBackup.at > PENDING_BACKUP_MS) { pendingBackup = null; return; }
   const entry = activeGraph();
-  const fresh = entry && entry.created >= pendingBackup.at - 1000 && !monitors.items.length;
+  const fresh = entry && entry.created >= pendingBackup.at - 1000 && !monitors.items.length && !allScenarioMonitors().length;
   const sameNodes = pendingBackup.nodeIds.length > 0 && pendingBackup.nodeIds.every((id) => nodeById(id)); // boş yedek herhangi bir graph'a yapışmasın
   if (!fresh || !sameNodes) return;
   const result = importMonitorItems(pendingBackup.items);
+  const scenarioResult = { added: [], unknown: 0, invalid: 0, missing: 0 };
+  for (const [id, list] of Object.entries(pendingBackup.scenarios)) {
+    if (!state.scenarios.some((sc) => sc.id === id)) { scenarioResult.missing += list.length; continue; }
+    const r = importMonitorItems(list, id);
+    scenarioResult.added.push(...r.added);
+    scenarioResult.unknown += r.unknown;
+    scenarioResult.invalid += r.invalid;
+  }
   pendingBackup = null;
-  saveMonitors().then(() => {
-    showMessage({ notice: importSummary(result, 'Yedekteki ') });
+  Promise.all([saveMonitors(), scenarioResult.added.length ? saveScenarioMonitors() : null]).then(() => {
+    const scenarioNote = scenarioResult.added.length || scenarioResult.missing
+      ? ` Senaryolara özel ${scenarioResult.added.length} monitör yüklendi` + (scenarioResult.missing ? `, ${scenarioResult.missing} tanesi senaryosu olmadığı için atlandı` : '') + '.'
+      : '';
+    showMessage({ notice: importSummary(result, 'Yedekteki ') + scenarioNote });
     renderMonitors();
   });
 }
+
+
+// -----------------------------------------------------------------------------
+// SENARYO DOSYASI: Senaryo > "Senaryo indir" (panel.js > SENARYO)
+// -----------------------------------------------------------------------------
+// Senaryo dosyası senaryonun graph'ını (kopya) taşır; kopyadaki her node ve edge'in 'monitors: []'
+// yuvası (scenario.js > scenarioSnapshot) senaryoya özel monitörler için ayrılmıştır. Storage'daki
+// kopya boş kalır (graph state'ini yalnızca background yazar); dosyada yuvalar o senaryonun
+// monitörleriyle dolar ve tamamı (senaryonun tamamı kapsamlılar dahil) dosyanın 'monitors'
+// alanında listelenir (GraphWalker JSON'undaki düzenle aynı: liste tek doğruluk kaynağı, yuvalar
+// kopya). panel.js'in downloadJson'ı sarmalanır; yalnızca senaryo dosyasına dokunulur, graph yedeği
+// ve GraphWalker JSON'u olduğu gibi geçer. Kopya nesnesi değişmez (panelin çalışma kopyası).
+
+function withScenarioMonitors(data) {
+  if (data?.format !== SCENARIO_FORMAT || !data.graph?.nodes || !scenario.id) return data;
+  const graph = data.graph;
+  const items = scenarioMonitorItems(scenario.id).filter((m) => m.scope === 'global' || nodeIn(graph, m.scope) || edgeIn(graph, m.scope)).map(exportMonitor);
+  const slot = (item) => ({ ...item, monitors: items.filter((m) => m.scope === item.id) });
+  return { ...data, graph: { ...graph, nodes: graph.nodes.map(slot), edges: (graph.edges ?? []).map(slot) }, monitors: { format: MONITORS_FORMAT, items } };
+}
+
+const downloadJsonWithoutMonitors = downloadJson; // panel.js
+downloadJson = (name, data) => downloadJsonWithoutMonitors(name, withScenarioMonitors(data));
