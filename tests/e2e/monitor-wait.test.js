@@ -148,7 +148,8 @@ function check(name, ok, detail = '') {
 
     // ---- Diğer monitörler storage'a ----
     const graphId = await activeId();
-    const ref = (i) => ({ index: i, type: A[i].type, label: A[i].label, target: A[i].type === 'wait' ? `wait:${A[i].ms}` : (A[i].target?.key ?? null), ...(A[i].type === 'wait' ? { after: { type: A[i - 1].type, label: A[i - 1].label, target: A[i - 1].target?.key ?? null } } : {}) }); // formun kaydettiği biçim (monitorActionRef)
+    // formun kaydettiği biçim (monitorActionRef); edge'de tıklamadan sonra tek bekleme var: 1. / 1, ikizi yok
+    const ref = (i) => ({ index: i, type: A[i].type, label: A[i].label, target: A[i].type === 'wait' ? `wait:${A[i].ms}` : (A[i].target?.key ?? null), ...(A[i].type === 'wait' ? { after: { type: A[i - 1].type, label: A[i - 1].label, target: A[i - 1].target?.key ?? null }, nth: 0, count: 1, alike: 1 } : {}) });
     const M = [
       m.items[0],
       { id: 'w2', type: 'expectedText', scope: edge.id, action: ref(waitIndex), params: { text: 'Yazdır', mode: 'present', caseSensitive: false }, severity: 'error', enabled: true, name: 'Bekleme sonrası liste geldi' }, // listeyle gelen düğme ("SGK kayıtları" mesajın "SGK kayıtlarınız"ında da geçer)

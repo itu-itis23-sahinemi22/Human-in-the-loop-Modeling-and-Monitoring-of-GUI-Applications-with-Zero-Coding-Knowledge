@@ -23,7 +23,7 @@ const pick = (name) => {
   return match[0];
 };
 const constants = monitorsSource.match(/^const (MONITORS_KEY_PREFIX|MONITORS_FORMAT|MONITOR_ALARMS_KEY_PREFIX|MONITOR_ALARMS_FORMAT|MONITOR_ALARM_LIMIT) = [^\n]*$/gm).join('\n');
-const picked = ['emptyMonitors', 'normalizeMonitors', 'emptyAlarms', 'normalizeAlarms', 'actionTarget', 'waitAnchor', 'monitorActionRef', 'normalizeActionRef', 'resolveMonitorAction', 'resolveWaitAction', 'actionText', 'waitSeconds', 'anchorText', 'actionRefText'].map(pick).join('\n');
+const picked = ['emptyMonitors', 'normalizeMonitors', 'emptyAlarms', 'normalizeAlarms', 'actionTarget', 'waitAnchor', 'sameAnchor', 'waitsAfter', 'sameWait', 'monitorActionRef', 'normalizeActionRef', 'resolveMonitorAction', 'resolveWaitAction', 'actionText', 'waitSeconds', 'anchorText', 'actionRefText'].map(pick).join('\n');
 // monitor-image.js: saf kısım DOM'suz yüklenir (panel kısmı fonksiyon tanımı olarak durur, çağrılmaz)
 const imageSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-image.js'), 'utf8');
 const ctx = { console };
@@ -70,15 +70,28 @@ check('hedefsiz aksiyon (kaydırma) etiketle bulunur', M.resolveMonitorAction({ 
 const W = (ms) => ({ type: 'wait', label: 'Wait', ms, selector: null, target: null });
 const login = [A('input', 'input:user-name', 'Fill Username'), W(10), A('input', 'input:password', 'Fill Password'), W(10), A('click', 'button:login', 'Login'), W(10)];
 const refW = M.monitorActionRef(login[5], 5, login);
-check('monitorActionRef bekleme: süre + arkasından geldiği aksiyon (Tıkla Login)', refW.target === 'wait:10' && refW.after?.type === 'click' && refW.after.target === 'button:login' && M.resolveMonitorAction(refW, login) === 5, JSON.stringify(refW));
+check('monitorActionRef bekleme: süre + arkasından geldiği aksiyon (Tıkla Login) + Login\'den sonraki beklemeler içinde sırası (1. / 1)', refW.target === 'wait:10' && refW.after?.type === 'click' && refW.after.target === 'button:login'
+  && refW.nth === 0 && refW.count === 1 && refW.alike === 1 && M.resolveMonitorAction(refW, login) === 5, JSON.stringify(refW));
 check('issue #5a: bağlı bekleme silinince monitör 1. beklemeye KAYMAZ, bulunamadı (-1)', M.resolveMonitorAction(refW, login.slice(0, 5)) === -1);
 check('issue #5b: beklemenin süresi 2 sn olunca aynı beklemede kalır (5), 2. beklemeye kaymaz', M.resolveMonitorAction(refW, [...login.slice(0, 5), W(2000)]) === 5);
 check('önceki bir aksiyon (şifre + beklemesi) silinince Login\'den sonraki bekleme yine bulunur (3)', M.resolveMonitorAction(refW, [login[0], login[1], login[4], login[5]]) === 3);
 check('arkasından geldiği aksiyon (Login) silinince bulunamaz (-1)', M.resolveMonitorAction(refW, [login[0], login[1], login[2], login[3], login[5]]) === -1);
 check('Login\'in etiketi değişse de hedefi aynıysa bulunur', M.resolveMonitorAction(refW, [...login.slice(0, 4), { ...login[4], label: 'Giriş' }, W(10)]) === 5);
 const twoWaits = [A('click', 'button:login', 'Login'), W(10), W(10)];
-check('aynı aksiyondan sonra iki eş bekleme: kayıttaki sıradaki (1); sıra tutmuyorsa belirsiz, -1', M.resolveMonitorAction(M.monitorActionRef(twoWaits[1], 1, twoWaits), twoWaits) === 1
-  && M.resolveMonitorAction({ ...M.monitorActionRef(twoWaits[1], 1, twoWaits), index: 7 }, twoWaits) === -1);
+const refTwin = M.monitorActionRef(twoWaits[2], 2, twoWaits);
+check('aynı aksiyondan sonra iki eş bekleme: kaçıncı olduğuyla bulunur (2); biri silinince hangisi olduğu belirsiz, -1', refTwin.nth === 1 && refTwin.count === 2 && refTwin.alike === 2
+  && M.resolveMonitorAction(refTwin, twoWaits) === 2 && M.resolveMonitorAction(refTwin, twoWaits.slice(0, 2)) === -1, JSON.stringify(refTwin));
+// Aynı aksiyon edge'de iki kez (sihirbazda iki "İleri"), her birinin arkasında otomatik bekleme; monitör ilk İleri'nin beklemesinde
+const wizard = [A('input', 'input:ad', 'Fill Ad'), W(10), A('click', 'button:next', 'İleri'), W(10), A('click', 'button:next', 'İleri'), W(10)];
+const refFirst = M.monitorActionRef(wizard[3], 3, wizard);
+check('iki "İleri": önden bir aksiyon ve beklemesi silinince ilk İleri\'nin beklemesinde kalır (1), ikinciye KAYMAZ', M.resolveMonitorAction(refFirst, wizard.slice(2)) === 1, String(M.resolveMonitorAction(refFirst, wizard.slice(2))));
+check('iki "İleri": bağlı İleri ve beklemesi silinince bulunamadı (-1), öbür İleri\'nin beklemesine KAYMAZ', M.resolveMonitorAction(refFirst, [wizard[0], wizard[1], wizard[4], wizard[5]]) === -1);
+check('iki "İleri": ikinci İleri\'nin beklemesi de önden silmede yerinde kalır (3)', M.resolveMonitorAction(M.monitorActionRef(wizard[5], 5, wizard), wizard.slice(2)) === 3);
+const mixed = [A('click', 'button:next', 'İleri'), W(10), A('click', 'button:next', 'İleri'), W(2000)];
+const refLong = M.monitorActionRef(mixed[3], 3, mixed);
+check('ikizi olmayan bekleme (2 sn): öbür İleri silinince süresiyle bulunur (1); kendisi silinince -1', refLong.alike === 1 && M.resolveMonitorAction(refLong, mixed.slice(2)) === 1 && M.resolveMonitorAction(refLong, mixed.slice(0, 2)) === -1, JSON.stringify(refLong));
+check('sırası kaydedilmemiş kayıt (after var, nth yok): yalnızca tek adaysa bulunur', M.resolveMonitorAction({ index: 5, type: 'wait', label: 'Wait', target: 'wait:10', after: { type: 'click', label: 'Login', target: 'button:login' } }, login) === 5
+  && M.resolveMonitorAction({ index: 3, type: 'wait', label: 'Wait', target: 'wait:10', after: { type: 'click', label: 'İleri', target: 'button:next' } }, wizard) === -1);
 const startWait = [W(1500), A('click', 'button:next', 'Devam')];
 const refStart = M.monitorActionRef(startWait[0], 0, startWait);
 check('edge başındaki bekleme (after null): bulunur; önüne aksiyon gelince bulunamaz', refStart.after === null && M.resolveMonitorAction(refStart, startWait) === 0 && M.resolveMonitorAction(refStart, [A('click', 'button:x', 'X'), ...startWait]) === -1);
@@ -87,6 +100,9 @@ check('actionText bekleme: süre + arkasından geldiği aksiyon', M.actionText(l
 check('actionRefText: bulunamayan bekleme kayıttaki bilgiyle', M.actionRefText(refW) === '6. Bekle 0,01 sn (click Login sonrası)' && M.actionRefText({ index: 2, type: 'click', label: 'Devam', target: 'button:next' }) === '3. Devam', M.actionRefText(refW));
 check('normalizeActionRef: after korunur (nesne ya da null), eski kayıtta undefined', M.normalizeActionRef({ index: 5, type: 'wait', target: 'wait:10', after: { type: 'click', label: 'Login', target: 'button:login' } }).after.target === 'button:login'
   && M.normalizeActionRef({ index: 0, type: 'wait', target: 'wait:10', after: null }).after === null && M.normalizeActionRef({ index: 5, type: 'wait', target: 'wait:10' }).after === undefined);
+const kept = M.normalizeActionRef(JSON.parse(JSON.stringify(refFirst)));
+check('normalizeActionRef: beklemenin sırası (nth / count / alike) korunur, tutarsızsa atılır', kept.nth === 0 && kept.count === 2 && kept.alike === 2 && M.resolveMonitorAction(kept, wizard.slice(2)) === 1
+  && M.normalizeActionRef({ ...refFirst, nth: 5 }).nth === undefined && M.normalizeActionRef({ ...refFirst, nth: 5 }).count === undefined, JSON.stringify(kept));
 check('tür farklıysa bulunmaz', M.resolveMonitorAction({ index: 2, type: 'input', label: 'Devam', target: 'button:next' }, edge) === -1);
 check('normalizeActionRef: string sıra sayıya çevrilir, bozuk sıra null, eksik alanlar boş', JSON.stringify(M.normalizeActionRef({ index: '1', type: 'input', label: 'x', target: 'input:a' })) === JSON.stringify({ index: 1, type: 'input', label: 'x', target: 'input:a' })
   && M.normalizeActionRef({ index: 'abc' }) === null && M.normalizeActionRef(null) === null && M.normalizeActionRef({ index: 2 }).label === '' && M.normalizeActionRef({ index: 2 }).target === null);
