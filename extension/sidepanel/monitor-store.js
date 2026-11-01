@@ -210,31 +210,53 @@ function edgeLabel(edge) {
 // ("input:user-name") + etiket ("Fill Username"); Emir aksiyon silince sıra kayar, eşleştirme
 // resolveMonitorAction ile yapılır. Hedef (alan) her kademede karşılaştırılır: aynı etiketli iki
 // alan ("Ad") varken monitör sessizce öbür alana kaymamalı.
-function monitorActionRef(action, index) {
+// Bekleme aksiyonunun elementi yok ve Emir'in otomatik beklemeleri hep aynı süre ve etiketle gelir;
+// bekleme, ARKASINDAN GELDİĞİ aksiyonla tanınır (after: "Tıkla Login'den sonraki bekleme"; edge'in
+// başındaki bekleme için null). Süresi ayrıca saklanır (target "wait:<ms>"), ✎ ile değişse de bağ kopmaz.
+function monitorActionRef(action, index, actions = null) {
   if (!action) return null;
-  return { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: actionTarget(action) };
+  const ref = { index, type: String(action.type ?? ''), label: String(action.label ?? ''), target: actionTarget(action) };
+  if (action.type === 'wait') ref.after = waitAnchor(actions, index);
+  return ref;
 }
 
-// Aksiyonun hedefi: elementin parmak izi anahtarı ("input:phone") ya da selector'ı. Bekleme aksiyonunun
-// elementi yok; onu süresi ayırır ("wait:10000"): aynı edge'de birden çok bekleme olabilir (Emir'in
-// otomatik beklemeleri de dahil), monitör bağlandığı beklemeyi süresiyle bulur.
+// Aksiyonun hedefi: elementin parmak izi anahtarı ("input:phone") ya da selector'ı; beklemede süresi.
 function actionTarget(action) {
   if (action?.type === 'wait') return Number.isFinite(action.ms) ? `wait:${action.ms}` : null;
   return action?.target?.key ?? action?.selector ?? null;
+}
+
+// Beklemenin arkasından geldiği aksiyon (önündeki ilk bekleme olmayan aksiyon): { type, label, target };
+// edge'in başındaysa (önünde aksiyon yoksa) null. actions verilmemişse undefined (bilinmiyor).
+function waitAnchor(actions, index) {
+  if (!Array.isArray(actions)) return undefined;
+  for (let i = index - 1; i >= 0; i--) {
+    const a = actions[i];
+    if (a && a.type !== 'wait') return { type: String(a.type ?? ''), label: String(a.label ?? ''), target: actionTarget(a) };
+  }
+  return null;
 }
 
 function normalizeActionRef(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const index = Number(raw.index);
   if (!Number.isInteger(index) || index < 0) return null;
-  return { index, type: String(raw.type ?? ''), label: String(raw.label ?? ''), target: raw.target == null ? null : String(raw.target) };
+  const ref = { index, type: String(raw.type ?? ''), label: String(raw.label ?? ''), target: raw.target == null ? null : String(raw.target) };
+  if (ref.type === 'wait' && 'after' in raw) { // eski kayıtlarda alan yok: undefined kalır (bilinmiyor)
+    ref.after = raw.after && typeof raw.after === 'object'
+      ? { type: String(raw.after.type ?? ''), label: String(raw.after.label ?? ''), target: raw.after.target == null ? null : String(raw.after.target) }
+      : null;
+  }
+  return ref;
 }
 
 // Edge'in aksiyonları içinde monitörün aksiyonu: index ya da -1 (aksiyon artık yok). Kademeler:
 // 1) kayıttaki sırada tür + etiket + hedef aynı; 2) tür + hedef + etiket; 3) tür + hedef (etiket
 // değişmiş); 4) tür + etiket, yalnızca hedefi olmayan aksiyonlar için (sayfa kaydırma gibi).
+// Bekleme için ayrı: resolveWaitAction.
 function resolveMonitorAction(ref, actions) {
   if (!ref || !Array.isArray(actions)) return -1;
+  if (ref.type === 'wait') return resolveWaitAction(ref, actions);
   const sameType = (a) => a && a.type === ref.type;
   const sameTarget = (a) => sameType(a) && actionTarget(a) === ref.target;
   const at = actions[ref.index];
@@ -242,15 +264,59 @@ function resolveMonitorAction(ref, actions) {
   let i = actions.findIndex((a) => sameTarget(a) && a.label === ref.label);
   if (i < 0) i = actions.findIndex(sameTarget);
   if (i < 0 && ref.target === null) i = actions.findIndex((a) => sameType(a) && a.label === ref.label);
-  if (i < 0 && ref.type === 'wait' && sameType(at)) i = ref.index; // süresi değiştirilmiş bekleme (Emir'in ✎'si): aynı sıradaki bekleme
   return i;
 }
 
-// "1. Yaz Fill Username" (Emir'in edge kartındaki satırla aynı: ACTION_TEXT panel.js'te)
-function actionText(action, index) {
+// Bekleme: arkasından geldiği aksiyonu aynı olan beklemeler aday olur (aksiyon: tür + hedef, etiket
+// değişmiş olabilir). Tek adaysa o; birden çoksa süresi aynı olan, o da birden çoksa kayıttaki
+// sıradaki; yine belirsizse -1 ("aksiyon bulunamadı"): monitör sessizce başka bir beklemeye kaymaz.
+// Bağ bilinmiyorsa (eski kayıt): yalnızca kayıttaki sırada aynı süreli bekleme.
+function resolveWaitAction(ref, actions) {
+  const isWait = (a) => a && a.type === 'wait';
+  if (ref.after === undefined) {
+    const at = actions[ref.index];
+    return isWait(at) && actionTarget(at) === ref.target ? ref.index : -1;
+  }
+  const sameAnchor = (anchor) => (ref.after === null ? anchor === null : Boolean(anchor) && anchor.type === ref.after.type && anchor.target === ref.after.target);
+  let candidates = actions.map((a, i) => (isWait(a) && sameAnchor(waitAnchor(actions, i)) ? i : -1)).filter((i) => i >= 0);
+  if (candidates.length > 1 && ref.after) { // aynı aksiyondan sonra birden çok bekleme: etiketi de aynı olan aksiyonu yeğle
+    const exact = candidates.filter((i) => waitAnchor(actions, i).label === ref.after.label);
+    if (exact.length) candidates = exact;
+  }
+  if (candidates.length > 1) {
+    const sameMs = candidates.filter((i) => actionTarget(actions[i]) === ref.target);
+    if (sameMs.length) candidates = sameMs;
+  }
+  if (candidates.length > 1 && candidates.includes(ref.index)) candidates = [ref.index];
+  return candidates.length === 1 ? candidates[0] : -1;
+}
+
+// "1. Yaz Fill Username" (Emir'in edge kartındaki satırla aynı: ACTION_TEXT panel.js'te). Bekleme:
+// "2. Bekle 10 sn"; actions verilirse arkasından geldiği aksiyonla: "2. Bekle 10 sn (Tıkla Login sonrası)".
+function actionText(action, index, actions = null) {
   const verb = (typeof ACTION_TEXT !== 'undefined' && ACTION_TEXT[action?.type]) || action?.type || '';
-  if (action?.type === 'wait' && Number.isFinite(action.ms)) return `${index + 1}. ${verb} ${waitSeconds(action.ms)}`; // "2. Bekle 10 sn" (etiket "Wait" yerine süre)
+  if (action?.type === 'wait' && Number.isFinite(action.ms)) {
+    const anchor = waitAnchor(actions, index);
+    const after = anchor === undefined ? '' : anchor === null ? ' (edge başında)' : ` (${anchorText(anchor)} sonrası)`;
+    return `${index + 1}. ${verb} ${waitSeconds(action.ms)}${after}`;
+  }
   return `${index + 1}. ${verb} ${action?.label ?? ''}`.trim();
+}
+
+// Beklemenin arkasından geldiği aksiyon, kısa: "Tıkla Login" / "Yaz Fill Username" (ek almaz: "… sonrası")
+function anchorText(anchor) {
+  const verb = (typeof ACTION_TEXT !== 'undefined' && ACTION_TEXT[anchor.type]) || anchor.type || '';
+  return `${verb} ${anchor.label}`.trim();
+}
+
+// Monitörün kayıttaki aksiyon bilgisinin metni (aksiyon bulunamayınca): "6. Bekle 0,01 sn (Tıkla Login sonrası)" / "3. Fill Username"
+function actionRefText(ref) {
+  if (ref.type === 'wait') {
+    const ms = Number(String(ref.target ?? '').replace('wait:', ''));
+    const after = ref.after === undefined ? '' : ref.after === null ? ' (edge başında)' : ` (${anchorText(ref.after)} sonrası)`;
+    return `${ref.index + 1}. Bekle${Number.isFinite(ms) ? ' ' + waitSeconds(ms) : ''}${after}`;
+  }
+  return `${ref.index + 1}. ${ref.label}`;
 }
 
 // Bekleme süresi: "10 sn", "1,5 sn", "0,01 sn" (Emir'in edge kartındaki biçimde)
@@ -263,8 +329,8 @@ function monitorActionText(m) {
   if (!m.action) return '';
   const edge = edgeById(m.scope);
   const i = edge ? resolveMonitorAction(m.action, edge.actions) : -1;
-  if (i >= 0) return actionText(edge.actions[i], i);
-  return `aksiyon bulunamadı (${m.action.index + 1}. ${m.action.label})`;
+  if (i >= 0) return actionText(edge.actions[i], i, edge.actions);
+  return `aksiyon bulunamadı (${actionRefText(m.action)})`;
 }
 
 function isActionMissing(m) {

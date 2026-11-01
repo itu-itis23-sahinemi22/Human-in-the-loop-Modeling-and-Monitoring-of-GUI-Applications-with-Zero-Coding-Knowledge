@@ -199,7 +199,7 @@ async function checkStepMonitors(run, replay, verdict) {
     if (step.verdicts.has(m.id)) continue; // aksiyon sırasında kontrol edildi (aksiyon tabanlı tür, aksiyona bağlı monitör)
     if (!monitorType(m.type)) { step.verdicts.set(m.id, verdictSkip('tür tanımlı değil')); continue; }
     if (m.action) { // yalnızca kendi aksiyonundan sonra kontrol edilir; buraya geldiyse o aksiyon oynatılmadı
-      step.verdicts.set(m.id, verdictSkip(resolveMonitorAction(m.action, edge?.actions) < 0 ? `aksiyon edge'de bulunamadı (${m.action.index + 1}. ${m.action.label})` : 'aksiyonu bu adımda oynatılmadı'));
+      step.verdicts.set(m.id, verdictSkip(resolveMonitorAction(m.action, edge?.actions) < 0 ? `aksiyon edge'de bulunamadı (${actionRefText(m.action)})` : 'aksiyonu bu adımda oynatılmadı'));
       continue;
     }
     if (m.scope === step.target && !arrived) { step.verdicts.set(m.id, verdictSkip('node\'a varılamadı: ekran beklenen node değil')); continue; }
