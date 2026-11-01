@@ -52,6 +52,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `monitor-unit` | Monitör yardımcılarının birim testi (tarayıcısız): parametre doğrulama, ağır desen uyarısı, otomatik ad ve özet cümlesi, aksiyon eşleştirme, storage verisinin normalize edilmesi, görüntü eşleme (`findImage`) |
 | `monitor-wait` | Bekleme aksiyonuna bağlı monitörler ve "olmamalı" kuralı ([docs/07](../docs/07-monitorler.md#bekleme-aksiyonuna-monitör)): "Bekleyiniz" mesajı çıkan sayfada ekranı değiştiren bekleme, bekleme bitince metin / görüntü yok (ya da var) kontrolü, hızlı ve yavaş sayfa, bekleme süresi değişince bağ |
 | `monitor-expect` | Expected Text ve Expected Image monitörleri ([docs/07](../docs/07-monitorler.md#monitör-türleri)): node'a bağlı metin ve görüntü beklentileri, formdan PNG yükleme ve "Ekrandan seç" ile fareyle kesme, "Bu ekranda şimdi kontrol et", oynatmada yeşil / kırmızı ve uyarı görüntüsü, 2× parçanın ölçekle bulunması, dışa aktarımda görüntü |
+| `monitor-scenario` | Senaryoya özel monitörler ([docs/07](../docs/07-monitorler.md#senaryoya-özel-monitörler)): aynı edge'den geçen iki senaryo, genel kurallar (salt okunur, `Genel` etiketli) ve senaryonun kendi monitörleri, formda senaryo adı ve kopyadan node listesi, sağ tık ve detay alt bölümü, oynatmada `Genel` / `Senaryo` satırları ve uyarı, "şimdi kontrol et", "Senaryo indir" dosyasında yuvalar, yedekle geri yükleme, senaryo / graph silinince temizlik |
 
 ## Yeni test
 
