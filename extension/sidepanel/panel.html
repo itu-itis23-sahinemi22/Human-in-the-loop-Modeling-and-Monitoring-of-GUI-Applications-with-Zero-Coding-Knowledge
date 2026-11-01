@@ -7,6 +7,7 @@
   <title>Graph Recorder</title>
   <link rel="stylesheet" href="panel.css">
   <link rel="stylesheet" href="monitors.css"> <!-- monitör menüsü (monitor-*.js) -->
+  <link rel="stylesheet" href="dom-tree.css"> <!-- Ekrandaki elementler kartı (dom-tree.js) -->
   <!-- Tema, sayfa çizilmeden önce uygulansın diye <head>'de yüklenir -->
   <script src="theme.js"></script>
 </head>
@@ -243,6 +244,20 @@
     <ol id="buffer" class="actions"></ol>
   </section>
 
+  <!-- EKRANDAKİ ELEMENTLER (dom-tree.js): açık sekmenin şu an görünen kısmı sade bir DOM ağacı olarak.
+       Açıkken her aksiyondan sonra yenilenir; satırın üzerine gelince element sayfada çerçevelenir. -->
+  <details id="dom-tree" class="card">
+    <summary>Ekrandaki elementler <span id="dom-tree-count" class="badge"></span></summary>
+    <p class="hint">Açık sekmede şu an görünen elementler; ekranda karşılığı olmayan sarmalayıcılar gizlenir.
+      Satırın üzerine gelince element sayfada çerçevelenir. Kalın etiketli satırlar etkileşimli elementlerdir
+      (node'un edge set'i).</p>
+    <div class="list-head">
+      <span id="dom-tree-status" class="muted small"></span>
+      <button id="btn-dom-tree-refresh">Yenile</button>
+    </div>
+    <ul id="dom-tree-list" class="dom-tree"></ul>
+  </details>
+
   <!-- KARŞILAŞTIRMA penceresi: onay kartındaki "Karşılaştır" açar. Şu anki sayfa, seçili aday
        node ile görsel olarak karşılaştırılır (compare.js); karar buradan da verilebilir. -->
   <dialog id="compare-dialog" class="compare" aria-labelledby="compare-title">
@@ -439,6 +454,8 @@
   <script src="compare.js"></script>
   <script src="replay.js"></script>
   <script src="panel.js"></script>
+  <!-- Ekrandaki elementler kartı: panel.js'ten sonra (onun $'ını kullanır). Bkz. docs/01-mimari.md -->
+  <script src="dom-tree.js"></script>
   <!-- Monitörler (run-time monitoring): panel.js ve replay.js'ten sonra yüklenir, kendi bölümlerini
        kendisi ekler, graph state'inden ayrı bir anahtarda ('monitors:<graph id>') saklanır ve oynatmada
        kontrol eder. Bkz. docs/07-monitorler.md -->

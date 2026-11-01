@@ -126,12 +126,14 @@ bitirme_demo/
 │   ├── fingerprint.js           ← PARMAK İZİ: ekranın state'inin tanımı (content.js ve runner ortak kullanır)
 │   ├── settings.js              ← AYARLAR: aksiyon/element türü listeleri ve state karşılaştırması (her parça yükler)
 │   ├── scenario.js              ← SENARYO: test yollarının biçimi ve kapsama (panel ve runner ortak kullanır)
+│   ├── dom-tree.js              ← DOM AĞACI: ekranda görünen elementlerin sade ağacı ve sayfadaki çerçeve
 │   ├── sidepanel/               ← ARAYÜZ: Chrome'un yan panelinde açılan sayfa
 │   │   ├── panel.html           ←   iskelet (butonlar, kartlar, graph alanı)
 │   │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
 │   │   ├── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
 │   │   ├── compare.js           ←   onay kartındaki görsel karşılaştırma (piksel farkı, bölgeler)
 │   │   ├── replay.js            ←   panelde oynatma: seçili koşu bu tarayıcıda (DevTools protokolü)
+│   │   ├── dom-tree.js          ←   "Ekrandaki elementler" kartı: ağacı çizer, satırın elementini çerçeveletir
 │   │   └── theme.js             ←   tema seçimi (sayfa çizilmeden önce uygulanır)
 │   └── lib/
 │       └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)
