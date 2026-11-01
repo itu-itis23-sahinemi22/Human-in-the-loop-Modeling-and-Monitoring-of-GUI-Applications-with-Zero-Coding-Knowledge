@@ -5,7 +5,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { chromium, REPO, EXT, CHROME, outDir } = require('./env');
+const { chromium, REPO, EXT, CHROME, outDir, skipCleanup } = require('./env');
 
 const HEADED = process.argv.includes('--headed');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -88,6 +88,7 @@ function check(name, ok, detail = '') {
     const tryReplay = async () => {
       await page.bringToFront();
       await panel.evaluate(() => document.getElementById('btn-replay').click());
+      await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
       await sleep(900);
     };
 

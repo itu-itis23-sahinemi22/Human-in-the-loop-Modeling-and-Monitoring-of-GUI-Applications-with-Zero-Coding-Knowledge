@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const { chromium, REPO, EXT, CHROME, outDir } = require('./env');
+const { chromium, REPO, EXT, CHROME, outDir, skipCleanup } = require('./env');
 
 const HEADED = process.argv.includes('--headed');
 const SMALL = process.argv.includes('--small-screen'); // sanal ekran kayıttaki pencereden küçük: pencereyle boyut tutturulamaz
@@ -116,6 +116,7 @@ function check(name, ok, detail = '') {
       await page0.bringToFront();
       await sleep(800);
       await panel.evaluate(() => { replayResult = null; document.getElementById('btn-replay').click(); });
+      await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
       await sleep(800);
       const card = await panel.evaluate(() => ({ hidden: document.getElementById('replay-check').hidden, fit: !document.getElementById('btn-replay-fit').hidden, reasons: document.getElementById('replay-check-reasons').textContent }));
       if (!card.hidden) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());

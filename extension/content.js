@@ -79,7 +79,32 @@ function onClick(event) {
   if (isFormField(el) || el.isContentEditable) return;
 
   const visible = interactableElements();
-  send({ type: 'click', target: targetOf(el, visible), selector: cssSelector(el), label: visibleText(el) || el.tagName.toLowerCase() }, countElements(visible));
+  const click = { type: 'click', target: targetOf(el, visible), selector: cssSelector(el), label: visibleText(el) || el.tagName.toLowerCase() };
+  const screen = countElements(visible);
+  const count = event.detail;
+  if (count >= 2 && clickGesture?.el === el && clickGesture.time === lastSentTime) {
+    send({ ...click, type: 'multiclick', count, label: multiClickLabel(click.label, count) }, screen,
+      { replaces: lastSentTime, clickLabel: click.label, gestureScreen: clickGesture.screen });
+  } else {
+    clickGesture = { el, screen };
+    send(click, screen);
+  }
+  clickGesture.time = lastSentTime;
+}
+
+// ÇOKLU TIKLAMA (Ayarlar > Çoklu tıklama; Tıkla'ya bağlı): aynı elemente hızlıca art arda
+// tıklamak (çift, üçlü, …) tek harekettir. Tarayıcı hareketin kaçıncı tıklaması olduğunu
+// event.detail'de verir (işletim sisteminin çift tıklama süresi içinde: 2, 3, …). İlk tıklama
+// 'click' olarak gider; sonrakilerin her biri hareketin önceki aksiyonunun yerine geçen bir
+// 'multiclick' gönderir (count = detail; replaces, metin seçmedeki gibi; aksiyonun öncesi
+// hareketin ilk tıklamasının öncesidir: gestureScreen). Çoklu tıklama kaydedilmiyorsa
+// background bunu sıradan bir tıklama olarak ekler (clickLabel, o anki ekran): hareketin her
+// tıklaması ayrı 'click' olur. Arada başka bir aksiyon gittiyse hareket yeniden başlar.
+// Metne çift tıklayıp seçmek 'select'tir (onMouseUp), bu tıklamaya hiç gelmez.
+let clickGesture = null; // { el, screen: ilk tıklamanın öncesi, time: hareketin son aksiyonu }
+
+function multiClickLabel(label, count) {
+  return count === 2 ? `Double click ${label}` : count === 3 ? `Triple click ${label}` : `Click ${label} ×${count}`;
 }
 
 function onChange(event) {

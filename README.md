@@ -74,7 +74,7 @@ Demo için [saucedemo.com](https://www.saucedemo.com) uygundur: test otomasyonu 
 | 7 | | `v_Inventory_2` altındaki **Evet, bu node** | `v_Cart → v_Inventory_2` edge'i oluşur. Graph'ta döngü kapanır. |
 | 8 | | **GraphWalker JSON** | Graph, GraphWalker JSON modeli olarak `SwagLabs.json` dosyasına iner. GraphWalker Studio'da açılır, GraphWalker CLI ile çalıştırılabilir. |
 | 9 | | **Senaryo** bölümünü açıp **Yeni senaryo**'ya basın, graph'ta edge'lere tıklayarak bir yol kurun, **Senaryo indir** | "Senaryo 1" listeye eklenir ve her tıklamada kendiliğinden kaydedilir. Seçili koşu graph'ta vurgulanır; yol çıkmaz bir node'da biterse "Yeni koşu" baştan başlar. Senaryo, modelin yanına `SwagLabs-Senaryo1.json` olarak iner. Birden fazla senaryo kurulabilir; listede satıra tıklamak seçer. Planlayıcı kuruluysa Strateji "GraphWalker: tüm edge'ler" ve **Üret** yolları GraphWalker'a ürettirir. |
-| 10 | Giriş sayfasına dönün (koşunun ilk node'u) | Senaryo bölümünde şifreyi girip **Koşuyu oynat** | Koşu bu tarayıcıda, açık sekmede oynatılır: element çerçevelenir, tıklanır; graph'ta geçen edge'ler yeşile döner. Ekran koşunun ilk node'u değilse önce uyarı çıkar. Kalınan adımda fark listesi ve beklenen ekranla görsel karşılaştırma. Bkz. [docs/01 > Panelde oynatma](docs/01-mimari.md#panelde-oynatma) |
+| 10 | Giriş sayfasına dönün (koşunun ilk node'u) | Senaryo bölümünde şifreyi girip **Koşuyu oynat** | Önce **temizlik penceresi** açılır: senaryonun siteleri ve silinebilecek verileri (çerezler, önbellek, localStorage…); seçilenler silinir, sekme başlangıç adresine gider (**Temizle ve oynat**), ya da **Temizlemeden oynat**. Seçim senaryoya kaydedilir. Bkz. [docs/08-site-verileri.md](docs/08-site-verileri.md). Koşu bu tarayıcıda, açık sekmede oynatılır: element çerçevelenir, tıklanır; graph'ta geçen edge'ler yeşile döner. Ekran koşunun ilk node'u değilse önce uyarı çıkar. Kalınan adımda fark listesi ve beklenen ekranla görsel karşılaştırma. Bkz. [docs/01 > Panelde oynatma](docs/01-mimari.md#panelde-oynatma) |
 | 11 | *(terminalde)* `node runner/run.js SwagLabs-Senaryo1.json --secrets secrets.json` | | Runner her koşuyu yeni bir tarayıcıda temiz oturumla oynatır, her edge'den sonra varılan ekranın beklenen node olduğunu doğrular ve `report.html`, `report.json`, `junit.xml` yazar. Bkz. [runner/README.md](runner/README.md) |
 
 **Temel kurallar:**
@@ -96,10 +96,11 @@ Panelde diğer işlemler:
 - **Birleştir…:** seçili node'u başka bir node ile birleştirir (ör. yanlışlıkla "Hayır, yeni node" denerek oluşmuş kopyalar). Sadece URL şablonu ve edge set'i birebir aynı node'lar seçilebilir; diğerleri sebebiyle pasif görünür. Kalacak node seçilir, diğerinin edge'leri ona bağlanır. Tekrar eden edge'lere dokunulmaz, sayısı bildirilir. Geri al ile geri alınır. Detay: [docs/01 > Node birleştirme](docs/01-mimari.md#node-birleştirme)
 - **Sil:** seçili node'u (ve ona bağlı edge'leri) ya da seçili edge'i siler.
 - **Geri al** (araç çubuğu) ya da **Ctrl+Z:** son silmeyi geri alır: node (bağlı edge'leriyle birlikte), edge ya da edge'den silinen aksiyon eski yerine döner. Son 20 silme saklanır. Butonun üzerine gelince neyin geri alınacağı yazar. Ctrl+Z için panele odaklanmış olmak gerekir; isim alanında yazarken Ctrl+Z metni geri alır.
+- **Alt+N:** "Node oluştur"a basar; sayfaya odaklıyken de çalışır (panel açık olmalı) ve tuş kayda girmez. Buton kilitliyse nedeni mesajda yazar. Tuş `chrome://extensions/shortcuts`'tan değiştirilebilir. Ctrl+N olamaz: Chrome kendi kısayollarını eklentiye vermez.
 - **Graph'lar:** birden fazla graph saklanır, kayıt aktif olana yapılır. Paneldeki **Graph'lar** kartında her graph bir satırdır (ad, node / edge sayısı); satıra tıklamak o graph'a geçer, ✎ yeniden adlandırır, ✕ siler. Ad ilk node'un sayfasından otomatik gelir ("Swag Labs"). Geçerken bekleyen aksiyonlar varsa silineceği sorulur; geçilen graph'ta kayıt şu anki node'un ekranındaki sekmede sürer. **Dışa aktar** graph'ı ekran görüntüleriyle yedekler, **Yükle…** yedeği yeni bir graph olarak ekler. Eski sürümün graph'ı ilk açılışta listeye taşınır. Detay: [docs/01 > Graph'lar](docs/01-mimari.md#graphlar)
 - **Sıfırla:** aktif graph'ı temizler (adı, diğer graph'lar ve ayarlar kalır). Yanlışlıkla basılmasın diye iki kez tıklamak gerekir. Sıfırlama geri alınamaz.
 - **Ayarlar** (sağ üstteki çark simgesi, panelin üstünde açılan pencere): iki checklist ve beklemeler. Değişiklikler **Kaydet**'e basınca uygulanır; Kaydet yalnızca bir değişiklik varken aktiftir. Kaydetmeden kapatmaya çalışırsanız (✕, Esc ya da pencere dışına tıklama) "Kaydet ve çık / Kaydetmeden çık / Geri dön" uyarısı çıkar.
-  - *Kaydedilecek aksiyonlar:* işaretsiz tipteki aksiyonlar (ör. Kaydır) "Bekleyen aksiyonlar"a eklenmez. **Üzerine gelme (fare)** varsayılan kapalıdır: işaretlenirse fareyi üzerine getirince açılan menüler (ekranı değiştirdiyse) `hover` aksiyonu olarak kaydedilir. Detay: [docs/01 > Fareyle üzerine gelme](docs/01-mimari.md#fareyle-üzerine-gelme)
+  - *Kaydedilecek aksiyonlar:* işaretsiz tipteki aksiyonlar (ör. Kaydır) "Bekleyen aksiyonlar"a eklenmez. **Üzerine gelme (fare)** varsayılan kapalıdır: işaretlenirse fareyi üzerine getirince açılan menüler (ekranı değiştirdiyse) `hover` aksiyonu olarak kaydedilir. Detay: [docs/01 > Fareyle üzerine gelme](docs/01-mimari.md#fareyle-üzerine-gelme). **Çoklu tıklama** (varsayılan açık) aynı elemente hızlıca art arda tıklamayı (çift, üçlü, …) tek `multiclick` aksiyonu olarak kaydeder; kapalıysa her tıklama ayrı kaydedilir. **Tıkla**'ya bağlıdır: Tıkla'nın işareti kalkınca onun da işareti kalkar ve kutusu pasif olur.
   - *Beklemeler:* **Beklemeleri kaydet** açıkken iki aksiyon arasındaki, **alt sınırdan** (varsayılan 1 sn) uzun boşluklar "Bekle" aksiyonu olarak kaydedilir. Kayıt sekmesinin ekranı sürekli izlenir: ekran beklerken kendiliğinden değişirse (ör. internet bankacılığında oturum zaman aşımı) bekleme "ekranı değiştirdi" işaretini alır; böylece hiçbir tıklamayla ulaşılamayan bu durum da graph'a girer (`e_Wait`). Varsayılan kapalı. Detay: [docs/01 > Beklemeler](docs/01-mimari.md#beklemeler)
   - *State'e dahil edilecek etkileşimli elementler:* işaretsiz türdeki elementler (ör. Link) state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut node'lar o anki seçime göre karşılaştırılır. Detay: [docs/03 > Ayarlar](docs/03-state-eslestirme.md#ayarlar-hangi-türler-statee-girer)
 
@@ -126,12 +127,14 @@ bitirme_demo/
 │   ├── fingerprint.js           ← PARMAK İZİ: ekranın state'inin tanımı (content.js ve runner ortak kullanır)
 │   ├── settings.js              ← AYARLAR: aksiyon/element türü listeleri ve state karşılaştırması (her parça yükler)
 │   ├── scenario.js              ← SENARYO: test yollarının biçimi ve kapsama (panel ve runner ortak kullanır)
+│   ├── dom-tree.js              ← DOM AĞACI: ekranda görünen elementlerin sade ağacı ve sayfadaki çerçeve
 │   ├── sidepanel/               ← ARAYÜZ: Chrome'un yan panelinde açılan sayfa
 │   │   ├── panel.html           ←   iskelet (butonlar, kartlar, graph alanı)
 │   │   ├── panel.css            ←   görünüm (aydınlık / karanlık tema renkleri)
 │   │   ├── panel.js             ←   state'i okur, Cytoscape ile çizer, butonları bağlar
 │   │   ├── compare.js           ←   onay kartındaki görsel karşılaştırma (piksel farkı, bölgeler)
 │   │   ├── replay.js            ←   panelde oynatma: seçili koşu bu tarayıcıda (DevTools protokolü)
+│   │   ├── dom-tree.js          ←   "Ekrandaki elementler" kartı: ağacı çizer, satırın elementini çerçeveletir
 │   │   └── theme.js             ←   tema seçimi (sayfa çizilmeden önce uygulanır)
 │   └── lib/
 │       └── cytoscape.min.js     ← graph çizim kütüphanesi (v3.34.3, MIT lisanslı)
@@ -237,3 +240,4 @@ Okuma sırası önerisi:
 5. **[05-gelistirme.md](docs/05-gelistirme.md):** Kodu değiştirme, hata ayıklama, yeni özellik ekleme ve yol haritası
 6. **[runner/README.md](runner/README.md):** Kaydedilen yolu tarayıcıda tekrar oynatmak ve her adımı doğrulamak
 7. **[tests/README.md](tests/README.md):** Uçtan uca testleri çalıştırmak
+8. **[08-site-verileri.md](docs/08-site-verileri.md):** Panelde oynatmadan önce temizlik: sitelerin hangi verileri silinebilir, ne işe yarar, ne zaman silinmeli

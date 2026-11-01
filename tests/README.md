@@ -30,6 +30,7 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `viewport` | Node'da görünen alan, pencere boyutu (`resize`) ve yakınlaştırma aksiyonları, dışa aktarımda görünen alan |
 | `wait` | Beklemeleri kaydetme: Ayarlar, aksiyonlar arası bekleme, alt sınır, ekranı değiştiren bekleme (oturum zaman aşımı), runner'da oynatma |
 | `hover` | Fareyle üzerine gelme: varsayılan kapalı, CSS ve JS menüleri, runner'da oynatma |
+| `multiclick` | Çoklu tıklama: Ayarlar (varsayılan açık, Tıkla'ya bağlı kutu), çift / üçlü / beşli tıklamanın tek aksiyon olması, metne çift tıklamanın yine metin seçimi olması, ayar kapalıyken ayrı tıklamalar, panelde ve runner'da oynatma (`dblclick` ve tıklama sayacı) |
 | `tabs` | Yeni sekmede ve başka sitede devam: sekme sorusu, sekme aksiyonları, runner'da çok sekme |
 | `compare` | "Aynı node mu?" kartındaki görsel karşılaştırma |
 | `zoom-replay` | Yakınlaştırma ve pencere boyutunun runner'da aynı ekranı kurması |
@@ -37,8 +38,11 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 | `replay` | Panelde oynatma: şifre, başlangıç uyarısı, geçen ve kalan koşu, durdurma (`--zoom=1.5` ile yakınlaştırmada) |
 | `replay-start` | Senaryonun başlangıç node'u, runner'ın reddi, oynatmanın görünen alanı kayıttakine getirmesi (`--small-screen` ile pencere büyüyemezken) |
 | `scenario-replay` | Senaryonun kendi graph'ından oynatma: ana graph değişince kopyanın oynatılması, oynatma kartında fark ve "Ana graph'tan yenile", `startReplay`'e verilen senaryo bilgisi |
+| `site-data` | Oynatmadan önce temizlik ([docs/08](../docs/08-site-verileri.md)): penceredeki siteler ve veri türleri, varsayılan seçimsiz, site kutusu (hepsi / yarım), Vazgeç'in kaydetmemesi, temizlemeden oynatınca başlangıcın tutmaması, kısmi temizlikte kalan verinin başlangıcı bozması, "localStorage ve sessionStorage"ın ikisini birden silmesi, tam temizlikte oynatmanın geçmesi, seçimin senaryoda saklanması, seçilmeyen sitenin verisine dokunulmaması |
 | `filter` | Aksiyon filtresi: bekleyen ve edge listelerinde türleri gizleme, korunan sıra numaraları, ayrı filtreler, otomatik beklemenin ayrı türü, hatırlama |
 | `buffer` | Bekleyen aksiyonları silme: uyarı, bayat liste, karar beklerken kilit, runner ve panelde oynatma |
+| `dom-tree` | Ekrandaki elementler kartı ([docs/01](../docs/01-mimari.md#ekrandaki-elementler-dom-ağacı)): yalnızca ekranda görünenler (gizli, 1 px, taşma dışı, ekran dışı atılır), sarmalayıcıların katlanması, satırın üzerine gelince sayfada çerçeve (sayfanın DOM izleyicisine görünmeden), kayda dokunmama, node oluşturulurken çerçevenin kalkması, aksiyondan ve kaydırmadan sonra yenilenme, kapatılan dalın kapalı kalması, okunamayan sayfa |
+| `shortcuts` | "Node oluştur" kısayolu: Chrome'un Alt+N'i ataması, butonun ipucu, kısayolun node oluşturması, başka pencerenin kısayolunun yok sayılması, buton kilitliyken nedeninin söylenmesi (gerçek tuş basışı denenmez; panelin dinleyicisi çağrılır) |
 | `return-to-start` | "Başlangıç node'una dön": adres, boyutu oynatmanın kurması, gezinmenin kayda girmesi, yönlendirme, okunamayan sayfa |
 | `saucedemo-return` | Gerçek saucedemo'da istemci tarafı yönlendirmenin söylenmesi (internet ister) |
 | `graphs` | Birden fazla graph: otomatik ad, geçiş onayı, sekme sorusu, yeniden adlandırma, yedek ve yükleme, silme, eski kaydın taşınması |
@@ -56,4 +60,4 @@ Her test kontrollerini `PASS` / `FAIL` satırlarıyla yazar, sorun varsa çıkı
 
 ## Yeni test
 
-`tests/e2e/<ad>.test.js` olarak ekleyin; `run-all.js` kendiliğinden bulur. Ortak ortam `env.js`'tedir (`REPO`, `EXT`, `CHROME`, `outDir(ad)`). Mevcut testlerdeki desen: yerel `http` sunucusu, `chromium.launchPersistentContext` ile eklentiyi yükleme, panel sayfasını sekmede açıp `chrome.runtime.sendMessage` ile background'a mesaj gönderme, storage'dan state okuma (`graph:<aktif id>`).
+`tests/e2e/<ad>.test.js` olarak ekleyin; `run-all.js` kendiliğinden bulur. Ortak ortam `env.js`'tedir (`REPO`, `EXT`, `CHROME`, `outDir(ad)`, `skipCleanup(panel)`). Panelde oynatan test "Koşuyu oynat"tan sonra açılan temizlik penceresini `skipCleanup(panel)` ile geçer (**Temizlemeden oynat**). Mevcut testlerdeki desen: yerel `http` sunucusu, `chromium.launchPersistentContext` ile eklentiyi yükleme, panel sayfasını sekmede açıp `chrome.runtime.sendMessage` ile background'a mesaj gönderme, storage'dan state okuma (`graph:<aktif id>`).

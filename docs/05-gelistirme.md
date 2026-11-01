@@ -80,18 +80,18 @@ Ayarlanacak bir eşik yoktur. `background.js > findSameStateNodes()` yalnızca U
 
 Node sayısı fazla geliyorsa kuralı değil, parmak izini değiştirin: `fingerprint.js > elementKey()` içinde dinamik ya da veriye bağlı id'leri normalleştirin.
 
-### Yeni bir aksiyon tipi eklemek (örnek: çift tıklama)
+### Yeni bir aksiyon tipi eklemek (örnek: orta tuşla tıklama)
 
 1. **`content.js`:** dinleyiciyi ekleyin.
    ```js
-   document.addEventListener('dblclick', (event) => {
-     if (!event.isTrusted) return;
+   document.addEventListener('auxclick', (event) => {
+     if (!event.isTrusted || event.button !== 1) return;
      const el = event.target.closest(INTERACTIVE) || event.target;
-     send({ type: 'dblclick', selector: cssSelector(el), label: 'DoubleClick ' + visibleText(el) });
+     send({ type: 'middleclick', selector: cssSelector(el), label: 'Middle click ' + visibleText(el) });
    }, true);
    ```
-2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'dblclick', text: 'Çift tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir. Tip varsayılan kapalı olacaksa (gürültülü ya da tahmine dayalıysa, üzerine gelme gibi) `optional: true` ekleyin; o zaman yalnızca işaretlenince kaydedilir (`enabledActions`).
-3. **`runner/lib/actions.js > playAction()`:** tekrar oynatma karşılığını ekleyin (ör. `element.dblclick()`). Eklenmezse runner bu aksiyonda adımı "desteklenmiyor" diye başarısız sayar.
+2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'middleclick', text: 'Orta tuşla tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir. Tip varsayılan kapalı olacaksa (gürültülü ya da tahmine dayalıysa, üzerine gelme gibi) `optional: true` ekleyin; o zaman yalnızca işaretlenince kaydedilir (`enabledActions`). Tip başka bir tipe bağlıysa (Çoklu tıklama → Tıkla gibi) `requires: 'click'` ekleyin: o tip kaydedilmiyorsa bu da kaydedilmez, Ayarlar'da kutusu pasif olur.
+3. **`sidepanel/replay.js > playAction()`** ve **`runner/lib/actions.js > playAction()`:** panelde ve runner'da tekrar oynatma karşılığını ekleyin (ör. `element.click({ button: 'middle' })`). Eklenmezse oynatma bu aksiyonda adımı "henüz oynatılamıyor / desteklenmiyor" diye başarısız sayar.
 4. **`docs/04-veri-modeli.md`** ve **`runner/README.md`:** aksiyon tipleri tablolarına yeni satırı ekleyin.
 
 Background'da değişiklik gerekmez: gelen her aksiyonu, tipi Ayarlar'da işaretliyse buffer'a ekler.
@@ -327,7 +327,7 @@ Proje "build adımı yok, bağımlılık yok" ilkesini korusun diye bu test beti
 1. ~~**Replay**~~: yapıldı. Runner, modeldeki bir yolu tarayıcıda oynatıp her adımı kayıttaki state tanımıyla doğruluyor ([runner/README.md](../runner/README.md)). Sonraki adımlar: `select` ve `clipboard` aksiyonlarını oynatmak, yeni sekme açan akışlar, JSON/HTML rapor.
 2. **GraphWalker test kodu iskeleti:** `properties.uiActions`'tan her edge için test metodu üretmek ([04](04-veri-modeli.md#sonraki-adım-test-kodu-iskeleti)). Runner aynı işi kod üretmeden yapıyor; kod üretimi GraphWalker'ın kendi koşucusuyla (online mod, guard'lar) çalışmak için gerekir.
 3. **JSON içe aktarma:** Yarım kalan bir modele daha sonra devam edebilmek için.
-4. **Klavye kısayolu:** `chrome.commands` ile örneğin `Alt+N` = Node oluştur. Kullanıcı farenin panele gitmesine gerek kalmadan çalışır.
+4. ~~**Klavye kısayolu**~~: yapıldı: `Alt+N` = Node oluştur (`manifest.json > commands`; tuş `chrome://extensions/shortcuts`'tan değiştirilir). Ctrl+N olamaz: Chrome kendi kısayollarını (yeni pencere) eklentiye vermez. Sonraki adım: edge seçimi için kısayollar.
 5. ~~**Node birleştirme**~~: yapıldı ([01 > Node birleştirme](01-mimari.md#node-birleştirme)). Sonraki adım olabilir: tekrar eden edge'leri tek tıkla birleştirmek için isteğe bağlı bir araç (şu an yönetimi tamamen kullanıcıda).
 6. **Element anahtarı normalizasyonu ve kullanıcı kararlarından öğrenme:** Node sayısını kuralı bozmadan azaltmak ([03 > Geliştirme fikirleri](03-state-eslestirme.md#geliştirme-fikirleri-tez-için))
 7. **Kapsam genişletme:** iframe, Shadow DOM ve çoklu sekme desteği

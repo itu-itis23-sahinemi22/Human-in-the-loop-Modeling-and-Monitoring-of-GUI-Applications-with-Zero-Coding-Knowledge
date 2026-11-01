@@ -237,6 +237,7 @@ Algoritmanın tam açıklaması, ölçümler ve diğer elenen alternatifler (DOM
 | `unlimitedStorage` | Ekran görüntüleri 10 MB varsayılan kotayı aşabilir. |
 | `webNavigation` | Adres çubuğu, geri/ileri ve yenileme gibi sayfa dışı gezinmeleri yakalamak |
 | `debugger` | Panelde oynatma: fare ve klavye olaylarını gerçek kullanıcı olayı olarak göndermek, pencere boyutu aksiyonunu kurmak (DevTools protokolü, `chrome.debugger`). Yalnızca oynatma sürerken bağlanır; Chrome bu sırada üstte bir uyarı çubuğu gösterir. |
+| `browsingData` | Panelde oynatmadan önce temizlik: senaryonun sitelerindeki çerezleri, önbelleği ve site depolamasını, kullanıcının seçtiği kadarıyla ve yalnızca o siteler için silmek (`chrome.browsingData.remove` + `origins`). Kullanıcı seçmedikçe hiçbir şey silinmez. Bkz. [08 > Site verileri](08-site-verileri.md) |
 | `nativeMessaging` | Planlayıcı: kullanıcının bilgisayarındaki GraphWalker'ı kayıtlı host üzerinden çalıştırmak (`chrome.runtime.sendNativeMessage`). Host kurulu değilse izin bir şey yapmaz; panel kurulumu söyler. |
 | `host_permissions: <all_urls>` | (1) `content.js`'i her siteye eklemek. (2) `captureVisibleTab` ile ekran görüntüsü almak. Hangi sitenin modelleneceğini önceden bilemeyiz. |
 

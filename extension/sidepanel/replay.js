@@ -214,6 +214,7 @@ function maskedKeys(edges) {
 async function playAction(replay, action, step) {
   switch (action.type) {
     case 'click': return click(replay, action, step);
+    case 'multiclick': return click(replay, action, step, 'left', action.count);
     case 'contextmenu': return click(replay, action, step, 'right');
     case 'hover': return moveMouse(replay, await locate(replay, action, step));
     case 'focus': return focus(replay, action, step);
@@ -399,7 +400,9 @@ async function moveMouse(replay, { x, y }) {
 // Fare önce elementin üzerine gelir; bu, sayfanın düzenini değiştirebilir (üzerinde durulan menü
 // kapanır, alttaki link kayar). Nokta değiştiyse ya da üstü kapandıysa yeniden bulunur, tıklama
 // elementin o anki yerine yapılır (Playwright da tıklamadan önce elementin durmasını bekler).
-async function click(replay, action, step, button = 'left') {
+// count: çoklu tıklamada tıklama sayısı. Basıp bırakmalar aynı noktada, arada beklemeden ve
+// artan clickCount'la gönderilir: sayfa hızlı art arda tıklamayı (detail 1..N, dblclick) görür.
+async function click(replay, action, step, button = 'left', count = 1) {
   let point = await locate(replay, action, step);
   for (let moves = 0; ; moves++) {
     await moveMouse(replay, point);
@@ -413,8 +416,10 @@ async function click(replay, action, step, button = 'left') {
   const at = { x: point.x, y: point.y };
   const buttons = button === 'left' ? 1 : 2;
   await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...at });
-  await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button, buttons, clickCount: 1 });
-  await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button, buttons: 0, clickCount: 1 });
+  for (let clickCount = 1; clickCount <= count; clickCount++) {
+    await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button, buttons, clickCount });
+    await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button, buttons: 0, clickCount });
+  }
 }
 
 const KEY_CODES = {

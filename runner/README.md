@@ -100,7 +100,7 @@ Senaryo panelde kurulur (**Senaryo** bölümü: senaryo listesi, elle yol, öniz
 
 Panelde koşuların başlangıç node'u seçilebilir (dosyada `start`). Runner her koşuyu temiz bir tarayıcıda graph'ın başlangıcından oynatır; graph'ın ortasındaki bir node'dan başlayan senaryoyu (ör. giriş gerektiren `v_Inventory`) çalıştırmadan reddeder (çıkış kodu `2`). Böyle bir senaryo panelde **Koşuyu oynat** ile oynatılır.
 
-**Not (panel ile runner farkı):** Panel koşuyu senaryonun kendi graph'ından (dosyadaki `graph`, ana graph'ın kopyası) oynatır; runner ise dışa aktarılan modelden. Ana graph kopyadan sonra değiştiyse ikisi aynı senaryoyu farklı oynayabilir. Runner şimdilik kopyayı kullanmaz.
+**Not (panel ile runner farkı):** Panel koşuyu senaryonun kendi graph'ından (dosyadaki `graph`, ana graph'ın kopyası) oynatır; runner ise dışa aktarılan modelden. Ana graph kopyadan sonra değiştiyse ikisi aynı senaryoyu farklı oynayabilir. Runner şimdilik kopyayı kullanmaz. Dosyadaki `cleanup` (panelde oynatmadan önce silinecek site verileri, [docs/08](../docs/08-site-verileri.md)) da runner'ı ilgilendirmez: runner her koşuyu zaten çerezsiz, önbelleksiz, boş depolamalı yeni bir tarayıcı bağlamında başlatır.
 
 ### Raporlar
 
@@ -259,6 +259,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | Aksiyon | Playwright karşılığı |
 |---|---|
 | `click` | `click()` |
+| `multiclick` | `click({ clickCount: count })`: hızlı art arda `count` tıklama (`dblclick` de oluşur) |
 | `input` | Alanın türüne göre `fill()`, `selectOption()` ya da `setChecked()`. `******` değeri secrets dosyasından gelir. |
 | `enter` | `press('Enter')` |
 | `key` | `press(key)`, `count` kez. Hedef yoksa (odakta element yoktu) `keyboard.press(key)`. |

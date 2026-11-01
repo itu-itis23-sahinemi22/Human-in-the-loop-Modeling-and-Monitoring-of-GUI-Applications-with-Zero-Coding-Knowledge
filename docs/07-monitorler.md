@@ -328,5 +328,7 @@ Kontrolün kendisi: `monitor-probe.js > MONITOR_PROBES` nesnesine aynı `id` ile
 ## Sonraki adımlar
 
 1. **Yeni türler:** ihtiyaca göre `monitor-types.js`'e kayıt, `monitor-probe.js`'e kontrol eklenir (yukarıdaki tarif). Yapı değişmez.
-2. **Runner tarafı:** aynı kontroller runner'da (`runner/lib/oracle.js`'in yanında) her edge'den sonra çalıştırılır ve rapora girer (monitör, kapsam, adım numarası, ekran görüntüsü; kırmızı monitör koşuyu başarısız sayar). Sayfa kontrolleri için `monitor-probe.js` Playwright'ın `page.addInitScript`'iyle sayfaya verilebilir (fingerprint.js gibi). Senaryo dosyasındaki `monitors` alanı (senaryoya özel monitörler) de orada okunur.
-3. **Senaryo dosyasından yükleme:** Senaryo kartındaki **Yükle…** dosyadaki monitörleri de alabilir (Emir'in yükleyicisi yeni id verdiği için monitörler yeni senaryoya eşlenir).
+2. **Runner tarafı:** aynı kontroller runner'da (`runner/lib/oracle.js`'in yanında) her edge'den sonra çalıştırılır ve rapora girer (monitör, kapsam, adım numarası, ekran görüntüsü; kırmızı monitör koşuyu başarısız sayar). Sayfa kontrolleri için `monitor-probe.js` Playwright'ın `page.addInitScript`'iyle sayfaya verilebilir (fingerprint.js gibi).
+3. **Senaryoya özel monitörler:** gerekirse aynı form, scenario.js'teki `monitors: []` yuvalarına bağlanır.
+4. **DOM ağacından monitör:** panelin Ekrandaki elementler kartında ([01 > Ekrandaki elementler](01-mimari.md#ekrandaki-elementler-dom-ağacı)) bir satırdan, o elementin anahtarıyla dolu monitör formu açılır. Kart bugün yalnızca gösterir; satırlar etkileşimli elementlerin parmak izi anahtarını (`input:phone`) zaten taşır.
+5. **Senaryo dosyasından yükleme:** Senaryo kartındaki **Yükle…** dosyadaki monitörleri de alabilir (Emir'in yükleyicisi yeni id verdiği için monitörler yeni senaryoya eşlenir).

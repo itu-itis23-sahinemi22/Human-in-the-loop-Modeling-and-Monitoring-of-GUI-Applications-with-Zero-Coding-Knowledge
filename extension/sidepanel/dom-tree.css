@@ -1,0 +1,22 @@
+/* Ekrandaki elementler kartı (dom-tree.js). panel.css'teki değişkenleri ve sınıfları (card, badge,
+   hint, list-head, muted, small) kullanır; yalnızca ağaca özgü parçalar burada. */
+
+#dom-tree > summary { cursor: pointer; font-weight: 600; }
+#dom-tree[open] > summary { margin-bottom: 6px; }
+
+/* Ağaç: her düzey bir öncekinden girintili; uzun ekranda kart kendi içinde kayar */
+.dom-tree { max-height: 360px; overflow: auto; margin: 4px 0 0; padding: 0; list-style: none; }
+.dom-tree ul { margin: 0 0 0 5px; padding: 0 0 0 8px; list-style: none; border-left: 1px solid var(--border); }
+
+/* Satır: ▸ etiket "metin" anahtar. Çocuğu olan satır <summary>'dir; ▸ / ▾ ile açılıp kapanır */
+.dom-row { display: flex; gap: 4px; align-items: baseline; padding: 1px 4px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
+.dom-row:hover { background: var(--highlight); }
+.dom-row::before { content: ''; flex: none; width: 10px; color: var(--muted); }
+summary.dom-row { list-style: none; cursor: pointer; }
+summary.dom-row::-webkit-details-marker { display: none; }
+details > summary.dom-row::before { content: '▸'; }
+details[open] > summary.dom-row::before { content: '▾'; }
+.dom-tag { flex: none; color: var(--primary); font-family: ui-monospace, Consolas, monospace; }
+.dom-row.interactive .dom-tag { font-weight: 700; }
+.dom-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dom-row code { flex: none; color: var(--muted); font-size: 10px; }

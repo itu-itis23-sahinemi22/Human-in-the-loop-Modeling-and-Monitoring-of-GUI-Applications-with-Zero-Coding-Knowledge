@@ -9,7 +9,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { chromium, EXT, CHROME, outDir } = require('./env');
+const { chromium, EXT, CHROME, outDir, skipCleanup } = require('./env');
 
 const HEADED = process.argv.includes('--headed');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -172,6 +172,7 @@ function check(name, ok, detail = '') {
       await tabPage.bringToFront();
       await sleep(800);
       await panel.evaluate(() => { replayResult = null; document.getElementById('replay-slow').checked = false; document.getElementById('btn-replay').click(); }); // önceki koşunun sonucu bekleme koşulunu erken sağlamasın
+      await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
       await sleep(600);
       if (await panel.evaluate(() => !document.getElementById('replay-check').hidden)) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
       await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 90000 });

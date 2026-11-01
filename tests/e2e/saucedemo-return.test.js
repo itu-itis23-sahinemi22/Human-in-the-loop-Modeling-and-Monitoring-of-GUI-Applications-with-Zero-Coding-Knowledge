@@ -3,7 +3,7 @@
 // İnternet ister (www.saucedemo.com).
 // Kullanım: node tests/e2e/saucedemo-return.test.js
 const path = require('path'); const fs = require('fs'); const os = require('os');
-const { chromium, REPO, EXT, CHROME, outDir } = require('./env');
+const { chromium, REPO, EXT, CHROME, outDir, skipCleanup } = require('./env');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  ' + detail : ''}`); if (!ok) failures++; };
@@ -34,6 +34,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     });
     await page.bringToFront();
     await panel.evaluate(() => document.getElementById('btn-replay').click());
+    await skipCleanup(panel); // temizlik penceresi: Temizlemeden oynat
     await sleep(1000);
     // Buton yalnızca adres farkında çıkar (görünen alanı oynatma kendisi kurar): adres başlıkta
     let c = await panel.evaluate(() => { const fit = document.getElementById('btn-replay-fit'); return { hidden: document.getElementById('replay-check').hidden, fit: fit.hidden ? null : fit.textContent, title: fit.title }; });

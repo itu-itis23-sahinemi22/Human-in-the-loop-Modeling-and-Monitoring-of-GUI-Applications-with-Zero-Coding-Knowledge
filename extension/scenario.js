@@ -103,3 +103,51 @@ function sortedJson(value) {
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${sortedJson(value[k])}`).join(',')}}`;
   return JSON.stringify(value) ?? 'null';
 }
+
+// TEMİZLİK (panelde oynatmadan önce; panel.js > TEMİZLİK): senaryonun sitelerinde silinebilecek
+// veriler. Panelde oynatma kullanıcının kendi tarayıcısında çalışır; site önceki oturumdan kalan
+// verileriyle açılır (giriş yapılmış, sepet dolu). Runner'da gerekmez: her koşuyu temiz bir
+// tarayıcıda başlatır. Türler chrome.browsingData'nın site (origin) bazında silebildikleridir
+// (type: DataTypeSet'teki adı). Chrome localStorage'ı silerken sitenin sessionStorage'ını da siler
+// (açık bütün sekmelerinde); bu yüzden ikisi tek seçenektir, DevTools'taki gibi. hint: panelde
+// üzerine gelince görünen açıklama.
+// Ayrıntı ve kaynaklar: docs/08-site-verileri.md
+const CLEANUP_TYPES = [
+  { type: 'cookies', text: 'Çerezler', hint: 'Oturum, sepet ve tercih çerezleri. Sitenin alan adının tamamı için silinir (ör. *.site.com); silinirse bu tarayıcıdaki oturumunuz kapanır.' },
+  { type: 'cache', text: 'Önbellek (HTTP)', hint: 'Tarayıcının indirip sakladığı sayfa dosyaları (HTML, CSS, JavaScript, resim). Silinirse site bunları yeniden indirir.' },
+  { type: 'cacheStorage', text: 'Cache Storage', hint: 'Sitenin kendi kodunun sakladığı yanıtlar (Cache API): service worker ve çevrimdışı çalışan uygulamalar kullanır.' },
+  { type: 'localStorage', text: 'localStorage ve sessionStorage', hint: "Sitenin anahtar-değer verisi. localStorage kalıcıdır (tema, sepet, bazen oturum anahtarı); sessionStorage sekmeye aittir (yarım form, sihirbaz adımı). Chrome ikisini birlikte siler, sessionStorage'ı sitenin açık bütün sekmelerinde." },
+  { type: 'indexedDB', text: 'IndexedDB', hint: 'Sitenin tarayıcıdaki veritabanı: büyük veri, çevrimdışı uygulamalar.' },
+  { type: 'serviceWorkers', text: "Service worker'lar", hint: 'Sitenin arka planda çalışan betikleri (önbellek, bildirim, çevrimdışı çalışma). Kaydı silinir; site bir sonraki açılışta yeniden kurar.' },
+  { type: 'fileSystems', text: 'Dosya sistemi', hint: 'Sitenin tarayıcıdaki özel dosya alanı (File System API). Nadiren kullanılır.' },
+];
+
+// Adresin sitesi (origin: şema + alan adı + port); http / https değilse null.
+function siteOrigin(url) {
+  try {
+    const { protocol, origin } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+// Senaryonun siteleri: graph'taki node'ların adreslerinin origin'leri, başlangıç node'unun sitesi
+// önce. graph: senaryonun graph'ı (scenarioSnapshot; node'larda url vardır).
+function cleanupSites(graph) {
+  const start = siteOrigin(graph.nodes.find((n) => n.id === graph.start)?.url ?? '');
+  const origins = new Set([start, ...graph.nodes.map((n) => siteOrigin(n.url ?? ''))].filter(Boolean));
+  return [...origins].map((origin) => ({ origin, start: origin === start }));
+}
+
+// Senaryonun temizlik seçimi: { origin: [tür, ...] }. Bozuk origin, bilinmeyen tür ve boş liste atılır.
+function normalizeCleanup(raw) {
+  const known = new Set(CLEANUP_TYPES.map((t) => t.type));
+  const cleanup = {};
+  for (const [origin, types] of Object.entries(raw && typeof raw === 'object' ? raw : {})) {
+    if (siteOrigin(origin) !== origin || !Array.isArray(types)) continue;
+    const kept = [...new Set(types.filter((t) => known.has(t)))];
+    if (kept.length) cleanup[origin] = kept;
+  }
+  return cleanup;
+}

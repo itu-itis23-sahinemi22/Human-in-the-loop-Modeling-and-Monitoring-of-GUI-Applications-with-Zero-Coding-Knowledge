@@ -20,6 +20,7 @@ Bu doküman eklentinin hangi parçalardan oluştuğunu, parçaların birbiriyle 
 - [Graph'lar](#graphlar)
 - [Senaryolar](#senaryolar)
 - [Panelde oynatma](#panelde-oynatma)
+- [Ekrandaki elementler (DOM ağacı)](#ekrandaki-elementler-dom-ağacı)
 - [Service worker'ın ölümlülüğü](#service-workerın-ölümlülüğü)
 
 ---
@@ -70,6 +71,7 @@ Eklentinin tek "durum sahibi" (single source of truth).
 - **Senaryo** bölümü (`panel.js > SENARYO`): test yollarını (koşular) kurar ve graph üzerinde önizler: seçili koşunun edge'leri sıra numarasıyla vurgulu, vardığı node işaretli, diğerleri soluk. Elle yolda koşunun vardığı node'dan çıkan bir edge'e tıklanır (gidilebilecekler kesik çizgili); yol çıkmaz bir node'a varınca "Yeni koşu" baştan başlar. Koşuların başlangıç node'u **Başlangıç** listesinden seçilir (varsayılan graph'ın başlangıcı; seçilen node çift çizgili). Graph'ın başlangıcı dışındaki bir başlangıç yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda başlattığı için böyle bir senaryoyu reddeder. Senaryo panelin kendi durumudur (graph state'i değil); "Senaryo indir" ile dosyaya alınır, runner oynatır ([04 > Senaryo dosyası](04-veri-modeli.md#senaryo-dosyası)).
 - `compare.js`: onay kartındaki görsel karşılaştırma: iki ekran görüntüsünün piksel farkı, farklı bölgeler, fark oranı ([03 > Görsel karşılaştırma](03-state-eslestirme.md#görsel-karşılaştırma)). Panelde oynatmada kalınan ekran da bununla karşılaştırılır.
 - `replay.js`: **Panelde oynat**: seçili koşuyu kullanıcının tarayıcısında, açık sekmede oynatır (bkz. [Panelde oynatma](#panelde-oynatma)).
+- `dom-tree.js` / `dom-tree.css`: **Ekrandaki elementler** kartı: açık sekmenin ekranda görünen kısmını sade bir DOM ağacı olarak çizer, üzerine gelinen satırın elementini sayfada çerçeveletir. Ağacı ve çerçeveyi sayfadaki `extension/dom-tree.js` (content script) hazırlar (bkz. [Ekrandaki elementler](#ekrandaki-elementler-dom-ağacı)).
 - `panel.js`: State'i ve ayarları storage'dan okur ve ekrana çizer. Butonlara basılınca background'a mesaj gönderir. Ayarlar penceresindeki kutular (iki liste ve "Beklemeler" bölümü: anahtar, alt sınır ve aksiyon sonrası otomatik bekleme süresi) bir **taslaktır**: yalnızca **Kaydet** taslağı background'a gönderir. Kaydet, taslak kaydedilmiş ayarlardan farklıyken aktiftir. Taslak farklıyken pencere kapatılmak istenirse (✕, Esc, pencere dışına tıklama) uyarı açılır: "Kaydet ve çık", "Kaydetmeden çık" ya da "Geri dön".
 - `panel.css`: görünüm.
 
@@ -89,7 +91,7 @@ Ayarlar penceresindeki iki listenin (aksiyon tipleri `ACTION_TYPES`, etkileşiml
 
 ### `manifest.json`: Kimlik kartı
 
-Chrome'a "bu eklenti nedir, hangi dosya hangi ortamda çalışır, hangi izinlere ihtiyaç duyar" bilgisini verir. İzinlerin tek tek gerekçesi: [02-teknolojiler.md](02-teknolojiler.md#hangi-izin-neden-gerekli). `key` alanı eklentinin kimliğini sabitler (`limihkoliileclgenbfinjjkgimopjen`): paketlenmemiş eklentinin kimliği normalde klasör yolundan gelir; planlayıcının host'u yalnızca bu kimliğe izin verir ([Senaryolar > GraphWalker](#graphwalker-ile-üretim)).
+Chrome'a "bu eklenti nedir, hangi dosya hangi ortamda çalışır, hangi izinlere ihtiyaç duyar" bilgisini verir. `commands`, "Node oluştur" kısayolunu (`Alt+N`) tanımlar ([Node oluştur akışı](#node-oluştur-akışı)). İzinlerin tek tek gerekçesi: [02-teknolojiler.md](02-teknolojiler.md#hangi-izin-neden-gerekli). `key` alanı eklentinin kimliğini sabitler (`limihkoliileclgenbfinjjkgimopjen`): paketlenmemiş eklentinin kimliği normalde klasör yolundan gelir; planlayıcının host'u yalnızca bu kimliğe izin verir ([Senaryolar > GraphWalker](#graphwalker-ile-üretim)).
 
 ---
 
@@ -122,7 +124,7 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | Mesaj | Gönderen → Alan | İçerik | Ne yapar |
 |---|---|---|---|
 | `ACTION` | content → background | `{ action, screen, viewport, typingSince?, replaces? }` | Aksiyonu buffer'a ekler; gerekiyorsa önüne bir bekleme koyar ([Beklemeler](#beklemeler)). `typingSince`: aksiyondan önce yazmaya başlanan an; önceki bekleme o anda biter. Cevap `{ monitor, hover }`: bu sekme ekranı aksiyonsuz da izlesin mi, fareyle üzerine gelmeyi kaydetsin mi. Kayıt başlamadıysa, başka sekmeden geldiyse ya da tipi Ayarlar'da işaretsizse yok sayar. `screen`, aksiyonun yapıldığı andaki ekranın edge set'idir; önceki aksiyonun sonrası henüz bildirilmediyse onun sonrası olarak kullanılır. `viewport`, gönderildiği andaki sayfa boyutudur; açık bir yakınlaştırma aksiyonu bununla kapanırsa varılan boyut olarak saklanır. `replaces`: buffer'ın son aksiyonunun zamanı buysa o aksiyon düşer (çift/üçlü tıklamayla seçimde hareketin önceki tıklaması). |
-| `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; yoksa ve ekran değiştiyse, beklemeler kaydediliyorsa ekranı değiştiren bir bekleme ekler. Ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. Cevap `{ monitor, hover }` (ACTION'daki gibi). |
+| `SCREEN` | content → background | `{ screen, viewport }` | Sayfa durulunca ekranın edge set'i ve sayfanın boyutu. Sonrası bekleyen aksiyon varsa "state'i değiştirdi mi?" diye işaretler; yoksa ve ekran değiştiyse, beklemeler kaydediliyorsa ekranı değiştiren bir bekleme ekler. Ekran yeni "hemen önceki state" olur. Kayıt sekmesi dışından geleni yok sayar. Cevap `{ monitor, hover }` (ACTION'daki gibi). Panel de dinler (cevap vermez): Ekrandaki elementler kartı açıksa ve mesaj kartın sekmesinden geldiyse ağacı yeniler. |
 | `SYNC` | panel → background | (boş) | Panel açılınca gönderir: background graph listesini kurar (gerekirse eski `state` anahtarını taşır), panel ardından storage'dan okur. |
 | `NEW_GRAPH` | panel → background | (boş) | Boş bir "Yeni graph" ekler ve ona geçer. Karar beklerken ya da oynatma sürerken reddeder. Bkz. [Graph'lar](#graphlar) |
 | `SWITCH_GRAPH` | panel → background | `{ id }` | Aktif graph'ı değiştirir: bırakılanın bekleyen aksiyonları ve sekme bağları silinir; geçilende node varsa aktif sekme için sorulur. Karar beklerken ya da oynatma sürerken reddeder. |
@@ -150,6 +152,8 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `SET_SETTINGS` | panel → background | `{ settings }` | Ayarlar'daki seçimi kaydeder (`settings` anahtarı). |
 | `REPLAY` | panel → background | `{ active, endNodeId?, tabId? }` | Panelde oynatma başladı (`active: true`: kayıt durur, bekleyen aksiyonlar atılır) ya da bitti. Bitince `endNodeId` varsa (koşu geçti) kayıt o node'dan ve `tabId` sekmesinde sürer; yoksa şu anki node bilinmez. Bkz. [Panelde oynatma](#panelde-oynatma) |
 | `REPLAY` | panel → content | `{ op, target?, selector?, ... }` | Panelde oynatmada sayfa işleri: `settled` (durulunca parmak izi), `locate` (elementin tıklanacak noktası, üstü kapalı mı, türü; istenirse çerçeveler), `focus`, `choose` (açılır liste), `scroll`. |
+| `DOM_TREE` | panel → content | (boş) | Ekrandaki elementler kartı: ekranda görünen elementlerin sade ağacı (`extension/dom-tree.js` cevaplar). Cevap `{ url, title, count, truncated, tree }`; düğümler `{ id, tag, text, key, interactive, children }`. Bkz. [Ekrandaki elementler](#ekrandaki-elementler-dom-ağacı) |
+| `DOM_TREE_HIGHLIGHT` | panel → content | `{ id }` | Son ağaçtaki `id`'li elementi sayfada çerçeveler; `null` çerçeveyi kaldırır. Element artık sayfada yoksa `{ gone: true }` döner, panel ağacı yeniler. |
 
 Background her mesaja üç cevaptan biriyle döner:
 
@@ -162,6 +166,8 @@ Background her mesaja üç cevaptan biriyle döner:
 ## "Node oluştur" akışı
 
 Projenin kalbi `background.js` içindeki `createNode()` ve `commit()` fonksiyonlarıdır.
+
+**Kısayol:** `Alt+N` (`manifest.json > commands`) aynı butona basar (`panel.js > onShortcut`). Tuşu Chrome yakalar: sayfa da panel de görmez, bu yüzden "Bekleyen aksiyonlar"a `Press Alt+N` girmez. Panel her pencerede ayrıdır; yalnızca kısayola basılan penceredeki panel çalışır. Buton kilitliyse (bekleyen aksiyon yok, soru bekliyor, oynatma sürüyor) nedeni mesaj olarak gösterilir. Butonun ipucu atanmış tuşu gösterir (`chrome.commands.getAll`); kullanıcı tuşu `chrome://extensions/shortcuts`'tan değiştirebilir. Ctrl+N olamaz: Chrome kendi kısayollarını (yeni pencere) eklentiye atamaz, sayfaya da göndermez.
 
 ```
 Kullanıcı          panel.js              background.js                 content.js
@@ -241,6 +247,7 @@ Durumların tamamı (`from` = şu anki node):
 | Olay | Kaydedilen aksiyon | Not |
 |---|---|---|
 | `click` | `click` | Form alanlarına tıklamalar yok sayılır (bkz. aşağıda). Hedef, `closest()` ile en yakın etkileşimli elemente yükseltilir: butonun içindeki `<span>`'e tıklanınca butonun kendisi kaydedilir. |
+| `click` (aynı elemente hızlı art arda: `event.detail` ≥ 2) | `multiclick` | Çift, üçlü, … tıklama tek harekettir: tarayıcının tıklama sayacı, işletim sisteminin çift tıklama süresi içindeki tıklamaları sayar. İlk tıklama `click` olarak gider; sonraki her tıklama hareketin önceki aksiyonunun yerine geçen bir `multiclick` gönderir (`count` = sayaç; aksiyonun öncesi ilk tıklamanın öncesidir). Arada başka bir aksiyon gittiyse hareket yeniden başlar. Ayarlar'da **Çoklu tıklama** kapalıysa her tıklama ayrı `click` olarak kaydedilir. Kutu **Tıkla**'ya bağlıdır: Tıkla'nın işareti kalkınca onun da işareti kalkar ve kutu pasif olur. Metne çift / üçlü tıklayıp seçmek `select`'tir (aşağıda). |
 | `change` | `input` | text, select, checkbox, radio... Değer kaydedilir. Şifreler maskelenir. |
 | `mouseup` (fare kaydıysa, çift/üçlü tıklandıysa ya da Shift ile tıklandıysa ve seçili metin varsa) | `select` | Metin seçmek tıklama değildir: tarayıcının ardından ürettiği `click` yok sayılır. Seçilen metin ve onu içeren element (metin alanında alan ve `start`/`end` aralığı) kaydedilir. Çift/üçlü tıklamada hareketin önceki tıklaması ya da kelime seçimi zaten gönderilmiştir; background onu bu seçimle değiştirir. Shift+tıklama ve klavyeyle (aşağıda) genişletilen seçim de son seçimin yerini alır. Butona, linke çift tıklamak seçim sayılmaz. |
 | `contextmenu` (sağ tık, menü tuşu, Shift+F10) | `contextmenu` | Sağ tuş `click` üretmez. Sayfa olayı engellediyse (`blocked`) tarayıcının menüsü yerine kendi menüsünü açmıştır. Menü tuşu ve Shift+F10 tuş olarak kaydedilmez. |
@@ -538,6 +545,7 @@ Senaryo bölümündeki **Koşuyu oynat**, seçili koşuyu kullanıcının kendi 
 
 ```
 panel.js ▸ Koşuyu oynat
+   │ 0. temizlik penceresi: seçili site verileri silinir (chrome.browsingData), sekme başlangıca gider
    │ 1. başlangıç kontrolü: GET_FINGERPRINT ↔ koşunun ilk node'u (farklıysa uyarı kartı)
    │ 2. REPLAY {active: true} ──▶ background: kayıt durur
    ▼
@@ -553,6 +561,7 @@ panel: graph'ta ilerleme (yeşil / kesik / kırmızı), adım listesi ◀──�
    ▼    geçtiyse kayıt vardığı node'dan sürer; kaldıysa şu anki node bilinmez
 ```
 
+- **Oynatmadan önce temizlik.** "Koşuyu oynat" önce bir pencere açar. Pencerede senaryonun graph'ındaki her site (node adreslerinin origin'i, başlangıç sitesi önce) ve altında silinebilecek veriler listelenir: çerezler, HTTP önbelleği, Cache Storage, localStorage ve sessionStorage (Chrome ikisini birlikte siler), IndexedDB, service worker'lar, dosya sistemi. Site kutusu altındaki türlerin hepsini işaretler. Seçim senaryoya kaydedilir (`scenario.cleanup`); ilk açılışta hiçbir şey seçili değildir. **Temizle ve oynat** seçili verileri yalnızca o siteler için siler (`chrome.browsingData.remove` + `origins`) ve sekmeyi başlangıç node'unun adresine götürür; silinen veri ancak sayfa yeniden yüklenince etkisini gösterir. Bu gezinme, "Başlangıç node'una dön"deki gibi kayıt sekmesindeyse `navigate` aksiyonu olarak kaydedilir. **Temizlemeden oynat** doğrudan başlangıç kontrolüne geçer. Runner'da gerekmez: her koşuyu temiz bir tarayıcıda başlatır. Ne silinir, ne zaman silinmeli: [08 > Site verileri](08-site-verileri.md).
 - **Başlangıç kullanıcının sorumluluğudur.** Oynatma sayfaya kendisi gitmez. Önce ekran, koşunun ilk node'uyla (senaryonun başlangıcı; varsayılan graph'ın başlangıcı) aynı kuralla karşılaştırılır: URL şablonu ve edge set'i. Farklıysa panel uyarır: *"Başlangıç node'ları aynı değil ... Koşu doğru sonuç vermeyecektir."* Fark listesiyle birlikte gösterilir; kullanıcı "Yine de oynat" diyebilir. "Bekleyen aksiyonlar" silinecekse de aynı kartta söylenir. Koşu senaryonun graph'ından (kopya) oynatılır; ana graph kopyadan sonra değiştiyse kart farkı söyler ve **Ana graph'tan yenile** çıkar (kopya yeniden alınır, kontrol tekrarlanır); "Yine de oynat" kopyayı oynatır. Sekmedeki sayfa okunamıyorsa (tarayıcının kendi sayfası, eklentiden önce açılmış sayfa) ve adres farklıysa da kart açılır; o zaman "Yine de oynat" yoktur (oynatma ilk adımda kalırdı). Görünen alan farklıysa edge set'i burada karşılaştırılmaz (state ekrana sığan elementlerden oluşur, yanlış boyutta tutmayabilir); yalnızca adrese bakılır, karşılaştırmayı oynatma boyutu kurduktan sonra yapar (aşağıda).
 - **Başlangıç node'una dön.** Sekme başlangıç node'unun adresinde (URL şablonu) değilse kartta bu buton çıkar. Sekme node'un kayıttaki adresine (`node.url`) gider; yeni sayfa durulunca ekranı alınır (`replay.js > goToAddress`). Site başka bir adrese yönlendirdiyse (giriş gerektiren sayfa: saucedemo'da çıkış yapılmışken `inventory.html` giriş sayfasına döner) panel bunu söyler, uyarı kalır: *"Site başka bir adrese yönlendirdi: ... Başlangıç ekranına elle ulaşın (örneğin önce giriş yapın)."* Graph'ın başından o node'a giden yolu oynatmak (giriş dahil) yapılmaz. Sonra kontrol yeniden yapılır, kart güncellenir. Ekran tutuyorsa kartta en fazla "bekleyen aksiyonlar silinecek" kalır.
 
@@ -570,6 +579,19 @@ panel: graph'ta ilerleme (yeşil / kesik / kırmızı), adım listesi ◀──�
 - Yönlendirme yalnızca adresten anlaşılır. Site giriş ekranını aynı adreste gösteriyorsa ya da yönlendirmeyi sayfa durulduktan sonra yapıyorsa özel mesaj çıkmaz; kart yine fark listesiyle kalır. İyileştirme: varılan ekranı graph'taki diğer node'larla da karşılaştırıp "giriş sayfasındasınız (`v_Login`)" demek.
 - Node'un kayıttaki adresine gidilir. Adreste oturuma özel bir değer (tek kullanımlık bağlantı, oturum kimliği) varsa o adres artık çalışmayabilir. İyileştirme: graph'ın başından o node'a en kısa yolu oynatmak (hazırlık yolu).
 - Kayıt sekmesinde dönülüp "Vazgeç" denirse gezinme ve boyut değişimleri bekleyen aksiyonlarda kalır; kullanıcı istemiyorsa siler.
+
+---
+
+## Ekrandaki elementler (DOM ağacı)
+
+Panelde "Bekleyen aksiyonlar"ın altındaki **Ekrandaki elementler** kartı, açık sekmenin şu an ekranda görünen kısmını sade bir DOM ağacı olarak gösterir. Element bazlı monitör eklemeye yardımcı olsun diye vardır: kullanıcı sayfadaki bir yazının ya da alanın DOM'da neye karşılık geldiğini görür. Kart yalnızca gösterir; monitör eklemez, kayda ve graph state'ine dokunmaz.
+
+- **Ne zaman yenilenir?** Kart kapalıyken hiçbir şey yapılmaz. Açıkken: kart açılınca, her aksiyondan sonra sayfa durulunca (content.js'in `SCREEN` bildirimi panele de gelir, çünkü `chrome.runtime.sendMessage` eklentinin bütün sayfalarına gider), sekme değişince, sayfa yüklenince ve **Yenile**'ye basınca. Kaydırma da bir aksiyondur: kaydırınca ekrana gelenler ağaca girer. Ağaç panelin penceresindeki aktif sekmeden okunur ("Node oluştur" gibi).
+- **Hangi elementler?** Ağacı sayfadaki `extension/dom-tree.js` çıkarır. Yalnızca ekranda görünenler girer: çizilmeyenler (`script`, `style`…), `display:none`, `visibility:hidden`, `opacity:0`, 1 px'lik ekran okuyucu metinleri, görünen alanın dışı ve taşanı gizleyen ya da kaydırılan bir kutunun dışında kalanlar (kayan menü, carousel'in diğer slaytları) girmez. Görünenlerden **anlamlı** olanlar satır olur: etkileşimli elementler (state'in kullandığı tanım), kendi metni olanlar, görseller (`img`, `svg`, `canvas`…), yapısal elementler (başlık, paragraf, liste, tablo, form, `nav` / `main` / `header` / `footer`, `dialog`…) ve sayfanın ad verdiği elementler (`id`, `role`, `aria-label`, `data-testid`, `data-test`). Anlamsız sarmalayıcılar (`div`, `span`…) yalnızca altındaki içeriği birden fazla dala ayırıyorsa gösterilir; React gibi sitelerdeki tek çocuklu sarmalayıcı zincirleri katlanır. Butonun, alanın ve görselin içi gezilmez.
+- **Satır:** etiket (`button#buy`, `div[role=dialog]`), metin (form alanında alanın adı, değeri asla; görselde alt metni; diğerlerinde elementin kendi metni) ve etkileşimli türdeki elementlerde parmak izi anahtarı (`button:buy`; monitör formundaki Alan da bu biçimi kullanır). Şu an etkileşimli olanların (node'un edge set'i) etiketi kalındır. Çocuğu olan satır ▸ / ▾ ile kapanıp açılır; kullanıcının kapattığı dal ağaç yenilenince de kapalı kalır.
+- **Vurgu:** satırın üzerine gelince element sayfada mavi bir çerçeve ve etiketle (`button#buy  120×32`) işaretlenir, satırdan çıkınca kalkar. Sayfa kaydırılmaz, tıklanmaz. Çerçeve, sayfanın `<body>`'si dışında bir kez eklenen boyutsuz bir kabın (`<graph-recorder-frame>`) shadow root'unda çizilir. Çerçeve taşınırken yalnızca shadow root'un içi değişir: kaydın "sayfa duruldu mu?" izleyicisi ve sayfanın kendi izleyicileri bunu görmez; kap ağaca, parmak izine ve sayfanın metnine girmez. Eklentinin başka bir isteği sayfaya gelince (node oluşturma, oynatma, monitör kontrolü) çerçeve kalkar, ekran görüntüsüne girmez. Chrome'un DevTools vurgusu (`Overlay.highlightNode`) kullanılmadı: `chrome.debugger`'a bağlanmak "hata ayıklama" çubuğunu açar ve panelde oynatmanın bağlantısıyla çakışır.
+- **Sınırlar:** en fazla 20000 element gezilir (fazlası durum satırında söylenir); iframe ve shadow DOM içi gösterilmez (content script yalnızca ana çerçevede çalışır). Taşma yaklaşıktır: `position:absolute` bir kutunun, konumlandırılmamış bir üst kutunun taşmasından kurtulması ayırt edilmez. Eklentiden önce açılmış sayfada ve tarayıcının kendi sayfalarında kart "okunamadı" der.
+- **Bu sürümde yok:** satırdan monitör ekleme ve sayfadan seçme (sayfada fareyle gezip elementi ağaçta bulmak; seçme tıklaması kayda ve sayfaya ulaşmamalı).
 
 ---
 

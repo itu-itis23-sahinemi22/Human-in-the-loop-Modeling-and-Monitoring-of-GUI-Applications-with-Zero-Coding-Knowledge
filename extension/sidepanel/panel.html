@@ -1,39 +1,51 @@
 <!doctype html>
 <html lang="tr">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Graph Recorder</title>
   <link rel="stylesheet" href="panel.css">
   <link rel="stylesheet" href="monitors.css"> <!-- monitör menüsü (monitor-*.js) -->
+  <link rel="stylesheet" href="dom-tree.css"> <!-- Ekrandaki elementler kartı (dom-tree.js) -->
   <!-- Tema, sayfa çizilmeden önce uygulansın diye <head>'de yüklenir -->
   <script src="theme.js"></script>
 </head>
+
 <body>
   <header>
     <div class="title-row">
       <h1>Graph Recorder</h1>
       <div class="header-actions">
-      <!-- Aydınlık / karanlık geçişi: aydınlıkta ay, karanlıkta güneş görünür (Feather Icons, MIT) -->
-      <button id="btn-theme" class="icon" title="Karanlık moda geç" aria-label="Karanlık moda geç">
-        <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        </svg>
-        <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line>
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-          <line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line>
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-        </svg>
-      </button>
-      <!-- Ayarlar penceresini açar (çark simgesi: Feather Icons "settings", MIT) -->
-      <button id="btn-settings" class="icon" title="Ayarlar" aria-label="Ayarlar">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-      </button>
+        <!-- Aydınlık / karanlık geçişi: aydınlıkta ay, karanlıkta güneş görünür (Feather Icons, MIT) -->
+        <button id="btn-theme" class="icon" title="Karanlık moda geç" aria-label="Karanlık moda geç">
+          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+        <!-- Ayarlar penceresini açar (çark simgesi: Feather Icons "settings", MIT) -->
+        <button id="btn-settings" class="icon" title="Ayarlar" aria-label="Ayarlar">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+            </path>
+          </svg>
+        </button>
       </div>
     </div>
     <p id="status" class="muted"></p>
@@ -43,11 +55,14 @@
        Satıra tıklamak o graph'a geçer; ✎ satırda yeniden adlandırır, ✕ siler. "Dışa aktar" ekran
        görüntüleriyle tam graph'ı indirir, "Yükle…" onu yeni bir graph olarak ekler. -->
   <details id="graphs" class="card">
-    <summary>Graph'lar <span id="graphs-badge" class="badge"></span> <span id="graphs-active" class="muted"></span></summary>
+    <summary>Graph'lar <span id="graphs-badge" class="badge"></span> <span id="graphs-active" class="muted"></span>
+    </summary>
     <ul id="graph-list" class="item-list"></ul>
     <div class="toolbar">
       <button id="btn-graph-new">Yeni graph</button>
-      <button id="btn-graph-export" title="Graph'ı ekran görüntüleriyle birlikte yedek olarak indirir; &quot;Yükle…&quot; ile geri eklenir">Dışa aktar</button>
+      <button id="btn-graph-export"
+        title="Graph'ı ekran görüntüleriyle birlikte yedek olarak indirir; &quot;Yükle…&quot; ile geri eklenir">Dışa
+        aktar</button>
       <button id="btn-graph-import">Yükle…</button>
     </div>
     <input type="file" id="graph-file" accept=".json,application/json" hidden>
@@ -57,8 +72,10 @@
     <button id="btn-node" class="primary">Node oluştur</button>
     <!-- Son silmeyi (node, edge ya da edge'den aksiyon) geri alır; kısayolu Ctrl+Z -->
     <button id="btn-undo" disabled>Geri al</button>
-    <button id="btn-export" title="Graph'ı GraphWalker JSON modeli olarak indirir (Studio'da açılır, CLI ile çalışır)">GraphWalker JSON</button>
-    <button id="btn-reset" class="danger">Sıfırla</button> 
+    <button id="btn-export"
+      title="Graph'ı GraphWalker JSON modeli olarak indirir (Studio'da açılır, CLI ile çalışır)">GraphWalker
+      JSON</button>
+    <button id="btn-reset" class="danger">Sıfırla</button>
   </div>
 
   <!-- Background'dan gelen hata (kırmızı) ya da bilgi (mavi) mesajı -->
@@ -70,7 +87,9 @@
   <section id="confirm" class="card highlight" hidden>
     <p id="confirm-text"></p>
     <div class="shots">
-      <figure><img id="confirm-new" alt=""><figcaption>Şu anki sayfa</figcaption></figure>
+      <figure><img id="confirm-new" alt="">
+        <figcaption>Şu anki sayfa</figcaption>
+      </figure>
       <div id="confirm-candidates"></div>
     </div>
     <div class="toolbar">
@@ -105,9 +124,11 @@
        Açıkken seçili koşu graph'ta vurgulanır; elle yol edge'lere tıklayarak kurulur ve kendiliğinden
        kaydedilir. İndirilen senaryoyu runner oynatır (scenario.js, panel.js). -->
   <details id="scenario" class="card">
-    <summary>Senaryo <span id="scenario-badge" class="badge"></span> <span id="scenario-active" class="muted"></span></summary>
+    <summary>Senaryo <span id="scenario-badge" class="badge"></span> <span id="scenario-active" class="muted"></span>
+    </summary>
     <ul id="scenario-list" class="item-list"></ul>
-    <p id="scenario-empty" class="hint" hidden>Bu graph'ta henüz senaryo yok. "Yeni senaryo" ile başlayın, sonra graph'ta edge'lere tıklayarak yolu kurun.</p>
+    <p id="scenario-empty" class="hint" hidden>Bu graph'ta henüz senaryo yok. "Yeni senaryo" ile başlayın, sonra
+      graph'ta edge'lere tıklayarak yolu kurun.</p>
     <div class="toolbar">
       <button id="btn-scenario-new">Yeni senaryo</button>
       <button id="btn-scenario-load">Yükle…</button>
@@ -116,60 +137,64 @@
 
     <!-- Seçili senaryonun düzenlenmesi ve oynatılması; senaryo seçili değilken gizli -->
     <div id="scenario-editor" class="scenario-editor" hidden>
-    <label class="option">Strateji <select id="scenario-strategy"></select></label>
-    <!-- GraphWalker stratejisi seçiliyken: ulaşılacak node, tohum, Üret. Kullanıcının bilgisayarındaki
+      <label class="option">Strateji <select id="scenario-strategy"></select></label>
+      <!-- GraphWalker stratejisi seçiliyken: ulaşılacak node, tohum, Üret. Kullanıcının bilgisayarındaki
          GraphWalker native messaging ile çalışır (runner/planner/host.js); koşular seçili senaryoya yazılır. -->
-    <div id="scenario-planner" class="planner" hidden>
-      <label class="option" id="scenario-target-label">Ulaşılacak node <select id="scenario-target"></select></label>
-      <label class="option">Tohum <input type="number" id="scenario-seed" min="1" step="1" placeholder="rastgele"></label>
-      <button id="btn-scenario-generate" class="primary">Üret</button>
-      <p id="scenario-planner-status" class="hint"></p>
-    </div>
-    <label class="option">Başlangıç <select id="scenario-start"></select></label>
-    <p id="scenario-start-hint" class="hint" hidden>Bu başlangıçla senaryo yalnızca panelde oynatılır: runner her koşuyu temiz bir tarayıcıda, graph'ın başlangıcından başlatır ve böyle bir senaryoyu reddeder.</p>
-    <div id="scenario-runs" class="segmented" role="group" aria-label="Koşu"></div>
-    <p id="scenario-summary" class="small"></p>
-    <p id="scenario-hint" class="hint"></p>
-    <div class="toolbar">
-      <button id="btn-scenario-undo">Son edge'i geri al</button>
-      <button id="btn-scenario-new-run">Yeni koşu</button>
-      <button id="btn-scenario-clear">Temizle</button>
-      <button id="btn-scenario-download" class="primary">Senaryo indir</button>
-    </div>
-
-    <!-- PANELDE OYNATMA: seçili koşu bu tarayıcıda, açık sekmede oynatılır (replay.js). Başlangıç
-         sayfası kullanıcının sorumluluğudur; ekran koşunun ilk node'u değilse uyarı çıkar. -->
-    <div id="replay" class="replay">
-      <h3>Panelde oynat</h3>
-      <p class="hint">Seçili koşuyu bu tarayıcıda, açık sekmede oynatır; her adımı izleyebilirsiniz. Sekme koşunun ilk node'unun ekranında olmalı. Chrome oynatma boyunca üstte "hata ayıklama" çubuğu gösterir.</p>
-      <div id="replay-secrets"></div>
-      <div class="toolbar">
-        <button id="btn-replay" class="primary">Koşuyu oynat</button>
-        <button id="btn-replay-stop" class="danger" hidden>Durdur</button>
-        <label class="option"><input type="checkbox" id="replay-slow" checked> <span>Yavaş (elementi çerçevele)</span></label>
+      <div id="scenario-planner" class="planner" hidden>
+        <label class="option" id="scenario-target-label">Ulaşılacak node <select id="scenario-target"></select></label>
+        <label class="option">Tohum <input type="number" id="scenario-seed" min="1" step="1"
+            placeholder="rastgele"></label>
+        <button id="btn-scenario-generate" class="primary">Üret</button>
+        <p id="scenario-planner-status" class="hint"></p>
       </div>
-      <!-- Oynatmadan önce: ekran koşunun ilk node'u değil, bekleyen aksiyonlar silinecek ya da
-           ana graph senaryonun kopyasından sonra değişti -->
-      <div id="replay-check" class="card highlight" hidden>
-        <p id="replay-check-text"></p>
-        <ul id="replay-check-reasons" class="reasons"></ul>
+      <label class="option">Başlangıç <select id="scenario-start"></select></label>
+      <p id="scenario-start-hint" class="hint" hidden>Bu başlangıçla senaryo yalnızca panelde oynatılır: runner her
+        koşuyu temiz bir tarayıcıda, graph'ın başlangıcından başlatır ve böyle bir senaryoyu reddeder.</p>
+      <div id="scenario-runs" class="segmented" role="group" aria-label="Koşu"></div>
+      <p id="scenario-summary" class="small"></p>
+      <p id="scenario-hint" class="hint"></p>
+      <div class="toolbar">
+        <button id="btn-scenario-undo">Son edge'i geri al</button>
+        <button id="btn-scenario-new-run">Yeni koşu</button>
+        <button id="btn-scenario-clear">Temizle</button>
+        <button id="btn-scenario-download" class="primary">Senaryo indir</button>
+      </div>
+
+      <!-- PANELDE OYNATMA: seçili koşu bu tarayıcıda, açık sekmede oynatılır (replay.js). Başlangıç
+         sayfası kullanıcının sorumluluğudur; ekran koşunun ilk node'u değilse uyarı çıkar. -->
+      <div id="replay" class="replay">
+        <h3>Panelde oynat</h3>
+        <p class="hint">Seçili koşuyu bu tarayıcıda, açık sekmede oynatır; her adımı izleyebilirsiniz. Sekme koşunun ilk
+          node'unun ekranında olmalı. Chrome oynatma boyunca üstte "hata ayıklama" çubuğu gösterir.</p>
+        <div id="replay-secrets"></div>
         <div class="toolbar">
-          <!-- Sekme başlangıç node'unun adresinde değilse: sekme o adrese gider (görünen alanı
+          <button id="btn-replay" class="primary">Koşuyu oynat</button>
+          <button id="btn-replay-stop" class="danger" hidden>Durdur</button>
+          <label class="option"><input type="checkbox" id="replay-slow" checked> <span>Yavaş (elementi
+              çerçevele)</span></label>
+        </div>
+        <!-- Oynatmadan önce: ekran koşunun ilk node'u değil, bekleyen aksiyonlar silinecek ya da
+           ana graph senaryonun kopyasından sonra değişti -->
+        <div id="replay-check" class="card highlight" hidden>
+          <p id="replay-check-text"></p>
+          <ul id="replay-check-reasons" class="reasons"></ul>
+          <div class="toolbar">
+            <!-- Sekme başlangıç node'unun adresinde değilse: sekme o adrese gider (görünen alanı
                oynatma kendisi kurar, replay.js > fitStart) -->
-          <button id="btn-replay-fit" hidden>Başlangıç node'una dön</button>
-          <!-- Ana graph kopyadan sonra değiştiyse: kopya yeniden alınır, kontrol tekrarlanır -->
-          <button id="btn-replay-refresh" hidden>Ana graph'tan yenile</button>
-          <button id="btn-replay-anyway" class="primary">Yine de oynat</button>
-          <button id="btn-replay-cancel">Vazgeç</button>
+            <button id="btn-replay-fit" hidden>Başlangıç node'una dön</button>
+            <!-- Ana graph kopyadan sonra değiştiyse: kopya yeniden alınır, kontrol tekrarlanır -->
+            <button id="btn-replay-refresh" hidden>Ana graph'tan yenile</button>
+            <button id="btn-replay-anyway" class="primary">Yine de oynat</button>
+            <button id="btn-replay-cancel">Vazgeç</button>
+          </div>
+        </div>
+        <p id="replay-status" class="small" hidden></p>
+        <ol id="replay-steps" class="replay-steps"></ol>
+        <ul id="replay-diff" class="reasons"></ul>
+        <div class="toolbar" id="replay-result-actions" hidden>
+          <button id="btn-replay-compare">Beklenen ekranla karşılaştır</button>
         </div>
       </div>
-      <p id="replay-status" class="small" hidden></p>
-      <ol id="replay-steps" class="replay-steps"></ol>
-      <ul id="replay-diff" class="reasons"></ul>
-      <div class="toolbar" id="replay-result-actions" hidden>
-        <button id="btn-replay-compare">Beklenen ekranla karşılaştır</button>
-      </div>
-    </div>
     </div>
   </details>
 
@@ -183,7 +208,10 @@
     <!-- Edge'in aksiyonları; filtre işaretlenen türleri gizler (panel.js > AKSİYON FİLTRESİ) -->
     <div id="details-actions-head" class="list-head" hidden>
       <span class="muted small">Aksiyonlar</span>
-      <details id="details-filter" class="action-filter"><summary>Filtrele</summary><div class="filter-menu"></div></details>
+      <details id="details-filter" class="action-filter">
+        <summary>Filtrele</summary>
+        <div class="filter-menu"></div>
+      </details>
     </div>
     <ol id="details-actions" class="actions"></ol>
     <!-- Ana graph görünümünde: bu node'u / edge'i koşularında kullanan senaryolar (tıklayınca o senaryonun graph'ı) -->
@@ -202,10 +230,33 @@
   <section class="card">
     <div class="list-head">
       <h2>Bekleyen aksiyonlar <span id="buffer-count" class="badge"></span></h2>
-      <details id="buffer-filter" class="action-filter"><summary>Filtrele</summary><div class="filter-menu"></div></details>
+      <div class="waiting-actions-buttons">
+        <details id="buffer-filter" class="action-filter">
+          <summary>Filtrele</summary>
+          <div class="filter-menu"></div>
+        </details>
+        <button id="btn-clear-waiting-actions" class="danger">
+          Temizle
+        </button>
+      </div>
+
     </div>
     <ol id="buffer" class="actions"></ol>
   </section>
+
+  <!-- EKRANDAKİ ELEMENTLER (dom-tree.js): açık sekmenin şu an görünen kısmı sade bir DOM ağacı olarak.
+       Açıkken her aksiyondan sonra yenilenir; satırın üzerine gelince element sayfada çerçevelenir. -->
+  <details id="dom-tree" class="card">
+    <summary>Ekrandaki elementler <span id="dom-tree-count" class="badge"></span></summary>
+    <p class="hint">Açık sekmede şu an görünen elementler; ekranda karşılığı olmayan sarmalayıcılar gizlenir.
+      Satırın üzerine gelince element sayfada çerçevelenir. Kalın etiketli satırlar etkileşimli elementlerdir
+      (node'un edge set'i).</p>
+    <div class="list-head">
+      <span id="dom-tree-status" class="muted small"></span>
+      <button id="btn-dom-tree-refresh">Yenile</button>
+    </div>
+    <ul id="dom-tree-list" class="dom-tree"></ul>
+  </details>
 
   <!-- KARŞILAŞTIRMA penceresi: onay kartındaki "Karşılaştır" açar. Şu anki sayfa, seçili aday
        node ile görsel olarak karşılaştırılır (compare.js); karar buradan da verilebilir. -->
@@ -215,7 +266,8 @@
         <h2 id="compare-title">Karşılaştır</h2>
         <button id="btn-compare-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
       </div>
-      <p class="hint">Adayların etkileşimli elementleri şu anki sayfayla zaten birebir aynı. Fark, etkileşimli olmayan içerikte olabilir (sayaç, uyarı metni, farklı ürün). Görsel fark oranı yalnızca yardımcıdır; karar sizindir.</p>
+      <p class="hint">Adayların etkileşimli elementleri şu anki sayfayla zaten birebir aynı. Fark, etkileşimli olmayan
+        içerikte olabilir (sayaç, uyarı metni, farklı ürün). Görsel fark oranı yalnızca yardımcıdır; karar sizindir.</p>
       <div id="compare-candidates" class="segmented" role="group" aria-label="Aday node"></div>
       <div id="compare-modes" class="segmented" role="group" aria-label="Görünüm">
         <button data-mode="diff">Fark</button>
@@ -253,6 +305,28 @@
   <!-- AYARLAR penceresi (sağ üstteki çark açar). Hangi aksiyon tipleri kaydedilsin, hangi
        etkileşimli türler state'e girsin. Listeleri panel.js, settings.js'ten doldurur.
        Değişiklik "Kaydet"e basılınca uygulanır. "Sıfırla" ayarları silmez. -->
+  <!-- OYNATMADAN ÖNCE TEMİZLİK (panel.js > TEMİZLİK): "Koşuyu oynat" açar. Senaryonun her sitesi
+       ve altında silinebilecek veriler; seçim senaryoya kaydedilir. Siteleri panel.js doldurur. -->
+  <dialog id="cleanup-dialog" class="settings cleanup" aria-labelledby="cleanup-title">
+    <div class="dialog-body">
+      <div class="title-row">
+        <h2 id="cleanup-title">Oynatmadan önce temizlik</h2>
+        <button id="btn-cleanup-close" class="icon" title="Vazgeç" aria-label="Vazgeç">✕</button>
+      </div>
+      <p class="hint">Panelde oynatma bu tarayıcıda çalışır; site önceki oturumdan kalan verileriyle açılır (giriş
+        yapılmış, sepet dolu…). Seçili veriler oynatmadan önce silinir ve sekme koşunun başlangıç adresine gider. Seçim
+        bu senaryoya kaydedilir. Bir verinin üzerine gelince ne olduğu yazar.</p>
+      <div id="cleanup-sites"></div>
+      <p class="hint">Silinen veri geri gelmez ve bu tarayıcının kendisinden silinir: çerezler silinirse o sitedeki
+        oturumunuz kapanır. Çerezler sitenin alan adının tamamı için silinir.</p>
+      <div class="toolbar">
+        <button id="btn-cleanup-run" disabled>Temizle ve oynat</button>
+        <button id="btn-cleanup-skip" class="primary">Temizlemeden oynat</button>
+        <button id="btn-cleanup-cancel">Vazgeç</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="settings-dialog" class="settings" aria-labelledby="settings-title">
     <div class="dialog-body">
       <div class="title-row">
@@ -266,15 +340,21 @@
       </fieldset>
       <fieldset>
         <legend>Beklemeler</legend>
-        <p class="hint">Açıkken iki aksiyon arasındaki boşluk "Bekle" aksiyonu olarak kaydedilir ve kayıt sekmesinin ekranı sürekli izlenir. Ekran beklerken kendiliğinden değişirse (ör. oturum zaman aşımı) bekleme o anda biter ve "ekranı değiştirdi" işaretini alır; böyle bir bekleme alt sınırdan kısa da olsa kaydedilir.</p>
+        <p class="hint">Açıkken iki aksiyon arasındaki boşluk "Bekle" aksiyonu olarak kaydedilir ve kayıt sekmesinin
+          ekranı sürekli izlenir. Ekran beklerken kendiliğinden değişirse (ör. oturum zaman aşımı) bekleme o anda biter
+          ve "ekranı değiştirdi" işaretini alır; böyle bir bekleme alt sınırdan kısa da olsa kaydedilir.</p>
         <label class="option"><input type="checkbox" id="settings-record-waits"> <span>Beklemeleri kaydet</span></label>
         <label class="option">Alt sınır <input type="number" id="settings-min-wait" min="0" step="0.5"> saniye</label>
-        <p class="hint">Edge kaydedilirken her aksiyonun arkasına bu süre kadar bir bekleme otomatik eklenir ("otomatik eklendi"); edge hep bir beklemeyle biter. Aksiyonun arkasında kaydedilmiş bir bekleme varsa o kendi süresiyle kalır. Süre değişince yalnızca yeni kaydedilen edge'ler etkilenir.</p>
-        <label class="option">Aksiyon sonrası bekleme <input type="number" id="settings-auto-wait" min="0" max="60000" step="1"> ms</label>
+        <p class="hint">Edge kaydedilirken her aksiyonun arkasına bu süre kadar bir bekleme otomatik eklenir ("otomatik
+          eklendi"); edge hep bir beklemeyle biter. Aksiyonun arkasında kaydedilmiş bir bekleme varsa o kendi süresiyle
+          kalır. Süre değişince yalnızca yeni kaydedilen edge'ler etkilenir.</p>
+        <label class="option">Aksiyon sonrası bekleme <input type="number" id="settings-auto-wait" min="0" max="60000"
+            step="1"> ms</label>
       </fieldset>
       <fieldset>
         <legend>State'e dahil edilecek etkileşimli elementler</legend>
-        <p class="hint">İşaretli olmayan türdeki elementler state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut node'lar o anki seçime göre karşılaştırılır.</p>
+        <p class="hint">İşaretli olmayan türdeki elementler state'e girmez. "Node oluştur"da yeni sayfa ve tüm mevcut
+          node'lar o anki seçime göre karşılaştırılır.</p>
         <div id="settings-interactables" class="checklist"></div>
       </fieldset>
       <div class="toolbar">
@@ -340,11 +420,14 @@
       <div id="merge-options" class="merge-options"></div>
       <fieldset id="merge-keep" hidden>
         <legend>Hangi node kalsın?</legend>
-        <p class="hint">Kalan node kendi adını, ekran görüntüsünü ve parmak izini korur; diğerinin edge'leri ona bağlanır.</p>
+        <p class="hint">Kalan node kendi adını, ekran görüntüsünü ve parmak izini korur; diğerinin edge'leri ona
+          bağlanır.</p>
         <div id="merge-keep-options"></div>
       </fieldset>
       <ul id="merge-warnings" class="reasons"></ul>
-      <p class="hint">Ekranda görünmeyen bir fark varsa (ör. sepetteki ürün sayısı, giriş yapan kullanıcı) birleştirmeyin: test, birleşen node'dan geçerli olmayan bir yolu seçebilir. Birleştirme sonrası tekrar eden edge'lere dokunulmaz.</p>
+      <p class="hint">Ekranda görünmeyen bir fark varsa (ör. sepetteki ürün sayısı, giriş yapan kullanıcı)
+        birleştirmeyin: test, birleşen node'dan geçerli olmayan bir yolu seçebilir. Birleştirme sonrası tekrar eden
+        edge'lere dokunulmaz.</p>
       <div class="toolbar">
         <button id="btn-merge-confirm" class="primary" disabled>Birleştir</button>
         <button id="btn-merge-cancel">Vazgeç</button>
@@ -371,6 +454,8 @@
   <script src="compare.js"></script>
   <script src="replay.js"></script>
   <script src="panel.js"></script>
+  <!-- Ekrandaki elementler kartı: panel.js'ten sonra (onun $'ını kullanır). Bkz. docs/01-mimari.md -->
+  <script src="dom-tree.js"></script>
   <!-- Monitörler (run-time monitoring): panel.js ve replay.js'ten sonra yüklenir, kendi bölümlerini
        kendisi ekler, graph state'inden ayrı bir anahtarda ('monitors:<graph id>') saklanır ve oynatmada
        kontrol eder. Bkz. docs/07-monitorler.md -->
@@ -382,4 +467,5 @@
   <script src="monitor-image.js"></script>
   <script src="monitor-run.js"></script>
 </body>
+
 </html>

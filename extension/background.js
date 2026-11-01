@@ -265,7 +265,7 @@ function backupProblem(data) {
 // SENARYOLAR: graph'ın test yolları
 // -----------------------------------------------------------------------------
 // Senaryoyu panel kurar (elle yol, yükleme, planlayıcı), background graph'ın içinde saklar:
-// state.scenarios = [{ id, name, start, planner, runs, graph, created, updated }]. Alanlar senaryo
+// state.scenarios = [{ id, name, start, planner, runs, cleanup, graph, created, updated }]. Alanlar senaryo
 // dosyasıyla aynıdır (scenario.js). Yürünebilirlik burada denetlenmez: graph sonradan
 // değişebilir, panel yürünemeyen senaryoyu işaretler. Id'yi panel verir (çalışma kopyası
 // kayıttan önce de seçili olabilsin); ad graph içinde tekildir.
@@ -290,7 +290,8 @@ async function saveScenario(state, data) {
   const problem = scenarioProblem(data);
   if (problem) throw new Error(`Senaryo kaydedilemedi: ${problem}`);
   const name = data.name?.trim() ? uniqueScenarioName(state, data.name.trim(), scenario.id) : scenario.name;
-  Object.assign(scenario, { name, ...scenarioFields(data), updated: Date.now() });
+  // Temizlik seçimi gönderilmediyse (ör. listede başka senaryonun adı değişti) olduğu gibi kalır.
+  Object.assign(scenario, { name, ...scenarioFields({ cleanup: scenario.cleanup, ...data }), updated: Date.now() });
   if (data.copy || !scenario.graph) scenario.graph = snapshotOf(state, scenario, scenario.graph);
   await save(state);
   return { name, graph: scenario.graph };
@@ -307,8 +308,9 @@ function snapshotOf(state, scenario, previous = null) {
   return scenarioSnapshot({ start, nodes: state.nodes, edges: state.edges }, scenario.runs, previous);
 }
 
-function scenarioFields({ start = null, planner = null, runs }) {
-  return { start, planner: planner ?? { engine: 'manual' }, runs: runs.map((run) => [...run]) };
+// cleanup: oynatmadan önce silinecek site verileri (scenario.js > CLEANUP_TYPES; panel.js > TEMİZLİK).
+function scenarioFields({ start = null, planner = null, runs, cleanup = null }) {
+  return { start, planner: planner ?? { engine: 'manual' }, runs: runs.map((run) => [...run]), cleanup: normalizeCleanup(cleanup) };
 }
 
 function scenarioProblem(data) {
@@ -364,26 +366,26 @@ async function handle(message, sender) {
   }
   switch (message.type) {
     // content.js -> background
-    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message).then(() => monitorFor(state, sender.tab?.id));
-    case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen, message.viewport, sender.tab?.url).then(() => monitorFor(state, sender.tab?.id));
+    case 'ACTION': return addAction(state, sender.tab?.id, message.action, message).then(() => monitorFor(state, sender.tab?.id));
+    case 'SCREEN': return onScreen(state, sender.tab?.id, message.screen, message.viewport, sender.tab?.url).then(() => monitorFor(state, sender.tab?.id));
     // panel -> background
     case 'CREATE_NODE': return createNode(state, message.tabId, message.windowId);
-    case 'RESOLVE':     return resolvePending(state, message.targetId);
+    case 'RESOLVE': return resolvePending(state, message.targetId);
     case 'CANCEL_PENDING': return cancelPending(state);
     case 'RESOLVE_TAB': return inTabQueue(() => resolveTab(state, message.follow));
-    case 'RENAME':      return rename(state, message.id, message.name);
-    case 'DELETE':      return remove(state, message.id);
+    case 'RENAME': return rename(state, message.id, message.name);
+    case 'DELETE': return remove(state, message.id);
     case 'SET_CURRENT': return setCurrent(state, message.id, message.tabId);
-    case 'RESET':       return reset(state);
+    case 'RESET': return reset(state);
     case 'SET_SETTINGS': return setSettings(state, message.settings);
     case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
     case 'REMOVE_BUFFERED': return removeBuffered(state, message.index, message.time);
-    case 'SET_WAIT':    return setWait(state, message.edgeId, message.index, message.ms);
+    case 'SET_WAIT': return setWait(state, message.edgeId, message.index, message.ms);
     case 'SET_BUFFERED_WAIT': return setBufferedWait(state, message.index, message.time, message.ms);
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
-    case 'UNDO':        return undo(state);
-    case 'REPLAY':      return setReplay(state, message);
-    case 'NEW_GRAPH':   return newGraph(state);
+    case 'UNDO': return undo(state);
+    case 'REPLAY': return setReplay(state, message);
+    case 'NEW_GRAPH': return newGraph(state);
     case 'SWITCH_GRAPH': return switchGraph(state, message.id);
     case 'RENAME_GRAPH': return renameGraph(message.id, message.name);
     case 'DELETE_GRAPH': return deleteGraph(state, message.id);
@@ -392,6 +394,7 @@ async function handle(message, sender) {
     case 'SAVE_SCENARIO': return saveScenario(state, message.scenario);
     case 'DELETE_SCENARIO': return deleteScenario(state, message.id);
     case 'RECORD_NAVIGATE': return addAction(state, message.tabId, navigateAction(message.url, Date.now()));
+    case 'CLEAR_BUFFER': return clearBuffer(state);
   }
 }
 
@@ -451,7 +454,11 @@ async function setReplay(state, { active, endNodeId = null, tabId = null }) {
 // Önceki aksiyon kapandıysa kullanılmaz: yazmada bu ekran yazılanın sonrasıdır; aksiyonun
 // öncesi, son görülen state'tir.
 // replaces: bu aksiyonun yerini aldığı, aynı hareketten önceki aksiyonun zamanı. Çift/üçlü
-// tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp).
+// tıklamayla metin seçilince hareketin ilk tıklaması ya da kelime seçimi düşer (content.js > onMouseUp);
+// çoklu tıklama da hareketin önceki tıklamasının yerine geçer (content.js > onClick).
+// clickLabel: çoklu tıklamada tek tıklamanın etiketi. Çoklu tıklama kaydedilmiyorsa (Ayarlar)
+// aksiyon sıradan bir tıklama olarak eklenir, öncekinin yerine geçmez: N ayrı tıklama.
+// gestureScreen: çoklu tıklamada hareketin ilk tıklamasının öncesi (aksiyonun öncesi odur).
 // viewport: aksiyonun gönderildiği andaki sayfa boyutu (content.js gönderir; bkz. observeScreen).
 // typingSince: yazma aksiyonunda yazmaya başlanan an (bkz. waitBefore).
 async function addAction(state, tabId, action, options = {}) {
@@ -462,7 +469,14 @@ async function addAction(state, tabId, action, options = {}) {
 }
 
 // Aksiyonu buffer'a ekler (sekme kontrolünden sonra; sekme aksiyonlarını background kendisi ekler).
-function pushAction(state, settings, action, { screen = null, replaces = null, viewport = null, typingSince = null } = {}) {
+function pushAction(state, settings, action, { screen = null, replaces = null, viewport = null, typingSince = null, clickLabel = null, gestureScreen = null } = {}) {
+  if (action.type === 'multiclick' && !isActionEnabled(settings, 'multiclick')) {
+    const { count: _, ...click } = action;
+    action = { ...click, type: 'click', label: clickLabel ?? click.label };
+    replaces = null;
+  } else if (action.type === 'multiclick') {
+    screen = gestureScreen ?? screen; // öncesi: hareketin ilk tıklamasının öncesi
+  }
   if (viewport) state.viewport = viewport;
   noteTabUrl(state, action.url);
   if (replaces && state.buffer.at(-1)?.time === replaces) state.buffer.pop();
@@ -486,7 +500,12 @@ function pushAction(state, settings, action, { screen = null, replaces = null, v
   state.idleSince = null; // aksiyon yapıldı: boşluk, etkisi durulunca yeniden başlar
   return save(state);
 }
-
+//bufferı temizler
+function clearBuffer(state) {
+  if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
+  state.buffer = [];
+  return save(state);
+}
 // Sayfa durulunca gelen ekran: açık aksiyonu kapatır; açık aksiyon yoksa ekran aksiyonsuz
 // değişmiş olabilir (bkz. observeIdle).
 async function onScreen(state, tabId, screen, viewport, url) {
