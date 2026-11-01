@@ -331,7 +331,7 @@ function check(name, ok, detail = '') {
     await sleep(500);
     check('geri al: sahipsizlik kalktı, hale döndü', (await $('#monitors-orphans').isHidden()) && await panel.evaluate((id) => cy.getElementById(id).hasClass('monitored'), telefon.id));
 
-    // ---- Senaryo görünümü: salt okunur ----
+    // ---- Senaryo: "Yeni senaryo" kendi sekmesini açar, koşu orada kurulur; graph salt okunur ----
     await panel.evaluate(() => { document.getElementById('scenario').open = true; });
     await panel.click('#btn-scenario-new');
     await sleep(400);

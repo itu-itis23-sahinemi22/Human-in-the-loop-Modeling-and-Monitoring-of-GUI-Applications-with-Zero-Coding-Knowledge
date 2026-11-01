@@ -1,7 +1,9 @@
-// Senaryo graph'ları: kopyanın içeriği (koşuların geçtiği kısım, monitors, ekran görüntüsü yok),
-// sekme şeridi ve listeyle eşlik, senaryo görünümünde yalnızca kendi node / edge'leri, salt okunur
-// detay, "Ana graph'ta göster" ve "Kullanan senaryolar", senaryo görünümündeyken kaydın sürmesi,
-// ana graph değişince uyarı ve "Ana graph'tan yenile", indirilen dosyada graph.
+// Senaryo graph'ları: kopya ana graph'ın tamamıdır (monitors, ekran görüntüsü yok); "Yeni senaryo"
+// senaryonun sekmesini kendiliğinden açar ve koşu orada kurulur; sekme şeridi ve listeyle eşlik,
+// senaryo sekmesinde koşu düzenleme ve salt okunur detay, "Ana graph'ta göster" ve "Kullanan
+// senaryolar" (koşuların kullandığı kısım), senaryo görünümündeyken kaydın sürmesi ve sonradan
+// kaydedilenlerin notu, ana graph koşuların kullandığı kısımda değişince uyarı ve "Ana graph'tan
+// yenile", indirilen dosyada graph.
 // Kullanım: node tests/e2e/scenario-graphs.test.js [--headed]
 const http = require('http');
 const path = require('path');
@@ -63,7 +65,9 @@ function check(name, ok, detail = '') {
     const clickTab = (text) => panel.evaluate((t) => [...document.querySelectorAll('#view-tabs button')].find((b) => b.textContent.replace(' •', '') === t).click(), text);
     const drawn = () => panel.evaluate(() => ({ nodes: cy.nodes().map((n) => n.id()).sort(), edges: cy.edges().map((e) => e.id()).sort(), scenarioView: document.getElementById('graph').classList.contains('scenario-view') }));
     const activeRow = () => panel.evaluate(() => document.querySelector('#scenario-list li.active .name')?.textContent);
+    const storedRuns = async (i) => JSON.stringify((await getState()).scenarios[i].runs);
     const sorted = (xs) => [...xs].sort();
+    const ids = (graph) => JSON.stringify([sorted(graph.nodes.map((n) => n.id)), sorted(graph.edges.map((e) => e.id))]);
 
     // ---- Kayıt ----
     await createNode();
@@ -85,46 +89,61 @@ function check(name, ok, detail = '') {
     check('kayıt: 4 node, 5 edge', s.nodes.length === 4 && s.edges.length === 5);
     check('senaryo yokken sekme şeridi gizli', await panel.isHidden('#view-tabs'));
 
-    // ---- İki senaryo ----
+    // ---- Yeni senaryo: kendi sekmesi açılır, graph'ı ana graph'ın kopyası, koşu orada kurulur ----
     await panel.click('#scenario summary');
     await panel.click('#btn-scenario-new');
-    await sleep(300);
+    await sleep(500);
+    let t = await tabs();
+    let d = await drawn();
+    check('Yeni senaryo: "Senaryo 1" sekmesi kendiliğinden açıldı', t.map((x) => x.text).join('|') === 'Ana graph|Senaryo 1' && t[1].active && d.scenarioView, JSON.stringify(t));
+    check('yeni senaryonun graph\'ı ana graph\'ın tamamı (yalnızca başlangıç node\'u değil)', d.nodes.length === 4 && d.edges.length === 5, JSON.stringify(d));
+    check('koşu kurma: Elle seç, ipucu başlangıçtan çıkan edge, üç edge kesik çizgili', (await panel.inputValue('#scenario-strategy')) === 'manual'
+      && (await panel.textContent('#scenario-hint')).includes('"v_Ana" node\'undan çıkan') && await panel.evaluate(() => cy.edges('.run-next').length) === 3, await panel.textContent('#scenario-hint'));
     await tap(toA);
     await tap(backA);
     await sleep(500);
+    check('senaryo sekmesinde edge tıklaması koşuya ekledi', (await storedRuns(0)) === JSON.stringify([[toA, backA]]), await storedRuns(0));
     await panel.click('#btn-scenario-new');
-    await sleep(300);
+    await sleep(500);
     for (const id of [toC, backC]) await tap(id);
     await panel.click('#btn-scenario-new-run');
     await tap(toB);
     await sleep(600);
     s = await getState();
     const [s1, s2] = s.scenarios;
-    check('kopya: Senaryo 1 yalnızca Ana, A ve iki edge', JSON.stringify(sorted(s1.graph.nodes.map((n) => n.id))) === JSON.stringify(sorted([node('v_Ana'), node('v_A')])) && JSON.stringify(sorted(s1.graph.edges.map((e) => e.id))) === JSON.stringify(sorted([toA, backA])), JSON.stringify(s1.graph.edges.map((e) => e.name)));
-    check('kopya: Senaryo 2 Ana, C, B ve üç edge', s2.graph.nodes.length === 3 && s2.graph.edges.length === 3);
+    check('kopya: iki senaryonun graph\'ı da ana graph\'ın tamamı', ids(s1.graph) === ids(s) && ids(s2.graph) === ids(s), JSON.stringify(s1.graph.edges.map((e) => e.name)));
     check('kopya: her öğede monitors: [], ekran görüntüsü yok', [...s1.graph.nodes, ...s1.graph.edges].every((x) => Array.isArray(x.monitors) && !x.monitors.length && !('screenshot' in x)) && s1.graph.nodes[0].elements);
+    check('Senaryo 2\'nin koşuları', JSON.stringify(s2.runs) === JSON.stringify([[toC, backC], [toB]]), JSON.stringify(s2.runs));
 
     // ---- Sekmeler ----
-    let t = await tabs();
-    check('sekmeler: Ana graph, Senaryo 1, Senaryo 2', t.map((x) => x.text).join('|') === 'Ana graph|Senaryo 1|Senaryo 2' && t[0].active, JSON.stringify(t));
+    t = await tabs();
+    check('sekmeler: Ana graph, Senaryo 1, Senaryo 2; son açılan Senaryo 2', t.map((x) => x.text).join('|') === 'Ana graph|Senaryo 1|Senaryo 2' && t[2].active, JSON.stringify(t));
     await clickTab('Senaryo 1');
     await sleep(300);
-    let d = await drawn();
-    check('Senaryo 1 sekmesi: yalnızca kendi node ve edge\'leri, kesik çerçeve', d.scenarioView && d.nodes.length === 2 && JSON.stringify(d.edges) === JSON.stringify(sorted([toA, backA])), JSON.stringify(d));
+    d = await drawn();
+    check('Senaryo 1 sekmesi: ana graph\'ın kopyası, kesik çerçeve', d.scenarioView && d.nodes.length === 4 && d.edges.length === 5, JSON.stringify(d));
     check('sekme listede de seçti', (await activeRow()) === 'Senaryo 1');
-    check('görünüm notu', (await panel.textContent('#view-note-text')).includes('"Senaryo 1" senaryosunun graph\'ı: 2 node · 2 edge') && await panel.isHidden('#btn-view-refresh'));
+    check('görünüm notu', (await panel.textContent('#view-note-text')).includes('"Senaryo 1" senaryosunun graph\'ı: 4 node · 5 edge') && await panel.isHidden('#btn-view-refresh'));
+    check('önizleme: Senaryo 1\'in koşusu vurgulu, geri kalanı soluk', await panel.evaluate(([a, b]) => cy.getElementById(a).hasClass('run-edge') && cy.getElementById(b).hasClass('run-edge') && cy.edges('.run-edge').length === 2 && cy.elements('.faded').length > 0, [toA, backA]));
     await clickTab('Senaryo 2');
     await sleep(300);
     d = await drawn();
-    check('Senaryo 2 sekmesi: üç node, üç edge', d.nodes.length === 3 && d.edges.length === 3 && (await activeRow()) === 'Senaryo 2', JSON.stringify(d));
+    check('Senaryo 2 sekmesi: aynı graph, listede de seçili', d.nodes.length === 4 && d.edges.length === 5 && (await activeRow()) === 'Senaryo 2', JSON.stringify(d));
     await panel.evaluate(() => [...document.querySelectorAll('#scenario-list li')].find((li) => li.querySelector('.name').textContent === 'Senaryo 1').click());
     await sleep(300);
-    d = await drawn();
     t = await tabs();
-    check('senaryo görünümünde listeden seçmek görünümü geçirir', d.edges.length === 2 && t.find((x) => x.active)?.text === 'Senaryo 1', JSON.stringify(t));
+    check('senaryo görünümünde listeden seçmek görünümü geçirir', (await drawn()).scenarioView && t.find((x) => x.active)?.text === 'Senaryo 1', JSON.stringify(t));
 
-    // ---- Salt okunur: edge tıklaması koşuya eklemez, detay açar ----
-    const runsBefore = JSON.stringify((await getState()).scenarios[0].runs);
+    // ---- Senaryo sekmesinde koşu düzenlenir; graph salt okunur (detayda düzenleme yok) ----
+    await tap(toB); // Senaryo 1'in koşusu Ana'da bitiyor: Ana → B eklenir
+    await sleep(400);
+    check('senaryo sekmesinde Senaryo 1\'in koşusuna edge eklendi', (await storedRuns(0)) === JSON.stringify([[toA, backA, toB]]), await storedRuns(0));
+    await panel.click('#btn-scenario-undo');
+    await sleep(400);
+    check('geri al: koşu eski hâlinde', (await storedRuns(0)) === JSON.stringify([[toA, backA]]), await storedRuns(0));
+    await panel.click('#scenario summary'); // kart kapalıyken edge tıklaması koşuya eklemez, detayı açar
+    await sleep(200);
+    const runsBefore = await storedRuns(0);
     await tap(toA);
     await sleep(300);
     const details = await panel.evaluate(() => ({
@@ -132,11 +151,12 @@ function check(name, ok, detail = '') {
       save: document.getElementById('btn-save').hidden, del: document.getElementById('btn-delete').hidden, main: document.getElementById('btn-show-main').hidden,
       readOnly: document.getElementById('details-name').readOnly, editable: document.querySelectorAll('#details-actions .delete-action').length,
     }));
-    check('senaryo görünümünde edge: koşu değişmedi, salt okunur detay', JSON.stringify((await getState()).scenarios[0].runs) === runsBefore && !details.hidden && details.title.includes('"Senaryo 1" senaryosunda') && details.save && details.del && !details.main && details.readOnly && details.editable === 0, JSON.stringify(details));
-    check('ipucu: düzenlemek için Ana graph', (await panel.textContent('#scenario-hint')).includes('"Ana graph" sekmesine'));
+    check('kart kapalıyken edge: koşu değişmedi, salt okunur detay', (await storedRuns(0)) === runsBefore && !details.hidden && details.title.includes('"Senaryo 1" senaryosunda') && details.save && details.del && !details.main && details.readOnly && details.editable === 0, JSON.stringify(details));
     await tap(node('v_A'));
     await sleep(200);
     check('node detayı: ekran görüntüsü ana graph\'tan', await panel.evaluate(() => !document.getElementById('details-shot').hidden && document.getElementById('details-shot').src.startsWith('data:image')));
+    await panel.click('#scenario summary');
+    await sleep(200);
 
     // ---- Ana graph'ta göster ve Kullanan senaryolar ----
     await panel.click('#btn-show-main');
@@ -144,16 +164,16 @@ function check(name, ok, detail = '') {
     d = await drawn();
     const users = await panel.textContent('#details-scenarios');
     check('Ana graph\'ta göster: ana görünüm, aynı node seçili', !d.scenarioView && d.nodes.length === 4 && await panel.evaluate((id) => selectedId === id, node('v_A')), JSON.stringify(d));
-    check('kullanan senaryolar: Senaryo 1', users === 'Kullanan senaryolar: Senaryo 1', users);
+    check('kullanan senaryolar: koşusu A\'dan geçen Senaryo 1 (kopyasında A olan Senaryo 2 değil)', users === 'Kullanan senaryolar: Senaryo 1', users);
     await tap(node('v_Ana'));
     await sleep(200);
     check('başlangıç node\'unu iki senaryo kullanıyor', (await panel.textContent('#details-scenarios')) === 'Kullanan senaryolar: Senaryo 1, Senaryo 2');
     await panel.evaluate(() => [...document.querySelectorAll('#details-scenarios a')].find((a) => a.textContent === 'Senaryo 2').click());
     await sleep(300);
     d = await drawn();
-    check('bağlantı: Senaryo 2 görünümü, node seçili', d.scenarioView && d.nodes.length === 3 && (await tabs()).find((x) => x.active)?.text === 'Senaryo 2' && !(await panel.isHidden('#details')));
+    check('bağlantı: Senaryo 2 görünümü, node seçili', d.scenarioView && d.nodes.length === 4 && (await tabs()).find((x) => x.active)?.text === 'Senaryo 2' && !(await panel.isHidden('#details')));
 
-    // ---- Senaryo görünümündeyken kayıt sürer ----
+    // ---- Senaryo görünümündeyken kayıt sürer; sonradan kaydedilenler not edilir ----
     await page.goto(BASE + '/c');
     await sleep(500);
     await send({ type: 'SET_CURRENT', id: node('v_C'), tabId: T });
@@ -163,26 +183,29 @@ function check(name, ok, detail = '') {
     await createNode();
     s = await getState();
     d = await drawn();
-    check('kayıt sürdü: ana graph\'ta yeni node, senaryo görünümü değişmedi', s.nodes.length === 5 && s.nodes.some((n) => n.name === 'v_D') && d.nodes.length === 3 && d.scenarioView, `${s.nodes.length} node; çizilen ${d.nodes.length}`);
+    check('kayıt sürdü: ana graph\'ta yeni node, senaryo görünümü değişmedi', s.nodes.length === 5 && s.nodes.some((n) => n.name === 'v_D') && d.nodes.length === 4 && d.scenarioView, `${s.nodes.length} node; çizilen ${d.nodes.length}`);
+    await sleep(300);
+    const later = await panel.textContent('#view-drift');
+    check('sonradan kaydedilenler: not ve yenile butonu; sekmede değişiklik işareti yok', later.includes('Ana graph\'ta kopyada olmayan 1 node, 1 edge var') && !(await panel.isHidden('#btn-view-refresh')) && !(await tabs()).some((x) => x.text.endsWith('•')), later);
 
-    // ---- Ana graph değişti: uyarı, kopya aynı, yenile ----
+    // ---- Ana graph koşuların kullandığı kısımda değişti: uyarı, kopya aynı, yenile ----
     await send({ type: 'DELETE', id: backA });
     await send({ type: 'RENAME', id: node('v_A'), name: 'v_SayfaA' });
     await sleep(400);
     t = await tabs();
-    check('sekmede değişiklik işareti', t.find((x) => x.text.startsWith('Senaryo 1'))?.text === 'Senaryo 1 •' && t.find((x) => x.text.startsWith('Senaryo 2'))?.text === 'Senaryo 2', JSON.stringify(t));
+    check('sekmede değişiklik işareti yalnızca koşusu değişen öğeden geçen Senaryo 1\'de (Senaryo 2\'nin kopyasında da var, koşusu geçmiyor)', t.find((x) => x.text.startsWith('Senaryo 1'))?.text === 'Senaryo 1 •' && t.find((x) => x.text.startsWith('Senaryo 2'))?.text === 'Senaryo 2', JSON.stringify(t));
     await clickTab('Senaryo 1');
     await sleep(300);
     d = await drawn();
     const drift = await panel.textContent('#view-drift');
-    check('kopya aynen duruyor', d.edges.length === 2 && d.edges.includes(backA));
+    check('kopya aynen duruyor', d.edges.length === 5 && d.edges.includes(backA), JSON.stringify(d.edges));
     check('uyarı: silindi ve değişti, yenile butonu', drift.includes('silindi') && drift.includes('değişti') && !(await panel.isHidden('#btn-view-refresh')), drift);
     check('çizilen adı kopyadaki (v_A)', await panel.evaluate((id) => cy.getElementById(id).data('label'), node('v_A')) === 'v_A');
     await panel.click('#btn-view-refresh');
     await sleep(600);
     d = await drawn();
     s = await getState();
-    check('yenilendi: silinen edge kopyadan düştü, ad güncel', d.edges.length === 1 && s.scenarios[0].graph.nodes.some((n) => n.name === 'v_SayfaA') && await panel.isHidden('#btn-view-refresh'), JSON.stringify(d.edges));
+    check('yenilendi: silinen edge kopyadan düştü, sonradan kaydedilenler geldi, ad güncel', !d.edges.includes(backA) && d.nodes.length === 5 && d.edges.length === 5 && s.scenarios[0].graph.nodes.some((n) => n.name === 'v_SayfaA') && await panel.isHidden('#btn-view-refresh'), JSON.stringify(d));
     check('listede yürünemiyor', await panel.evaluate(() => [...document.querySelectorAll('#scenario-list li')].find((li) => li.querySelector('.name').textContent === 'Senaryo 1').querySelector('.warn') !== null));
     await send({ type: 'UNDO' }); // ad değişikliği geri alınmaz (geri al yalnızca silmeler); edge geri gelir
     await sleep(400);
@@ -190,7 +213,7 @@ function check(name, ok, detail = '') {
     check('silme geri alındı: kopyada eksik edge "eklendi" uyarısı', added.includes('eklendi') && !(await panel.isHidden('#btn-view-refresh')), added);
     await panel.click('#btn-view-refresh');
     await sleep(500);
-    check('yeniden yenilendi: iki edge', (await drawn()).edges.length === 2 && await panel.isHidden('#btn-view-refresh'));
+    check('yeniden yenilendi: altı edge', (await drawn()).edges.length === 6 && await panel.isHidden('#btn-view-refresh'));
 
     // ---- İndirilen senaryoda graph ----
     const download = panel.waitForEvent('download');
@@ -199,7 +222,7 @@ function check(name, ok, detail = '') {
     const saved = path.join(OUT, file.suggestedFilename());
     await file.saveAs(saved);
     const json = JSON.parse(fs.readFileSync(saved, 'utf8'));
-    check('indirilen dosyada graph', json.graph?.edges.length === 2 && json.graph.nodes.every((n) => Array.isArray(n.monitors)));
+    check('indirilen dosyada graph', json.graph?.edges.length === 6 && json.graph.nodes.every((n) => Array.isArray(n.monitors)));
 
     // ---- Graph değişince ana görünüme döner ----
     await send({ type: 'NEW_GRAPH' });

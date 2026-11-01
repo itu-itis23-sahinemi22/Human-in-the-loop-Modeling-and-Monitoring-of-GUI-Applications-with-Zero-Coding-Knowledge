@@ -242,7 +242,7 @@ function renderScopeState() {
   const names = { global: dialogScenarioId ? 'senaryonun tamamı' : 'tüm model', node: 'tek node', edge: 'tek edge' };
   const allowedNames = Object.keys(allowed).filter((k) => allowed[k]).map((k) => names[k]);
   const hint = [
-    dialogScenarioId ? `Senaryo monitörü: yalnızca "${dialogScenarioName()}" senaryosu oynatılırken kontrol edilir. Node ve edge listesi senaryonun graph'ındandır (koşuların geçtiği kopya).` : '',
+    dialogScenarioId ? `Senaryo monitörü: yalnızca "${dialogScenarioName()}" senaryosu oynatılırken kontrol edilir. Node ve edge listesi senaryonun graph'ındandır (ana graph'ın kopyası).` : '',
     allowedNames.length < 3 ? `Bu tür yalnızca ${allowedNames.join(' ya da ')} için tanımlanır.` : '',
     !graph.nodes.length ? (dialogScenarioId ? 'Senaryonun graph\'ında node yok; önce koşu ekleyin.' : 'Graph\'ta henüz node yok; node ya da edge monitörü için önce kayıt yapın.') : '',
     editingOrphan ? `Bu monitörün öğesi ${dialogScenarioId ? 'senaryonun graph\'ında' : 'artık'} yok (sahipsiz): listeden yeni bir node ya da edge seçin ya da ${dialogScenarioId ? 'senaryonun tamamına' : 'tüm modele'} alın.` : '',
