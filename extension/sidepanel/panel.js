@@ -699,6 +699,7 @@ document.addEventListener('keydown', (event) => {
 function renderBuffer() {
   $('buffer-count').textContent = state.buffer.length;
   const locked = Boolean(state.pending) || Boolean(replay);
+  $('btn-clear-waiting-actions').disabled = state.buffer.length === 0 || locked;
   $('buffer').replaceChildren(...state.buffer.map((action, i) => {
     const li = actionItem(action);
     addEffectBadge(li, action.changed === undefined ? 'waiting' : effectOf(action));
@@ -1068,6 +1069,13 @@ $('btn-delete').onclick = () => {
   send({ type: 'DELETE', id: selectedId });
   selectedId = null;
 };
+
+// bekleyen aksiyonları temizle
+$('btn-clear-waiting-actions').onclick = () => {
+  confirmDialog(`"Bekleyen aksiyonlar"daki ${state.buffer.length} aksiyon silinecek.`, 'Temizle',
+    () => send({ type: 'CLEAR_BUFFER' }));
+};
+
 
 // Yanlışlıkla silmeyi önlemek için iki adımlı onay: ilk tıklama sorar, 3 sn içinde ikincisi siler.
 let resetArmed = false;

@@ -366,26 +366,26 @@ async function handle(message, sender) {
   }
   switch (message.type) {
     // content.js -> background
-    case 'ACTION':      return addAction(state, sender.tab?.id, message.action, message).then(() => monitorFor(state, sender.tab?.id));
-    case 'SCREEN':      return onScreen(state, sender.tab?.id, message.screen, message.viewport, sender.tab?.url).then(() => monitorFor(state, sender.tab?.id));
+    case 'ACTION': return addAction(state, sender.tab?.id, message.action, message).then(() => monitorFor(state, sender.tab?.id));
+    case 'SCREEN': return onScreen(state, sender.tab?.id, message.screen, message.viewport, sender.tab?.url).then(() => monitorFor(state, sender.tab?.id));
     // panel -> background
     case 'CREATE_NODE': return createNode(state, message.tabId, message.windowId);
-    case 'RESOLVE':     return resolvePending(state, message.targetId);
+    case 'RESOLVE': return resolvePending(state, message.targetId);
     case 'CANCEL_PENDING': return cancelPending(state);
     case 'RESOLVE_TAB': return inTabQueue(() => resolveTab(state, message.follow));
-    case 'RENAME':      return rename(state, message.id, message.name);
-    case 'DELETE':      return remove(state, message.id);
+    case 'RENAME': return rename(state, message.id, message.name);
+    case 'DELETE': return remove(state, message.id);
     case 'SET_CURRENT': return setCurrent(state, message.id, message.tabId);
-    case 'RESET':       return reset(state);
+    case 'RESET': return reset(state);
     case 'SET_SETTINGS': return setSettings(state, message.settings);
     case 'REMOVE_ACTION': return removeAction(state, message.edgeId, message.index);
     case 'REMOVE_BUFFERED': return removeBuffered(state, message.index, message.time);
-    case 'SET_WAIT':    return setWait(state, message.edgeId, message.index, message.ms);
+    case 'SET_WAIT': return setWait(state, message.edgeId, message.index, message.ms);
     case 'SET_BUFFERED_WAIT': return setBufferedWait(state, message.index, message.time, message.ms);
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
-    case 'UNDO':        return undo(state);
-    case 'REPLAY':      return setReplay(state, message);
-    case 'NEW_GRAPH':   return newGraph(state);
+    case 'UNDO': return undo(state);
+    case 'REPLAY': return setReplay(state, message);
+    case 'NEW_GRAPH': return newGraph(state);
     case 'SWITCH_GRAPH': return switchGraph(state, message.id);
     case 'RENAME_GRAPH': return renameGraph(message.id, message.name);
     case 'DELETE_GRAPH': return deleteGraph(state, message.id);
@@ -394,6 +394,7 @@ async function handle(message, sender) {
     case 'SAVE_SCENARIO': return saveScenario(state, message.scenario);
     case 'DELETE_SCENARIO': return deleteScenario(state, message.id);
     case 'RECORD_NAVIGATE': return addAction(state, message.tabId, navigateAction(message.url, Date.now()));
+    case 'CLEAR_BUFFER': return clearBuffer(state);
   }
 }
 
@@ -499,7 +500,12 @@ function pushAction(state, settings, action, { screen = null, replaces = null, v
   state.idleSince = null; // aksiyon yapıldı: boşluk, etkisi durulunca yeniden başlar
   return save(state);
 }
-
+//bufferı temizler
+function clearBuffer(state) {
+  if (state.pending) throw new Error('Önce bekleyen "aynı node mu?" sorusunu cevaplayın.');
+  state.buffer = [];
+  return save(state);
+}
 // Sayfa durulunca gelen ekran: açık aksiyonu kapatır; açık aksiyon yoksa ekran aksiyonsuz
 // değişmiş olabilir (bkz. observeIdle).
 async function onScreen(state, tabId, screen, viewport, url) {
