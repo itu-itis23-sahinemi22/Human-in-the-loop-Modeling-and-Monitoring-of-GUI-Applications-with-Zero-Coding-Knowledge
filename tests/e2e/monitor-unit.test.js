@@ -1,8 +1,9 @@
 // Monitör yardımcılarının birim testi: tür kataloğu
 // (monitor-types.js: parametre doğrulama, ağır desen uyarısı, otomatik ad, özet cümlesi),
-// monitor-store.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme) ve görüntü eşleme
-// (monitor-image.js > findImage: yapay görüntüde parça arama). Geçti / kaldı kararını etkileyen mantık
-// burada hızlıca sınanır; arayüz ve oynatma uçtan uca testlerde.
+// monitor-store.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme), görüntü eşleme
+// (monitor-image.js > findImage: yapay görüntüde parça arama) ve hata yeri (monitor-locate.js: kutunun
+// görüntüdeki yeri). Geçti / kaldı kararını etkileyen mantık burada hızlıca sınanır; arayüz ve oynatma
+// uçtan uca testlerde.
 // Kullanım: node tests/e2e/monitor-unit.test.js
 const fs = require('fs');
 const path = require('path');
@@ -22,17 +23,20 @@ const pick = (name) => {
   if (!match) throw new Error(`monitor-store.js'te ${name} bulunamadı`);
   return match[0];
 };
-const constants = monitorsSource.match(/^const (MONITORS_KEY_PREFIX|MONITORS_FORMAT|MONITOR_ALARMS_KEY_PREFIX|MONITOR_ALARMS_FORMAT|MONITOR_ALARM_LIMIT) = [^\n]*$/gm).join('\n');
-const picked = ['emptyMonitors', 'normalizeMonitors', 'emptyAlarms', 'normalizeAlarms', 'actionTarget', 'waitAnchor', 'sameAnchor', 'waitsAfter', 'sameWait', 'monitorActionRef', 'normalizeActionRef', 'resolveMonitorAction', 'resolveWaitAction', 'actionText', 'waitSeconds', 'anchorText', 'actionRefText'].map(pick).join('\n');
+const constants = monitorsSource.match(/^const (MONITORS_KEY_PREFIX|MONITORS_FORMAT|MONITOR_ALARMS_KEY_PREFIX|MONITOR_ALARMS_FORMAT|MONITOR_ALARM_LIMIT|MONITOR_TARGET_LIMIT|MONITOR_REGION_TAG) = [^\n]*$/gm).join('\n');
+const picked = ['emptyMonitors', 'normalizeMonitors', 'emptyAlarms', 'normalizeAlarms', 'normalizeLocation', 'actionTarget', 'waitAnchor', 'sameAnchor', 'waitsAfter', 'sameWait', 'monitorActionRef', 'normalizeActionRef', 'resolveMonitorAction', 'resolveWaitAction', 'actionText', 'waitSeconds', 'anchorText', 'actionRefText'].map(pick).join('\n');
 // monitor-image.js: saf kısım DOM'suz yüklenir (panel kısmı fonksiyon tanımı olarak durur, çağrılmaz)
 const imageSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-image.js'), 'utf8');
+// monitor-locate.js: aynı şekilde (kutu hesabı saf; pencereyi dolduran kısım çağrılmaz)
+const locateSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-locate.js'), 'utf8');
 const ctx = { console };
 vm.createContext(ctx);
-vm.runInContext(`${typesSource}\n${constants}\n${picked}\n${imageSource}\n`
+vm.runInContext(`${typesSource}\n${constants}\n${picked}\n${imageSource}\n${locateSource}\n`
   + 'this.T = { monitorType, monitorParamProblem, monitorImageProblem, monitorPatternWarning, monitorAutoName, monitorSentence, monitorDefaults, MONITOR_TYPES };\n'
   + 'this.M = { normalizeMonitors, normalizeAlarms, normalizeActionRef, monitorActionRef, resolveMonitorAction, actionText, actionRefText };\n'
-  + 'this.I = { findImage, needleAnchors };', ctx);
-const { T, M, I } = ctx;
+  + 'this.I = { findImage, needleAnchors };\n'
+  + 'this.L = { normalizeLocation, faultBoxPlace, faultLabelSide, shownViewport, faultVisibilityText, faultTargetName, faultSummary, isRegionTarget, MONITOR_REGION_TAG };', ctx);
+const { T, M, I, L } = ctx;
 
 // ---- Katalog ----
 check('5 tür: inputValidation (aksiyon), expectedText / expectedImage / errorText / fontSize (state); görüntü panelde', T.MONITOR_TYPES.map((t) => `${t.id}:${t.when}${t.side ? ':' + t.side : ''}`).join(',') === 'inputValidation:action,expectedText:state,expectedImage:state:panel,errorText:state,fontSize:state', T.MONITOR_TYPES.map((t) => t.id).join(','));
@@ -125,6 +129,48 @@ const alarms = M.normalizeAlarms({ nextId: 7, items: [
 ] });
 check('normalizeAlarms: görüntü yalnızca data:image, kaynak replay/live, eksikler boş, monitörsüz kayıt atılır', alarms.nextId === 7 && alarms.items.length === 2 && alarms.items[0].source === 'live' && alarms.items[0].screenshot.startsWith('data:image/')
   && alarms.items[1].screenshot === null && alarms.items[1].source === 'replay' && alarms.items[1].at === 0 && alarms.items[1].where === '', JSON.stringify(alarms));
+
+// ---- Hata yeri: uyarıda saklanan bozulan element ve görüntüdeki kutusu ----
+const field = { tag: 'input#phone', text: 'Telefon', key: 'input:phone', path: ['form'], rect: { x: 100, y: 200, w: 300, h: 40 }, visible: { x: 100, y: 200, w: 300, h: 40 }, hidden: null, note: '' };
+const below = { tag: 'small', text: 'küçük yazı', key: null, path: [], rect: { x: 10, y: 3000, w: 80, h: 6 }, visible: null, hidden: 'below', note: '3 pt' };
+const located = L.normalizeLocation({ targets: [field, below], more: 2, viewport: { width: 1200, height: 800 } });
+check('normalizeLocation: hedefler, more ve viewport korunur', located.targets.length === 2 && located.targets[0].key === 'input:phone' && located.targets[0].rect.w === 300 && located.targets[1].visible === null
+  && located.targets[1].hidden === 'below' && located.more === 2 && located.viewport.width === 1200, JSON.stringify(located));
+check('normalizeLocation: eski uyarıda (targets yok) hepsi null / 0; boş liste boş kalır (bozulan yer element değil)', L.normalizeLocation({}).targets === null && L.normalizeLocation({}).viewport === null && L.normalizeLocation({ more: 3 }).more === 0
+  && Array.isArray(L.normalizeLocation({ targets: [] }).targets) && L.normalizeLocation({ targets: [] }).targets.length === 0 && L.normalizeLocation(null).targets === null);
+const messy = L.normalizeLocation({ targets: [{ tag: 'x'.repeat(500), text: 5, key: undefined, path: 'bozuk', rect: { x: 1, y: 'a', w: 2, h: 2 }, visible: { x: 0, y: 0, w: -1, h: 2 }, hidden: 'uydurma', note: null }, null, 'metin', ...Array(20).fill(field)], more: -4, viewport: { width: 0, height: 10 } });
+check('normalizeLocation: bozuk alanlar güvenli hale gelir (uzun metin kısalır, sayı olmayan kutu null, en fazla 10 hedef)', messy.targets.length === 10 && messy.targets[0].tag.length === 80 && messy.targets[0].text === '5' && messy.targets[0].key === null
+  && messy.targets[0].path.length === 0 && messy.targets[0].rect === null && messy.targets[0].visible === null && messy.targets[0].hidden === null && messy.targets[0].note === '' && messy.more === 0 && messy.viewport === null, JSON.stringify(messy.targets[0]));
+const withPlace = M.normalizeAlarms({ items: [{ id: 'a1', monitorId: 'm1', targets: [field], viewport: { width: 1200, height: 800 } }, { id: 'a2', monitorId: 'm1' }] });
+check('normalizeAlarms: hata yeri uyarıyla saklanır; eski uyarıda null', withPlace.items[0].targets[0].tag === 'input#phone' && withPlace.items[0].viewport.height === 800 && withPlace.items[0].more === 0 && withPlace.items[1].targets === null && withPlace.items[1].viewport === null);
+const place = L.faultBoxPlace(field, { width: 1200, height: 800 });
+check('faultBoxPlace: kutu görüntünün yüzdesi olarak (merkez + boyut)', place.cx === 20.833 && place.cy === 27.5 && place.w === 25 && place.h === 5, JSON.stringify(place));
+check('faultBoxPlace: ölçek (yakınlaştırma / piksel oranı) sonucu değiştirmez', JSON.stringify(L.faultBoxPlace({ visible: { x: 150, y: 300, w: 450, h: 60 } }, { width: 1800, height: 1200 })) === JSON.stringify(place));
+check('faultBoxPlace: görünmeyen hedefte ya da alan bilinmiyorsa null; taşan kutu görüntüye kırpılır', L.faultBoxPlace(below, { width: 1200, height: 800 }) === null && L.faultBoxPlace(field, null) === null && L.faultBoxPlace(field, { width: 0, height: 800 }) === null
+  && L.faultBoxPlace({ visible: { x: 1100, y: 700, w: 300, h: 300 } }, { width: 1200, height: 800 }).w === 8.333 && L.faultBoxPlace({ visible: { x: 1300, y: 0, w: 10, h: 10 } }, { width: 1200, height: 800 }) === null);
+check('faultLabelSide: etiket üstte; en üstteki kutuda altta, boydan boya kutuda içinde, sağ yarıda başlayan kutuda sağdan hizalı', L.faultLabelSide(place) === '' && L.faultLabelSide({ cx: 30, cy: 5, w: 20, h: 6 }) === 'low'
+  && L.faultLabelSide({ cx: 50, cy: 50, w: 90, h: 96 }) === 'inside' && L.faultLabelSide({ cx: 80, cy: 50, w: 20, h: 10 }) === 'end' && L.faultLabelSide({ cx: 80, cy: 4, w: 20, h: 6 }) === 'low end' && L.faultLabelSide({ cx: 60, cy: 50, w: 40, h: 10 }) === '');
+check('faultVisibilityText: tamamı görünüyorsa boş; kısmen görünen ve görünmeyen nedeniyle; görüntü daha kısaysa "dışında"', L.faultVisibilityText(field) === '' && L.faultVisibilityText({ ...field, visible: { x: 100, y: 200, w: 300, h: 10 } }) === 'yalnızca bir kısmı görünüyor'
+  && L.faultVisibilityText(below).includes('altında') && L.faultVisibilityText({ ...below, hidden: 'clipped' }).includes('taşanı gizleyen') && L.faultVisibilityText({ ...below, hidden: null }) === 'ekran görüntüsünde yok'
+  && L.faultVisibilityText(field, { width: 1200, height: 800 }) === '' && L.faultVisibilityText(field, { width: 1200, height: 150 }) === 'ekran görüntüsünün dışında kalıyor');
+// Görüntünün gösterdiği alan: sayfanın ölçtüğü alan (CSS pikseli + piksel oranı) ve alınan görüntü (piksel)
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+check('shownViewport: görüntü ölçülen alanın tamamıysa alan aynen kalır (piksel oranı 1, 2 ve 1,5: retina, yakınlaştırma)', same(L.shownViewport({ width: 1200, height: 761, ratio: 1 }, { width: 1200, height: 761 }), { width: 1200, height: 761 })
+  && same(L.shownViewport({ width: 1200, height: 761, ratio: 2 }, { width: 2400, height: 1522 }), { width: 1200, height: 761 }) && same(L.shownViewport({ width: 800, height: 506, ratio: 1.5 }, { width: 1200, height: 759 }), { width: 800, height: 506 }));
+// Oynatma kayıttaki pencereyi taklit eder; görüntü sayfanın yalnızca gerçekten görünen kısmıdır (deney: tests/README > monitor-locate)
+const shorter = L.shownViewport({ width: 1200, height: 761, ratio: 1 }, { width: 1200, height: 708 }); // üstte "hata ayıklama" çubuğu: 53 px kısa
+check('shownViewport: görüntü ölçülenden kısaysa alan görüntünün gösterdiği kadardır; kutu yine elementin üstünde, görüntünün altında kalan çizilmez', same(shorter, { width: 1200, height: 708 })
+  && L.faultBoxPlace(field, shorter).cy === Math.round((220 / 708) * 100000) / 1000 && L.faultBoxPlace(field, shorter).cx === place.cx && L.faultBoxPlace({ visible: { x: 0, y: 720, w: 50, h: 20 } }, shorter) === null);
+const narrower = L.shownViewport({ width: 1400, height: 761, ratio: 2 }, { width: 2400, height: 1416 }); // taklit pencereden geniş, retina
+const wider = L.shownViewport({ width: 900, height: 508, ratio: 1 }, { width: 1200, height: 708 });      // taklit pencereden küçük
+check('shownViewport: görüntü ölçülenden dar ya da geniş de olabilir; ölçek (ratio) aynı kaldığı için kutu yerinde', same(narrower, { width: 1200, height: 708 }) && same(wider, { width: 1200, height: 708 })
+  && L.faultBoxPlace(field, narrower).cx === place.cx && L.faultBoxPlace(field, wider).w === 25 && L.faultBoxPlace({ visible: { x: 1250, y: 10, w: 100, h: 20 } }, narrower) === null);
+check('shownViewport: görüntü ya da ölçüm yoksa null; oransız alan (görüntüde ölçülmüş: görüntü monitörü) aynen', L.shownViewport({ width: 1200, height: 761, ratio: 1 }, null) === null && L.shownViewport(null, { width: 1200, height: 761 }) === null
+  && L.shownViewport({ width: 0, height: 761, ratio: 1 }, { width: 1200, height: 761 }) === null && L.shownViewport({ width: 1200, height: 761, ratio: 1 }, { width: 0, height: 0 }) === null && same(L.shownViewport({ width: 640, height: 480 }, null), { width: 640, height: 480 }));
+check('faultTargetName / faultSummary: tek element adıyla, çoğu sayıyla; element yoksa boş', L.faultTargetName(field) === 'input#phone "Telefon"' && L.faultTargetName({ tag: 'h1', text: '' }) === 'h1'
+  && L.faultSummary({ targets: [field] }) === 'input#phone "Telefon"' && L.faultSummary({ targets: [field, below], more: 3 }) === '5 element: input#phone "Telefon", small "küçük yazı", …'
+  && L.faultSummary({ targets: [field, below] }) === '2 element: input#phone "Telefon", small "küçük yazı"' && L.faultSummary({ targets: [] }) === '' && L.faultSummary({ targets: null }) === '' && L.faultSummary(null) === '');
+check('isRegionTarget: görüntü monitörünün bölgesi element değildir', L.isRegionTarget({ tag: L.MONITOR_REGION_TAG }) && !L.isRegionTarget(field));
 
 // ---- Expected Text / Expected Image: parametre doğrulama, ad, özet ----
 const et = T.monitorType('expectedText');
