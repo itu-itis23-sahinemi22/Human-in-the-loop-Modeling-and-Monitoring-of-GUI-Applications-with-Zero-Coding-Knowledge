@@ -289,19 +289,9 @@ dialog.monitor-crop { width: min(96vw, 900px); margin-top: 12px; } /* üstten sa
 .monitor .verdict { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .monitor .verdict[hidden] { display: none; }
 .monitor .verdict .led { width: 9px; height: 9px; }
-/* Uyarılar: son uyarının görüntüsü (son kontrol kırmızıysa) + "Uyarılar (n)" */
+/* Uyarılar: son uyarının görüntüsü (son kontrol kırmızıysa; küçük resim: .shot-figure.thumb, aşağıda) + "Uyarılar (n)" */
 .monitor .alarms { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .monitor .alarms[hidden] { display: none; }
-.monitor .alarms .shot, .alarm-list .shot {
-  width: 56px;
-  height: 40px;
-  object-fit: cover;
-  object-position: top;
-  border: 1px solid var(--danger);
-  border-radius: 4px;
-  cursor: zoom-in;
-  background: var(--card);
-}
 .alarm-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
 .alarm-list .alarm { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 8px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 6px; background: var(--bg); }
 .alarm-list .alarm:has(> .alarm-body:only-child) { grid-template-columns: 1fr; }
@@ -343,18 +333,100 @@ dialog.monitor-crop { width: min(96vw, 900px); margin-top: 12px; } /* üstten sa
 .trail i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border); background: transparent; }
 .trail i.ok { background: var(--ok); border-color: var(--ok); }
 .trail i.fail { background: var(--danger); border-color: var(--danger); cursor: pointer; }
-.trail i:focus-visible, .shot:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.led-row .shot {
-  width: 56px;
-  height: 40px;
-  object-fit: cover;
-  object-position: top;
+.trail i:focus-visible, .shot-figure:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ---- Hata yeri: ekran görüntüsünde bozulan element (monitor-locate.js) ------------------- */
+/* Yapı: .shot-figure > .shot-canvas > img.shot + .fault-box. Kap (canvas) görüntüyle aynı boydadır;
+   kutular onun yüzdesiyle yerleşir. --ar: görüntünün en-boy oranı (monitor-locate.js yazar). */
+.shot-figure { --ar: 1.6; position: relative; display: inline-block; vertical-align: top; line-height: 0; }
+.shot-figure[hidden] { display: none; }
+.shot-figure .shot-canvas { position: relative; display: block; width: 100%; height: 100%; }
+.shot-figure .shot-canvas > .shot { display: block; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; object-fit: fill; border: 0; border-radius: 0; background: none; cursor: inherit; }
+/* Küçük resim: eskisi gibi kenarlığıyla 56×40, üstten ve ortadan kırpılı (object-fit: cover; object-position: top);
+   kutular da görüntüyle birlikte kırpılsın diye kırpmayı kap yapar. --thumb-*: kenarlığın içindeki alan */
+.shot-figure.thumb {
+  --thumb-w: 54px;
+  --thumb-h: 38px;
+  box-sizing: content-box;
+  flex: none;
+  width: var(--thumb-w);
+  height: var(--thumb-h);
+  overflow: hidden;
   border: 1px solid var(--danger);
   border-radius: 4px;
-  cursor: zoom-in;
   background: var(--card);
+  cursor: zoom-in;
 }
-dialog.monitor-shot img { display: block; max-width: 100%; max-height: 70vh; margin: 6px auto 0; border: 1px solid var(--border); border-radius: 6px; }
+.shot-figure.thumb .shot-canvas { position: absolute; top: 0; left: 50%; width: max(var(--thumb-w), calc(var(--thumb-h) * var(--ar))); height: auto; aspect-ratio: var(--ar); transform: translateX(-50%); }
+/* Büyük görüntü: pencereye sığar (en fazla kendi boyu, yüksekliği en fazla 60vh: altındaki liste de görünsün),
+   oranı korunur. Kap, etiketlerin genişliği için ölçü birimidir (cqw) */
+.shot-stage { margin-top: 6px; text-align: center; }
+.shot-figure.large { width: min(100%, calc(60vh * var(--ar)), var(--nw, 100%)); aspect-ratio: var(--ar); overflow: hidden; border: 1px solid var(--border); border-radius: 6px; }
+.shot-figure.large .shot-canvas { container-type: inline-size; }
+/* Yakından bakma (monitor-locate.js > zoomTo): kap büyür, pencere kaydırılır; kutular yüzdeyle yerleştiği için yerinde kalır */
+.shot-figure.large.zoomed { overflow: auto; cursor: zoom-out; }
+.shot-figure.large.zoomed .shot-canvas { height: auto; aspect-ratio: var(--ar); }
+.shot-figure.large .fault-box, .fault-item:not(.unmarked) { cursor: zoom-in; }
+.shot-figure.large.zoomed .fault-box, .fault-item.zoomed { cursor: zoom-out; }
+/* Kutu: sayfadaki çerçeveyle (dom-tree.js) aynı görünüm, kırmızı. İçi tam elementin alanıdır, kenarlık
+   dışında kalır; beyaz ince çizgi kırmızı zeminde de (hata kutuları) seçilsin diye */
+.fault-box {
+  position: absolute;
+  box-sizing: content-box;
+  min-width: 3px;
+  min-height: 3px;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--danger);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+  transition: opacity 0.12s;
+}
+.shot-figure.thumb .fault-box { border-width: 1px; border-radius: 2px; background: color-mix(in srgb, var(--danger) 35%, transparent); pointer-events: none; }
+.shot-figure.no-marks .fault-box { display: none; }
+.shot-figure.focused .fault-box:not(.active) { opacity: 0.3; }
+.fault-box.active { z-index: 1; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 5px color-mix(in srgb, var(--danger) 35%, transparent); }
+/* Etiket kutunun üstünde; görüntünün en üstündeki kutuda altında (low), görüntüyü boydan boya kaplayan kutuda
+   içinde (inside), sağ yarıda başlayan kutuda sağa yaslı (end). En fazla görüntünün yarısı kadar geniş: hep sığar */
+.fault-label {
+  position: absolute;
+  left: -2px;
+  bottom: 100%;
+  max-width: calc(50cqw - 4px);
+  margin-bottom: 3px;
+  padding: 1px 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #1e293b;
+  color: #fff;
+  font: 11px/1.4 system-ui, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fault-box.low .fault-label { top: 100%; bottom: auto; margin: 3px 0 0; }
+.fault-box.inside .fault-label { top: 2px; bottom: auto; left: 2px; margin: 0; }
+.fault-box.end .fault-label { left: auto; right: -2px; }
+.fault-box.inside.end .fault-label { right: 2px; }
+/* Bozulan elementlerin listesi: satır biçimi "Ekrandaki elementler" kartıyla aynı (dom-tree.css > .dom-row) */
+.fault-targets { margin-top: 8px; }
+.fault-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.fault-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.fault-toggle[hidden] { display: none; }
+.fault-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; max-height: 24vh; overflow: auto; }
+.fault-item { display: flex; align-items: baseline; gap: 6px; padding: 3px 6px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 6px; background: var(--bg); }
+.fault-item.unmarked { border-left-color: var(--border); }
+.fault-item.active, .fault-item.zoomed, .fault-item:focus-visible { outline: 2px solid var(--danger); outline-offset: -1px; }
+.fault-index { flex: none; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
+.fault-index[hidden] { display: none; }
+.fault-desc { min-width: 0; flex: 1; }
+.fault-desc .dom-row { padding: 0; white-space: normal; flex-wrap: wrap; }
+.fault-desc .dom-row::before { content: none; }
+.fault-desc .dom-row:hover { background: none; }
+.fault-desc .dom-text { overflow: visible; word-break: break-word; }
+.fault-desc small { display: block; color: var(--muted); font-size: 11px; word-break: break-word; }
+.fault-desc small[hidden] { display: none; }
+.alarm-list .alarm-body .what { color: var(--text); }
+.alarm-list .alarm-body .what[hidden] { display: none; }
 
 /* ---- Graph'ta sağ tık menüsü (monitors.js) --------------------------------------------- */
 .context-menu[hidden] { display: none; }
