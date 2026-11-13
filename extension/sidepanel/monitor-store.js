@@ -9,9 +9,10 @@
 //                 monitör edge'in SEÇİLEN aksiyonuna bağlanabilir (m.action: o aksiyondan hemen
 //                 sonra kontrol) ya da edge'in tamamına (action = null: her aksiyondan sonra).
 //
-// Monitör modülü yedi dosyadır (panel.html'de bu sırayla, panel.js'ten SONRA yüklenir):
+// Monitör modülü sekiz dosyadır (panel.html'de bu sırayla, panel.js'ten SONRA yüklenir):
 //   monitor-types.js   tür kataloğu (parametreler, doğrulama, ad ve özet cümlesi)
 //   monitor-store.js   BU DOSYA: veri — storage, normalize, uyarılar, kapsam ve aksiyon yardımcıları
+//   monitor-locate.js  hata yeri: bozulan elementin uyarının ekran görüntüsünde işaretlenmesi
 //   monitor-list.js    Monitörler bölümü, detay alt bölümü, sağ tık menüsü, hale, uyarı pencereleri
 //   monitor-dialog.js  ekle / düzenle formu
 //   monitor-export.js  GraphWalker JSON'una yazma, "Yükle…", graph yedeği
@@ -43,6 +44,8 @@ const MONITORS_FORMAT = 'graph-recorder-monitors/v1';
 const MONITOR_ALARMS_KEY_PREFIX = 'monitor-alarms:'; // chrome.storage.local > monitor-alarms:<graph id> (bkz. UYARILAR)
 const MONITOR_ALARMS_FORMAT = 'graph-recorder-monitor-alarms/v1';
 const MONITOR_ALARM_LIMIT = 20;                     // graph başına saklanan son uyarı sayısı (her biri ekran görüntülü)
+const MONITOR_TARGET_LIMIT = 10;                    // bir uyarıda saklanan en fazla bozulan element (bkz. UYARILAR > hata yeri)
+const MONITOR_REGION_TAG = 'ekran bölgesi';         // bozulan yer bir element değil, görüntüdeki bir bölge (görüntü monitörü)
 const SCENARIO_MONITORS_KEY_PREFIX = 'scenario-monitors:'; // chrome.storage.local > scenario-monitors:<graph id> (bkz. SENARYOYA ÖZEL MONİTÖRLER)
 const SCENARIO_MONITORS_FORMAT = 'graph-recorder-scenario-monitors/v1';
 
@@ -102,9 +105,18 @@ async function saveMonitors() {
 // çoktan değişmiş olur (Login'e basılmış, ürün sayfası açılmış). Bu yüzden görüntü adımın sonunda
 // değil, bozulma anında alınır ve uyarıda saklanır. Graph'ın node görüntüleriyle ilgisi yoktur.
 //   uyarı: { id, monitorId, at, source: 'replay' | 'live', where, text, url, screenshot,
-//            step: { index, edgeId, target } | null, action: { index, count, label } | null }
+//            step: { index, edgeId, target } | null, action: { index, count, label } | null,
+//            targets, more, viewport }
 //   where: "Adım 1 (e_Login → v_Inventory) · aksiyon 1/3: Fill Username" gibi, uyarı anında
 //          hesaplanmış metin (graph sonradan değişse de okunur kalsın).
+// Hata yeri: uyarı, bozulan elementi de saklar; görüntü "hangi ekranda"yı, element "ekranın neresinde"yi söyler.
+//   targets: [{ tag, text, key, path, rect, visible, hidden, note }] bozulma anında sayfada ölçülür
+//     (monitor-probe.js > HATA YERİ; görüntü monitöründe bulunan bölge: monitor-image.js). [] : bozulan yer bir
+//     element değil (beklenen şey ekranda yok). null: bilinmiyor (bu bilgi saklanmadan önceki uyarılar).
+//   more: listeye sığmayan parça sayısı. viewport: { width, height } ekran görüntüsünün gösterdiği alan, kutularla
+//     aynı birimde; kutular ona oranlanarak görüntünün üstüne çizilir (monitor-locate.js). null: bilinmiyor
+//     (görüntü yok; kutu çizilmez). Görüntünün kendisine çerçeve gömülmez: kanıt olduğu gibi kalır, işaret
+//     açılıp kapatılabilir.
 // Graph başına son MONITOR_ALARM_LIMIT uyarı kalır (eskisi silinir); silinmiş monitörlerin
 // uyarıları bir sonraki yazımda atılır. Graph silinince anahtar da silinir.
 
@@ -133,8 +145,30 @@ function normalizeAlarms(raw) {
       screenshot: typeof a.screenshot === 'string' && a.screenshot.startsWith('data:image/') ? a.screenshot : null,
       step: a.step && typeof a.step === 'object' ? a.step : null,
       action: a.action && typeof a.action === 'object' ? a.action : null,
+      ...normalizeLocation(a),
     })),
   };
+}
+
+// Uyarının hata yeri alanları ({ targets, more, viewport }); biçimi bozuk kayıt "bilinmiyor"a (null) düşer.
+// Sayılar sonlu, metinler kısa tutulur: liste sayfadan gelir ve her uyarıyla saklanır.
+function normalizeLocation(raw) {
+  const box = (b) => (b && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w >= 0 && b.h >= 0 ? { x: b.x, y: b.y, w: b.w, h: b.h } : null);
+  const text = (value, max = 80) => String(value ?? '').slice(0, max);
+  const hidden = new Set(['above', 'below', 'left', 'right', 'clipped', 'unrendered']);
+  const targets = Array.isArray(raw?.targets) ? raw.targets.filter((t) => t && typeof t === 'object').slice(0, MONITOR_TARGET_LIMIT).map((t) => ({
+    tag: text(t.tag),
+    text: text(t.text),
+    key: t.key == null ? null : text(t.key, 120),
+    path: Array.isArray(t.path) ? t.path.slice(-8).map((label) => text(label)) : [],
+    rect: box(t.rect),
+    visible: box(t.visible),
+    hidden: hidden.has(t.hidden) ? t.hidden : null,
+    note: text(t.note),
+  })) : null;
+  const viewport = raw?.viewport && raw.viewport.width > 0 && raw.viewport.height > 0 && Number.isFinite(raw.viewport.width + raw.viewport.height)
+    ? { width: raw.viewport.width, height: raw.viewport.height } : null;
+  return { targets, more: targets && Number.isInteger(raw.more) && raw.more > 0 ? raw.more : 0, viewport: targets?.length ? viewport : null };
 }
 
 async function loadMonitorAlarms(graphId) {
@@ -156,8 +190,8 @@ async function saveMonitorAlarms() {
 // taşır; yazım başına bütün liste yazılır). Döner: kaydedilen uyarılar (id'leriyle). Graph yoksa
 // kaydedilmez, yine de uyarı nesneleri döner.
 async function addMonitorAlarms(list) {
-  const alarms = list.map(({ monitorId, source = 'replay', where = '', text = '', url = '', screenshot = null, step = null, action = null }) => ({
-    id: 'a' + monitorAlarms.nextId++, monitorId, at: Date.now(), source, where, text, url, screenshot, step, action,
+  const alarms = list.map(({ monitorId, source = 'replay', where = '', text = '', url = '', screenshot = null, step = null, action = null, ...location }) => ({
+    id: 'a' + monitorAlarms.nextId++, monitorId, at: Date.now(), source, where, text, url, screenshot, step, action, ...normalizeLocation(location),
   }));
   if (!alarms.length) return alarms;
   const alive = new Set([...monitors.items, ...allScenarioMonitors()].map((m) => m.id));

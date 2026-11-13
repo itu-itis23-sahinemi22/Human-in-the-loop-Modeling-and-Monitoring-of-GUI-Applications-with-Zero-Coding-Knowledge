@@ -63,12 +63,11 @@ function alarmTime(alarm) {
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// "Bozulduğu andaki ekran" penceresi: başlık altındaki metin + görüntü. alarmLike: { where, text, screenshot }.
+// "Bozulduğu andaki ekran" penceresi: başlık altındaki metin + görüntü (bozulan element işaretli) + bozulan
+// elementlerin listesi (monitor-locate.js). alarmLike: { where, text, screenshot, targets, more, viewport }.
 function openMonitorShot(m, alarmLike) {
   $('monitor-shot-text').textContent = `${monitorName(m)} · ${alarmLike.where}${alarmLike.where && alarmLike.text ? ': ' : ''}${alarmLike.text ?? ''}`;
-  $('monitor-shot-image').src = alarmLike.screenshot ?? '';
-  $('monitor-shot-image').hidden = !alarmLike.screenshot;
-  $('monitor-shot-noimage').hidden = Boolean(alarmLike.screenshot);
+  renderShotLocation(m, alarmLike);
   $('monitor-shot-dialog').showModal();
 }
 
@@ -84,17 +83,19 @@ function openMonitorAlarms(m) {
   const list = alarmsOf(m.id);
   $('monitor-alarms-title').textContent = `Uyarılar · ${monitorName(m)}`;
   $('monitor-alarms-hint').textContent = list.length
-    ? `${list.length} uyarı (en yenisi üstte; graph başına son ${MONITOR_ALARM_LIMIT} uyarı saklanır). Her uyarı, monitörün bozulduğu anda alınan ekran görüntüsüyle.`
+    ? `${list.length} uyarı (en yenisi üstte; graph başına son ${MONITOR_ALARM_LIMIT} uyarı saklanır). Her uyarı, monitörün bozulduğu anda alınan ekran görüntüsüyle; bozulan element görüntüde işaretlidir.`
     : 'Bu monitör henüz uyarı vermedi.';
   $('monitor-alarms-list').replaceChildren(...list.map((a) => {
     const li = document.createElement('li');
     li.className = 'alarm';
-    li.innerHTML = '<img class="shot" alt="Bozulduğu andaki ekran"><div class="alarm-body"><b></b><small class="when"></small><small class="why"></small></div>';
-    const img = li.querySelector('img');
-    if (a.screenshot) { img.src = a.screenshot; img.title = 'Büyütmek için tıklayın'; activatable(img, () => openMonitorShot(m, a), `Bozulduğu andaki ekranı büyüt (${a.where})`); } else img.remove();
+    li.innerHTML = '<div class="alarm-body"><b></b><small class="when"></small><small class="why"></small><small class="what"></small></div>';
+    if (a.screenshot) li.prepend(shotThumb(a, () => openMonitorShot(m, a), `Bozulduğu andaki ekranı büyüt (${a.where})`, 'Büyütmek için tıklayın')); // monitor-locate.js
     li.querySelector('b').textContent = a.where || (a.source === 'live' ? 'Şimdi kontrol' : 'Oynatma');
     li.querySelector('.when').textContent = alarmTime(a) + (a.url ? ` · ${a.url}` : '');
     li.querySelector('.why').textContent = a.text;
+    const what = faultSummary(a); // bozulan element(ler)
+    li.querySelector('.what').textContent = what ? `Bozulan: ${what}` : '';
+    li.querySelector('.what').hidden = !what;
     return li;
   }));
   disarmAlarmsClear();
@@ -192,8 +193,8 @@ const DETAILS_MONITORS_HTML = `
   menu.hidden = true;
   document.body.append(menu);
 
-  // "Bozulduğu andaki ekran": bir uyarının ekran görüntüsü (Monitörler listesi, uyarı listesi ve
-  // oynatma kartındaki ışık listesi açar)
+  // "Bozulduğu andaki ekran": bir uyarının ekran görüntüsü, bozulan element işaretli (Monitörler listesi,
+  // uyarı listesi ve oynatma kartındaki ışık listesi açar; gövdesi monitor-locate.js)
   const shot = document.createElement('dialog');
   shot.id = 'monitor-shot-dialog';
   shot.className = 'compare monitor-shot';
@@ -205,8 +206,7 @@ const DETAILS_MONITORS_HTML = `
         <button id="btn-monitor-shot-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
       </div>
       <p id="monitor-shot-text" class="small"></p>
-      <img id="monitor-shot-image" alt="Monitörün bozulduğu andaki ekran görüntüsü">
-      <p id="monitor-shot-noimage" class="hint" hidden>Bu uyarı için ekran görüntüsü alınamadı.</p>
+      ${MONITOR_SHOT_BODY_HTML}
     </div>`;
   document.body.append(shot);
   $('btn-monitor-shot-close').onclick = () => shot.close();
@@ -401,18 +401,12 @@ function monitorItem(m, { readOnly = false, tag = false } = {}) {
     row.hidden = false;
     const latest = alarms[0];
     if (verdict?.status === 'fail' && latest.screenshot) {
-      const img = document.createElement('img');
-      img.className = 'shot';
-      img.src = latest.screenshot;
-      img.alt = 'Bozulduğu andaki ekran';
-      img.title = `Bozulduğu andaki ekran (${latest.where}): büyütmek için tıklayın`;
-      activatable(img, () => openMonitorShot(m, latest), `Bozulduğu andaki ekranı büyüt (${latest.where})`);
-      row.append(img);
+      row.append(shotThumb(latest, () => openMonitorShot(m, latest), `Bozulduğu andaki ekranı büyüt (${latest.where})`, `Bozulduğu andaki ekran (${latest.where}): büyütmek için tıklayın`)); // monitor-locate.js
     }
     const button = document.createElement('button');
     button.className = 'small-btn alarms-open';
     button.textContent = `Uyarılar (${alarms.length})`;
-    button.title = 'Bu monitörün uyarıları: zaman, yer, neden ve bozulduğu andaki ekran görüntüsü';
+    button.title = 'Bu monitörün uyarıları: zaman, yer, neden, bozulan element ve bozulduğu andaki ekran görüntüsü';
     button.onclick = () => openMonitorAlarms(m);
     row.append(button);
   }

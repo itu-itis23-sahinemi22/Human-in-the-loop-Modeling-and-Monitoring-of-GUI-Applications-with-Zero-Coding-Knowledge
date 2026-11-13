@@ -224,7 +224,9 @@ async function captureTabPng(tabId) {
 
 // Görüntü monitörlerini bir ekran görüntüsünde kontrol eder (hepsi için TEK çekim).
 //   list: [{ id, params: { image: { data, width, height }, similarity } }]
-//   → { results: { [id]: { status, text } }, screenshot: jpeg data URL (uyarı için; alınamadıysa null) }
+//   → { results: { [id]: { status, text, targets?, more?, viewport? } }, screenshot: jpeg data URL (uyarı için; alınamadıysa null) }
+// Bozulan sonuç hata yerini de taşır (monitor-store.js > UYARILAR): "olmamalı" kuralında parçanın bulunduğu
+// bölge (targets; kutu görüntü pikseli, viewport görüntünün boyutu), "olmalı" kuralında [] (olmayanın yeri yok).
 async function checkImageMonitors(tabId, list) {
   const results = Object.create(null);
   const skipAll = (text) => { for (const m of list) results[m.id] = { status: 'skip', text }; return { results, screenshot: null }; };
@@ -241,6 +243,7 @@ async function checkImageMonitors(tabId, list) {
     for (const m of list) {
       try {
         results[m.id] = await matchExpectedImage(haystack, m.params ?? {});
+        if (results[m.id].targets) results[m.id].viewport = { width: haystack.width, height: haystack.height };
       } catch (error) {
         results[m.id] = { status: 'skip', text: `kontrol edilemedi: ${error.message}` };
       }
@@ -268,7 +271,7 @@ async function matchExpectedImage(haystack, { image, mode, similarity }) {
       const needle = bitmapPixels(bitmap, scale);
       if (needle.width > haystack.width || needle.height > haystack.height) continue;
       const r = findImage(haystack, needle, { threshold });
-      if (!best || r.score > best.score) best = { ...r, scale };
+      if (!best || r.score > best.score) best = { ...r, scale, width: needle.width, height: needle.height };
       if (r.found) break;
     }
     const pct = (score) => Math.round(score * 100);
@@ -277,11 +280,13 @@ async function matchExpectedImage(haystack, { image, mode, similarity }) {
     const where = `benzerlik %${pct(best.score)}${best.scale !== 1 ? `, ${best.scale}× ölçekte` : ''}`;
     const closest = best.compared ? `en iyi benzerlik %${pct(best.score)}, eşik %${pct(threshold)}` : 'benzer bir bölge yok';
     if (absent) {
-      return best.found ? { status: 'fail', text: `görüntü (${size}) hâlâ ekranda (olmamalıydı; ${where})` }
-        : { status: 'ok', text: `görüntü ekranda yok (beklendiği gibi; ${closest}${best.capped ? '; arama sınırına ulaşıldı' : ''})` };
+      if (!best.found) return { status: 'ok', text: `görüntü ekranda yok (beklendiği gibi; ${closest}${best.capped ? '; arama sınırına ulaşıldı' : ''})` };
+      const region = { x: best.x, y: best.y, w: best.width, h: best.height }; // bozulan: ekranda bulunan parçanın bölgesi
+      return { status: 'fail', text: `görüntü (${size}) hâlâ ekranda (olmamalıydı; ${where})`, more: 0,
+        targets: [{ tag: MONITOR_REGION_TAG, text: `${best.width}×${best.height} px`, key: null, path: [], rect: region, visible: region, hidden: null, note: where }] };
     }
     if (best.found) return { status: 'ok', text: `görüntü bulundu (${where})` };
-    return { status: 'fail', text: `beklenen görüntü (${size}) ekranda yok (${closest}${best.capped ? '; arama sınırına ulaşıldı' : ''})` };
+    return { status: 'fail', text: `beklenen görüntü (${size}) ekranda yok (${closest}${best.capped ? '; arama sınırına ulaşıldı' : ''})`, targets: [], more: 0 }; // olmayan görüntünün yeri de yok
   } finally {
     bitmap.close();
   }
