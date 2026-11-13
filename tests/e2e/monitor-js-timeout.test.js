@@ -1,6 +1,6 @@
 // Ekrana bakmayan monitörler (docs/07-monitorler.md > Ekrana bakmayan monitörler): JavaScript Error (olay
 // tabanlı) ve Action Timeout (süre tabanlı). İkisi de sayfaya soru sormaz; sonucu oynatmanın kendi verisinden
-// çıkar. Hataları bilerek atan ve bilerek takılan yerel bir sitede kayıt yapılır, sonra dört oynatma:
+// çıkar. Hataları bilerek atan ve bilerek takılan yerel bir sitede kayıt yapılır, sonra beş oynatma:
 //   1) Normal hızda: hatalar doğru adımda ve doğru aksiyonda yakalanıyor mu (tıklamada atılan hata, yazarken
 //      atılan hata, yakalanmayan Promise reddi, son aksiyondan sonra gecikmeyle gelen hata), sayılmaması
 //      gerekenler sayılmıyor mu (oynatmadan önceki hata, eklentinin kendi dünyasındaki hata, yok sayma
@@ -9,6 +9,8 @@
 //   2) Yavaş oynatmada: vurgu ve aralar süreye sayılmıyor (ölçümler normal hızdakine yakın).
 //   3) Yarıda kalan adım (element gelmiyor): süre sınırı aşıldıysa kırmızı, hatalar yine değerlendirilir.
 //   4) Beklenen ekrana varılamayan adım: süre kırmızı; ekrana bakan node monitörü "kontrol edilemedi".
+//   5) Otomatik beklemede fark edilen bozulma (ayrı graph): tıklamadan sonra uzun süre değişen sayfa ve geç atılan
+//      hata, tıklamanın arkasındaki beklemenin kontrolünde görülür; uyarının yerinde bekleme değil tıklama yazmalı.
 // Kullanım: node tests/e2e/monitor-js-timeout.test.js [--headed]
 const http = require('http');
 const path = require('path');
@@ -44,6 +46,21 @@ const SITE = {
   '/bitti': () => html('Bitti', `<h1>Bitti</h1>
     <button id="son" style="position:absolute;left:40px;top:100px" onclick="setTimeout(() => { throw new Error('geç hata'); }, 3000); setTimeout(() => { location.href = '/son'; }, 3500)">Bitir</button>`),
   '/son': () => html('Son', '<h1>Son</h1><button id="kapat" style="margin:20px">Kapat</button> <button id="yeni" style="margin:20px">Yeni sipariş</button>'),
+  // Yükle (5. oynatma): tıklanınca sayfa 6 sn boyunca değişir (sayaç), 4,5 sn'de bir hata atar, sonunda "Tamam" düğmesi
+  // gelir. Oynatma her aksiyondan sonra sayfanın durulmasını en fazla 3 sn bekler: tıklamanın kendi kontrolünde süre
+  // ~3 sn'dir ve hata henüz atılmamıştır; ikisi de arkasındaki otomatik beklemenin kontrolünde görülür.
+  '/yukle': () => html('Yukle', `<h1>Yükle</h1><p id="sayac">0</p>
+    <button id="yukle" style="${at(40, 100, '#00c800')}" onclick="yukle()">Yükle</button>
+    <script>function yukle() {
+      const started = Date.now();
+      const tick = setInterval(() => {
+        document.getElementById('sayac').textContent = Date.now() - started;
+        if (Date.now() - started < 6000) return;
+        clearInterval(tick);
+        document.body.insertAdjacentHTML('beforeend', '<button id="tamam" style="position:absolute;left:260px;top:100px">Tamam</button>');
+      }, 100);
+      setTimeout(() => { throw new Error('geç yükleme hatası'); }, 4500);
+    }</script>`),
 };
 
 let failures = 0;
@@ -191,8 +208,8 @@ const seconds = (text, pattern) => { const found = pattern.exec(text ?? ''); ret
     await sleep(300);
 
     // Oynatma: Mağaza sayfası yeniden yüklenir (ilk düğme yine "Sepete ekle"), seçili koşu oynatılır
-    const play = async ({ slow = false } = {}) => {
-      await page.goto(base + '/');
+    const play = async ({ slow = false, start = '/' } = {}) => {
+      await page.goto(base + start);
       await page.bringToFront();
       await sleep(800);
       await panel.evaluate((isSlow) => { replayResult = null; document.getElementById('replay-slow').checked = isSlow; document.getElementById('btn-replay').click(); }, slow);
@@ -220,7 +237,7 @@ const seconds = (text, pattern) => { const found = pattern.exec(text ?? ''); ret
       })));
       return (name) => rows.find((r) => r.name.includes(name));
     };
-    const alarmsNow = async () => (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId]?.items ?? [];
+    const alarmsNow = async (id = graphId) => (await store('monitor-alarms:' + id))['monitor-alarms:' + id]?.items ?? [];
 
     // Eklentinin kendi dünyasında (content script'lerin çalıştığı ortam) bir hata: Mağaza'da "Sepete ekle"ye tıklanınca
     // atılır. Sayfanın hatası değildir, sayılmamalı. Test, sayfaya ikinci bir DevTools oturumuyla bağlanıp dinleyiciyi
@@ -477,6 +494,56 @@ const seconds = (text, pattern) => { const found = pattern.exec(text ?? ''); ret
     await panel.click('#btn-monitor-check');
     await sleep(500);
     check('şimdi kontrol, yalnızca ekrana bakmayan monitörler varken: "yalnızca oynatmada kontrol edilir"', (await text('#message')).startsWith('Bu ekranda kontrol edilebilecek monitör yok: 4 etkin monitör (JavaScript Error, Action Timeout) yalnızca oynatmada kontrol edilir'), await text('#message'));
+
+    // =========================================================================================
+    // 5) OTOMATİK BEKLEMEDE FARK EDİLEN BOZULMA (ayrı graph): uyarının yerinde bekleme değil, ilgili aksiyon
+    // =========================================================================================
+    // Kayıt her aksiyonun arkasına 10 ms'lik bir bekleme koyar. Aksiyonun süresi o beklemenin durulmasını da kapsar;
+    // aksiyondan sonra gelen hata da çoğu zaman o beklemede yakalanır. Uyarı "aksiyon 2/2: Bekle 0,01 sn" dememeli:
+    // kullanıcının kaydettiği aksiyon tıklamadır.
+    await send({ type: 'NEW_GRAPH' });
+    await sleep(600);
+    const graphLate = await activeId();
+    await page.goto(base + '/yukle');
+    await sleep(500);
+    await createNode();
+    await page.click('#yukle');
+    await page.waitForSelector('#tamam', { timeout: 20000 });
+    await createNode();
+    const sLate = await getState();
+    const eY = sLate.edges[0];
+    const nTamam = sLate.nodes.find((n) => n.id === eY?.target);
+    const iY = eY ? real(eY, 0) : -1;
+    check('kayıt (yeni graph): 2 node, 1 edge; tıklamanın arkasında otomatik bekleme', graphLate !== graphId && sLate.nodes.length === 2 && sLate.edges.length === 1 && kinds(eY) === 'click' && eY.actions[iY + 1]?.type === 'wait' && eY.actions[iY + 1].ms < 1000, (eY?.actions ?? []).map((a) => `${a.type}${a.ms ?? ''}`).join(' '));
+    await panel.evaluate(([key, list]) => chrome.storage.local.set({ [key]: { format: 'graph-recorder-monitors/v1', nextId: 100, items: list } }), ['monitors:' + graphLate, [
+      M('w1', 'jsError', 'global', { ignore: '' }, { name: 'Geç hata yok' }),
+      M('w2', 'actionTimeout', 'global', { maxSeconds: 4.5 }, { name: 'Yükleme en fazla 4,5 sn' }),
+    ]]);
+    await sleep(400);
+    await panel.evaluate(async (ids) => {
+      await createScenario({ name: 'Yükleme', planner: { engine: 'manual' }, runs: [ids] });
+      scenarioRun = 0;
+      renderScenario();
+      showView(null);
+    }, [eY.id]);
+    await sleep(300);
+    const run5 = await play({ start: '/yukle' });
+    row = await ledRows();
+    check('oynatma geçti (tek adım)', run5.status === 'passed' && run5.steps.length === 1, JSON.stringify(run5));
+    const w1 = row('Geç hata yok');
+    const w2 = row('Yükleme en fazla');
+    const whereY = `Adım 1 (${eY.name} → ${nTamam.name}) · aksiyon ${nth(eY, iY)}: Yükle: `;
+    check('w1 (JavaScript Error): tıklamadan 4,5 sn sonra atılan hata yakalandı; yerinde tıklama yazıyor, bekleme değil', w1.status === 'fail' && w1.detail.startsWith(`${whereY}JavaScript hatası: "Uncaught Error: geç yükleme hatası" (yukle:`) && !w1.detail.includes('Bekle'), w1.detail);
+    const yukleSeconds = seconds(w2.detail, /"Yükle" (\d+,?\d*) sn sürdü/);
+    check('w2 (Action Timeout, 4,5 sn): kırmızı; yerinde süreyi aşan tıklama yazıyor, bekleme değil', w2.status === 'fail' && new RegExp(`^${whereY.replace(/[()]/g, '\\$&')}süre aşıldı: aksiyon ${nth(eY, iY)} "Yükle" \\d+,?\\d* sn sürdü \\(sınır 4,5 sn\\)$`).test(w2.detail) && !w2.detail.includes('Bekle'), w2.detail);
+    check('w2: ölçülen süre tıklamanın kendi durulmasından (en fazla 3 sn) uzun: bozulma beklemenin kontrolünde fark edildi', yukleSeconds >= 5 && yukleSeconds < 9, String(yukleSeconds));
+    const lateAlarms = await alarmsNow(graphLate);
+    const [aErr, aTime] = ['w1', 'w2'].map((id) => lateAlarms.find((a) => a.monitorId === id));
+    check('uyarılar: ikisi de tıklama aksiyonuyla kayıtlı (sıra, ad), aynı anda alınmış tek görüntüyle', lateAlarms.length === 2 && [aErr, aTime].every((a) => a?.action?.index === iY && a.action.label === 'Yükle' && a.action.count === eY.actions.length && a.where === whereY.slice(0, -2))
+      && aErr.screenshot === aTime.screenshot, JSON.stringify(lateAlarms.map((a) => [a.monitorId, a.where, a.action])));
+    check('w1 uyarısı: işaretlenen element tıklanan düğme (yeşil zemin), notu "hata bu aksiyondan sonra oluştu"', aErr.targets?.[0]?.tag === 'button#yukle' && aErr.targets[0].note === 'hata bu aksiyondan sonra oluştu' && isGreen(await meanColor(aErr.screenshot, aErr.targets[0].visible, aErr.viewport)), JSON.stringify(aErr.targets));
+    check('w2 uyarısı: aynı düğme, notu "süresi sınırı aşan aksiyon"', aTime.targets?.[0]?.tag === 'button#yukle' && aTime.targets[0].note === 'süresi sınırı aşan aksiyon', JSON.stringify(aTime.targets));
+    await shot('5-beklemede-fark-edilen', '#replay');
 
     check('konsolda hata yok', errors.length === 0, errors.join(' | '));
   } finally {

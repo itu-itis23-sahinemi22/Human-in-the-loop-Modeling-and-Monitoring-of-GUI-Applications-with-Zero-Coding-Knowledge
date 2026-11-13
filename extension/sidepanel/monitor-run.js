@@ -113,24 +113,42 @@ async function monitorScreenshot(tabId) {
 
 // Bozulan monitörler için uyarı: görüntü ŞİMDİ, bir kez alınır (aynı anda bozulanlar paylaşır),
 // her monitörün sonucuna iliştirilir ve uyarı olarak kaydedilir (monitor-store.js > addMonitorAlarms).
-// action: aksiyon tabanlı kontrolde { index, count, label } (hangi aksiyondan hemen sonra), yoksa null.
+// action: aksiyon tabanlı kontrolde { index, count, label } (hangi aksiyondan hemen sonra), yoksa null. Uyarının
+// yerine yazılan aksiyon monitöre göre değişebilir: ekrana bakmayan monitörde ilgili aksiyondur (alarmAction).
 async function raiseAlarms(run, replay, step, failing, action = null) {
   if (!failing.length) return;
   const screenshot = await monitorScreenshot(replay.tabId);
   await fitLocations(failing.map((m) => step.verdicts.get(m.id)), screenshot);
   let url = '';
   try { url = (await chrome.tabs.get(replay.tabId)).url ?? ''; } catch { /* sekme kapandı */ }
-  const where = stepLabel(run, step) + (action ? ` · aksiyon ${action.index + 1}/${action.count}: ${action.label}` : '');
-  for (const m of failing) Object.assign(step.verdicts.get(m.id), { screenshot, where });
+  const actions = run.edges[step.index]?.actions ?? [];
+  const places = new Map(failing.map((m) => {
+    const about = alarmAction(actions, action, step.verdicts.get(m.id).about);
+    return [m.id, { action: about, where: stepLabel(run, step) + (about ? ` · aksiyon ${about.index + 1}/${about.count}: ${about.label}` : '') }];
+  }));
+  for (const m of failing) Object.assign(step.verdicts.get(m.id), { screenshot, where: places.get(m.id).where });
   try {
     const alarms = await addMonitorAlarms(failing.map((m) => ({ // tek yazım (monitor-store.js > UYARILAR)
-      monitorId: m.id, source: 'replay', where, text: step.verdicts.get(m.id).text, url, screenshot,
-      step: { index: step.index, edgeId: step.edgeId, target: step.target }, action, ...faultLocation(step.verdicts.get(m.id)),
+      monitorId: m.id, source: 'replay', where: places.get(m.id).where, text: step.verdicts.get(m.id).text, url, screenshot,
+      step: { index: step.index, edgeId: step.edgeId, target: step.target }, action: places.get(m.id).action, ...faultLocation(step.verdicts.get(m.id)),
     })));
     failing.forEach((m, i) => { Object.assign(step.verdicts.get(m.id), { alarmId: alarms[i].id }, faultLocation(alarms[i])); }); // saklanan (sadeleşmiş) hali
   } catch (error) {
     console.warn('Monitör uyarıları kaydedilemedi:', error);
   }
+}
+
+// Uyarının yerine yazılacak aksiyon. played: kontrolün yapıldığı an (az önce oynatılan aksiyon { index, count,
+// label }; adımın sonundaysa null). about: bozulan sonucun ilgili olduğu aksiyonun sırası; ekrana bakmayan monitör
+// söyler (süresi sınırı aşan, hatanın ardından geldiği aksiyon; bkz. replayVerdicts), öbürlerinde yoktur ve yer
+// played ile yazılır. Kayıt her aksiyonun arkasına bir bekleme koyar; bozulma çoğu zaman o beklemeden sonra fark
+// edilir (aksiyonun süresi beklemenin durulmasını da kapsar; hata bekleme sırasında gelir). Yer o zaman da ilgili
+// aksiyonla yazılır: "aksiyon 6/6: Bekle 0,01 sn" kullanıcının kaydettiği bir şey değildir. Adımın sonunda fark
+// edilen bozulmanın yeri adımdır (aksiyonsuz); ilgili aksiyon sonucun metninde ve işaretlenen elementte durur.
+function alarmAction(actions, played, about) {
+  const action = played && about >= 0 && about !== played.index ? actions?.[about] : null;
+  if (!action || action.type === 'wait') return played;
+  return { index: about, count: actions.length, label: action.label ?? '' };
 }
 
 // Sonucun (ya da uyarının) hata yeri alanları: bozulan element(ler) ve ölçüldükleri alan (monitor-store.js > UYARILAR)
@@ -688,8 +706,9 @@ async function actionLocation(run, replay, step, culprit) {
 //   { at: 'action', index, fresh }  index'inci aksiyondan hemen sonra (fresh: o aksiyon oynatılırken gelen hatalar)
 //   { at: 'end', arrived, fresh }   adımın sonunda (arrived: beklenen ekrana varıldı mı)
 //   { at: 'broke', index, fresh }   adım yarıda kaldı (index: oynatılamayan aksiyon; doğrulamada kaldıysa -1)
-// Döner: { verdict, culprit? } (culprit: bozulduysa elementi gösterilecek aksiyon { index, note }) ya da null:
-// sonuç bu anda belli değil (sonraki kontrol anında yazılır ya da adım "tamamlanamadı" kalır).
+// Döner: { verdict, culprit? } (culprit: bozulduysa ilgili aksiyon { index, note }: elementi gösterilir, uyarının
+// yeri onunla yazılır) ya da null: sonuç bu anda belli değil (sonraki kontrol anında yazılır ya da adım
+// "tamamlanamadı" kalır).
 const REPLAY_CHECKS = {
   // Aksiyona bağlıysa: o aksiyon oynatılırken hata yakalanmamış olmalı. Değilse adımın tamamında: her aksiyondan
   // sonra bakılır ve hata varsa o anda bozulur; temiz sonuç adımın sonunda yazılır (son aksiyondan sonra,
@@ -735,14 +754,15 @@ function actionBefore(actions, index) {
   return -1;
 }
 
-// Listedeki (ekrana bakmayan) monitörlerin şimdiki sonuçları; bozulan sonuca ilgili aksiyonun elementi eklenir.
+// Listedeki (ekrana bakmayan) monitörlerin şimdiki sonuçları; bozulan sonuca ilgili aksiyonun elementi ve sırası
+// (about; yoksa -1) eklenir: uyarının yeri o aksiyonla yazılır (alarmAction).
 async function replayVerdicts(run, replay, step, list, moment) {
   const results = {};
   for (const m of list) {
     const found = replayVerdict(run, replay, step, m, moment);
     if (!found) continue;
     results[m.id] = found.verdict;
-    if (found.verdict.status === 'fail') Object.assign(found.verdict, await actionLocation(run, replay, step, found.culprit));
+    if (found.verdict.status === 'fail') Object.assign(found.verdict, await actionLocation(run, replay, step, found.culprit), { about: found.culprit?.index ?? -1 });
   }
   return results;
 }

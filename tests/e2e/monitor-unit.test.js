@@ -33,11 +33,11 @@ const locateSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', '
 // monitor-run.js oynatmaya ve panele bağlı; ekrana bakmayan monitörlerin saf karar fonksiyonları adlarıyla çıkarılır
 const runSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-run.js'), 'utf8').replace(/\r\n/g, '\n');
 const runConstants = runSource.match(/^const (MONITOR_ERROR_TEXT) = [^\n]*$/gm).join('\n');
-const runPicked = ['thrownError', 'shortAddress', 'jsErrorVerdict', 'actionTimes', 'secondsText', 'timedName', 'overLimit', 'timeoutVerdict', 'actionBefore'].map((name) => pick(name, runSource, 'monitor-run.js')).join('\n');
+const runPicked = ['thrownError', 'shortAddress', 'jsErrorVerdict', 'actionTimes', 'secondsText', 'timedName', 'overLimit', 'timeoutVerdict', 'actionBefore', 'alarmAction'].map((name) => pick(name, runSource, 'monitor-run.js')).join('\n');
 const ctx = { console, URL };
 vm.createContext(ctx);
 vm.runInContext(`${typesSource}\n${constants}\n${picked}\n${imageSource}\n${locateSource}\n${runConstants}\n${runPicked}\n`
-  + 'this.R = { thrownError, shortAddress, jsErrorVerdict, actionTimes, secondsText, timedName, overLimit, timeoutVerdict, actionBefore };\n'
+  + 'this.R = { thrownError, shortAddress, jsErrorVerdict, actionTimes, secondsText, timedName, overLimit, timeoutVerdict, actionBefore, alarmAction };\n'
   + 'this.T = { monitorType, monitorParamProblem, monitorImageProblem, monitorPatternWarning, monitorAutoName, monitorSentence, monitorDefaults, MONITOR_TYPES, MONITOR_GROUPS, MONITOR_WHEN, MONITOR_ICON };\n'
   + 'this.M = { normalizeMonitors, normalizeAlarms, normalizeActionRef, monitorActionRef, resolveMonitorAction, actionText, actionRefText };\n'
   + 'this.I = { findImage, needleAnchors };\n'
@@ -281,6 +281,12 @@ check('süre: gerçek aksiyonu olmayan adım: beklenen ekranın gelmesi ölçül
 check('süre: geçersiz sınır kontrol edilemedi (kırmızı değil)', tv('', fast).status === 'skip' && tv(0, fast).status === 'skip' && tv('abc', fast).status === 'skip');
 
 check('hatanın aksiyonu: kontrol anındaki aksiyon beklemeyse ondan önceki gerçek aksiyon; yoksa -1', R.actionBefore(acts, 2) === 2 && R.actionBefore(acts, 3) === 2 && R.actionBefore(acts, 1) === 0 && R.actionBefore(acts, 9) === 2 && R.actionBefore([acts[1]], 0) === -1 && R.actionBefore([], -1) === -1);
+// Uyarının yerine yazılan aksiyon: bozulma aksiyonun arkasındaki otomatik beklemede fark edilse de ilgili aksiyon
+const playedWait = { index: 3, count: 4, label: 'Bekle 0,01 sn' };
+const playedLogin = { index: 2, count: 4, label: 'Login' };
+check('uyarının aksiyonu: beklemede fark edilen bozulma ilgili aksiyonla yazılır ("Bekle 0,01 sn" değil); ilgili aksiyon kontrol anındakiyse o kalır', JSON.stringify(R.alarmAction(acts, playedWait, 2)) === JSON.stringify({ index: 2, count: 4, label: 'Login' }) && R.alarmAction(acts, playedLogin, 2) === playedLogin, JSON.stringify(R.alarmAction(acts, playedWait, 2)));
+check('uyarının aksiyonu: ilgili aksiyon bilinmiyorsa (ekrana bakan monitör, beklemeyle başlayan edge) kontrol anındaki kalır; adımın sonunda aksiyon yazılmaz', R.alarmAction(acts, playedWait, undefined) === playedWait && R.alarmAction(acts, playedWait, -1) === playedWait && R.alarmAction(acts, playedWait, 1) === playedWait
+  && R.alarmAction(acts, playedWait, 9) === playedWait && R.alarmAction(undefined, playedWait, 2) === playedWait && R.alarmAction(acts, null, 2) === null);
 
 // Uyarıda işaretlenen element: ekrana bakmayan monitörde "bozulan element" değil, ilgili aksiyonun elementi
 const mJs = { type: 'jsError', params: {} };
