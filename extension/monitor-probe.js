@@ -9,6 +9,12 @@
 //             results: { [id]: { status: 'ok' | 'fail' | 'skip', text, targets?, more? } } }
 // 'ok' kural sağlandı, 'fail' bozuldu, 'skip' bu sayfada kontrol edilemedi (alan yok, desen
 // geçersiz…). text: kullanıcıya gösterilen kısa açıklama (bozulduysa neyin, nerede).
+// Sayfaya bakmayan monitörler de vardır (JavaScript Error, Action Timeout: sonucu panel, oynatmanın kendi
+// verisinden çıkarır). Bozulduklarında uyarıda ilgili aksiyonun elementi gösterilir; bunun için iki istek daha:
+//   panel → { type: 'MONITOR_KEEP', id, ref: { target, selector } }   aksiyon oynatılmadan önce: elementi akılda tut
+//   sayfa → { kept }                                                  (ref: kayıttaki aksiyonun hedefi)
+//   panel → { type: 'MONITOR_LOCATE', id }                            monitör bozuldu: o element şimdi nerede?
+//   sayfa → { viewport, targets, more }                               (element artık ekranda yoksa targets [])
 // Bozulan sonuç, bozulan elementi de taşır (targets; bkz. HATA YERİ): panel onu uyarının ekran
 // görüntüsünde işaretler. viewport: ekran görüntüsünün (chrome.tabs.captureVisibleTab) gösterdiği
 // alan, CSS pikseli; ratio: bir CSS pikselinin görüntüde kaç piksel ettiği. Kutular bu alana göre
@@ -36,6 +42,7 @@ const MONITOR_PROBE_LOCATE_SCAN = 200;   // … bunlar bozulan ilk bu kadar par�
 const MONITOR_PROBE_DESCEND = 400;       // metni içeren en içteki element aranırken en fazla bu kadar elemente bakılır
 const MONITOR_PROBE_TARGET_TEXT = 60;    // element satırındaki metnin en fazla bu kadar karakteri (dom-tree.js ile aynı)
 const MONITOR_PROBE_PATH = 6;            // DOM yolunda en fazla bu kadar üst element
+const MONITOR_PROBE_KEPT = 100;         // akılda tutulan aksiyon elementi sayısı (eskisi düşer; bkz. AKSİYONUN ELEMENTİ)
 
 // Kontrol listesini değerlendirir; her kontrolün sonucu id'siyle döner. Bir kontrolün hatası
 // diğerlerini etkilemez (sonucu 'skip' olur).
@@ -534,13 +541,62 @@ function deepestElement(test) {
   return el === document.body ? null : el;
 }
 
+
+// -----------------------------------------------------------------------------
+// AKSİYONUN ELEMENTİ (MONITOR_KEEP / MONITOR_LOCATE)
+// -----------------------------------------------------------------------------
+// Ekrana bakmayan monitörlerde (JavaScript Error, Action Timeout) bozulan bir element yoktur; uyarıda ilgili
+// aksiyonun elementi gösterilir (hatanın oluştuğu tıklamanın düğmesi, uzun süren aksiyonun alanı). Element,
+// aksiyon oynatılmadan ÖNCE bulunup akılda tutulur ve monitör bozulunca yeri o elementten ölçülür. Aksiyondan
+// sonra kayıttaki hedefle yeniden aramak yanlış elementi bulabilirdi: hedef "bu türün ekrandaki n'incisi"dir;
+// tıklanan "Sepete ekle" düğmesi "Çıkar" olunca "1. Sepete ekle" artık bir sonraki ürünün düğmesidir.
+// Element oynatmanın bulduğu kuralla aranır (content.js > replayElement: önce kayıttaki hedef, yoksa CSS
+// selector); content.js'siz yüklendiyse (runner) aynı sıra burada. Sayfa değişirse bu liste de (sayfayla
+// birlikte) gider: eski sayfanın elementi yeni ekranda zaten yoktur.
+const keptElements = new Map(); // id -> element (panelin verdiği id: koşu + adım + aksiyon)
+
+function keepActionElement(id, ref) {
+  const el = actionElement(ref?.target ?? null, ref?.selector ?? null);
+  if (!el) return { kept: false };
+  while (keptElements.size >= MONITOR_PROBE_KEPT) keptElements.delete(keptElements.keys().next().value);
+  keptElements.set(String(id), el);
+  return { kept: true };
+}
+
+function locateKeptElement(id) {
+  const view = shownView();
+  const viewport = { width: view.width, height: view.height, ratio: view.ratio };
+  const el = keptElements.get(String(id));
+  return { viewport, ...(el?.isConnected ? locate(() => [elementPart(el)]) : { targets: [], more: 0 }) };
+}
+
+function actionElement(target, selector) {
+  if (typeof replayElement === 'function') return replayElement(target, selector)?.el ?? null;
+  const el = target?.index ? targetElement(target) : null; // fingerprint.js
+  if (el || !selector) return el;
+  try {
+    return document.querySelector(selector);
+  } catch {
+    return null;
+  }
+}
+
 globalThis.monitorProbe = monitorProbe;
 
-// Panelden gelen istek (content script olarak yüklendiğinde). content.js'in dinleyicisi bu türü
+// Panelden gelen istek (content script olarak yüklendiğinde). content.js'in dinleyicisi bu türleri
 // tanımaz; başka türlere burada cevap verilmez.
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type !== 'MONITOR_PROBE' || sender.id !== chrome.runtime.id) return undefined; // yalnızca bu eklentinin paneli
+    if (sender.id !== chrome.runtime.id) return undefined; // yalnızca bu eklentinin paneli
+    if (message?.type === 'MONITOR_KEEP' || message?.type === 'MONITOR_LOCATE') {
+      try {
+        sendResponse(message.type === 'MONITOR_KEEP' ? keepActionElement(message.id, message.ref) : locateKeptElement(message.id));
+      } catch (error) {
+        sendResponse({ error: error.message });
+      }
+      return undefined;
+    }
+    if (message?.type !== 'MONITOR_PROBE') return undefined;
     monitorProbe(message.checks).then(sendResponse, (error) => sendResponse({ error: error.message }));
     return true; // cevap asenkron
   });

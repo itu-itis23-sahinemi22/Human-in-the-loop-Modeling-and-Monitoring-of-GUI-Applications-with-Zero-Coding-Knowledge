@@ -8,17 +8,19 @@
 // kullanıcıya nasıl okunur. Kontrolün kendisi monitor-probe.js (sayfada) ve
 // sidepanel/monitor-run.js'tedir (oynatmada). monitor-dialog.js tür kartlarını ve formu bu listeden
 // üretir: yeni bir tür için buraya bir kayıt (+ otomatik ad ve özet cümlesi için aşağıdaki iki
-// switch'e birer satır) ve monitor-probe.js'e bir kontrol fonksiyonu yeter; arayüz kodu değişmez
-// (docs/07-monitorler.md > Yeni bir monitör türü eklemek).
+// switch'e birer satır) ve monitor-probe.js'e (ekrana bakmayan türde monitor-run.js > REPLAY_CHECKS'e)
+// bir kontrol fonksiyonu yeter; arayüz kodu değişmez (docs/07-monitorler.md > Yeni bir monitör türü eklemek).
 //
 // Her türün:
 //   group   : kategori (MONITOR_GROUPS)
 //   when    : kontrol biçimi (MONITOR_WHEN): 'state' node'a (ekrana) varınca, 'action'
-//             aksiyondan sonra, 'event' olay gerçekleşince, 'temporal' süre dolana kadar
+//             aksiyondan sonra, 'event' oynatmada bir olay olunca, 'temporal' geçen süreye göre
 //   scope   : 'any' | 'global' | 'node' | 'edge' | 'node-edge' — tüm model / tek node /
 //             tek edge (aksiyon) seçeneklerinden hangileri olabilir
 //   side    : kontrolün yeri: yoksa sayfada (monitor-probe.js, DOM'a bakar); 'panel' ise panelde
-//             (sidepanel/monitor-image.js: sekmenin ekran görüntüsüne bakar; sayfa içinden görüntü alınamaz)
+//             (sidepanel/monitor-image.js: sekmenin ekran görüntüsüne bakar; sayfa içinden görüntü alınamaz);
+//             'replay' ise oynatmanın kendi verisinde (sidepanel/monitor-run.js: oynatma sırasında yakalanan
+//             hatalar ve ölçülen süreler). 'replay' türleri yalnızca oynatmada kontrol edilebilir.
 //   params  : [{ key, text, kind, required, placeholder, default, min, max, step, options, presets, element }]
 // Parametre türleri (kind): 'text', 'regex', 'number', 'select', 'checkbox', 'image'.
 //   'regex'   : kaydedilmeden derlenerek doğrulanır; formda canlı deneme kutusu çıkar.
@@ -35,6 +37,7 @@ const MONITOR_ICON = {
   alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>',
   check: '<polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>',
+  clock: '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>',
 };
 
 // Kategoriler: tür kartları bu başlıklar altında gruplanır.
@@ -42,15 +45,29 @@ const MONITOR_GROUPS = [
   { id: 'functional', text: 'İşlevsel izleme', icon: 'check' },
   { id: 'error', text: 'Hata izleme', icon: 'alert' },
   { id: 'a11y', text: 'Erişilebilirlik', icon: 'eye' },
+  { id: 'performance', text: 'Performans', icon: 'clock' },
 ];
 
-// Kontrol biçimi: ne zaman değerlendirilir? (tür kartındaki etiket)
+// Kontrol biçimi: ne zaman değerlendirilir? (tür kartındaki etiket). Formun "Edge'deki aksiyon" satırındaki
+// metinler de biçime göre değişebilir (yoksa ekrana bakan monitörün metinleri kullanılır): whole edge'in
+// tamamı seçeneğinin açıklaması, pick aksiyon seçilmemişken, picked bir aksiyon seçilince, wait bir bekleme
+// aksiyonu seçilince (yoksa picked) gösterilen ipucu.
 const MONITOR_WHEN = {
   state: { text: 'State tabanlı', hint: 'İlgili node\'a (ekrana) varıldığında kontrol edilir.' },
   action: { text: 'Aksiyon tabanlı', hint: 'İlgili aksiyondan hemen sonra kontrol edilir: edge\'in seçilen aksiyonu (ör. kullanıcı adı yazılınca); aksiyon seçilmezse edge\'in her aksiyonundan sonra. Bir bekleme aksiyonu seçilirse bekleme bitince (yüklenmesi beklenen içerik gelmiş mi, geçici mesaj gitmiş mi).' },
-  // event / temporal: henüz bu biçimde tür yok; ileride olay (hata / yanıt) ve süre tabanlı türler için
-  event: { text: 'Olay tabanlı', hint: 'Hata ya da yanıt olayı gerçekleştiğinde kontrol edilir.' },
-  temporal: { text: 'Zamansal', hint: 'Koşul gerçekleşene ya da süre dolana kadar beklenir.' },
+  event: {
+    text: 'Olay tabanlı', hint: 'Ekrana değil, oynatma sırasında olan olaya bakar: olay olduğu anda yakalanır, her aksiyondan sonra ve adımın sonunda sonuca yazılır. Yalnızca "Koşuyu oynat"ta kontrol edilir.',
+    whole: 'her aksiyondan sonra ve adımın sonunda',
+    pick: 'Yalnızca bir aksiyon oynatılırken olana bakmak için listeden seçin; seçilmezse her aksiyondan sonra ve adımın sonunda bakılır.',
+    picked: 'Yalnızca bu aksiyon oynatılırken olana bakılır (aksiyondan hemen sonra kontrol edilir).',
+  },
+  temporal: {
+    text: 'Süre tabanlı', hint: 'Ekrana değil, geçen süreye bakar: her aksiyonun süresi ölçülür; sınırı aşan olursa o aksiyon bitince kırmızı yanar. Yalnızca "Koşuyu oynat"ta ölçülür.',
+    whole: 'her aksiyonun süresi',
+    pick: 'Yalnızca bir aksiyonun süresine bakmak için listeden seçin; seçilmezse edge\'in her aksiyonuna bakılır.',
+    picked: 'Yalnızca bu aksiyonun süresine bakılır: aksiyon başladıktan sonra testin devam edebilmesine kadar geçen süre (sayfanın durulması; son aksiyonsa beklenen ekranın gelmesi de).',
+    wait: 'Bekleme aksiyonunun süresi kayıttan gelir, ölçülmez: başka bir aksiyon seçin ya da edge\'in tamamına bakın.',
+  },
 };
 
 // Hazır desenler ("Input Validation" için). Kullanıcı çipe tıklayınca desen dolar.
@@ -109,12 +126,22 @@ const MONITOR_TYPES = [
     params: [{ key: 'pattern', text: 'Hata kalıbı (desen)', kind: 'regex', required: true, default: '\\b(404|500|internal server error|something went wrong|bir hata oluştu)\\b' }],
   },
   {
+    id: 'jsError', text: 'JavaScript Error', group: 'error', when: 'event', scope: 'any', side: 'replay',
+    hint: 'Sayfada yakalanmamış bir JavaScript hatası oluştu mu (ör. bir düğmeye basınca "TypeError")? Ekranda hiçbir şey görünmese de yakalar; ne bekleneceğini tarif etmek gerekmez.',
+    params: [{ key: 'ignore', text: 'Yok sayılacak hatalar (desen)', kind: 'regex', required: false, placeholder: 'boş: her hata sayılır; ör. ResizeObserver|analytics' }],
+  },
+  {
     id: 'fontSize', text: 'Font Size', group: 'a11y', when: 'state', scope: 'any',
     hint: 'Küçük yazı yok: görünen hiçbir metnin yazı boyutu alt sınırın altında olmamalı (ör. 4 pt).',
     params: [
       { key: 'min', text: 'Alt sınır', kind: 'number', required: true, default: 4, min: 1, max: 72, step: 0.5 },
       { key: 'unit', text: 'Birim', kind: 'select', required: true, default: 'pt', options: [{ value: 'pt', text: 'pt' }, { value: 'px', text: 'px' }] },
     ],
+  },
+  {
+    id: 'actionTimeout', text: 'Action Timeout', group: 'performance', when: 'temporal', scope: 'any', side: 'replay',
+    hint: 'Bir aksiyon çok mu uzun sürdü? Aksiyon başladıktan sonra test sınır içinde devam edebilmeli (sayfa durulmalı; son aksiyonda beklenen ekran gelmeli). Takılan, geç cevap veren sayfayı yakalar; kayıttaki beklemeler sayılmaz.',
+    params: [{ key: 'maxSeconds', text: 'En fazla (saniye)', kind: 'number', required: true, default: 5, min: 2, max: 60, step: 0.5 }],
   },
 ];
 
@@ -205,7 +232,9 @@ function monitorAutoName(type, params) {
       case 'expectedText': return `"${String(params.text ?? '').trim().slice(0, 40)}"${params.mode === 'absent' ? ' yok' : ''}`;
       case 'expectedImage': return (params.image?.width ? `${params.image.width}×${params.image.height} px` : '') + (params.mode === 'absent' ? ' yok' : '');
       case 'errorText': return `/${params.pattern}/`;
+      case 'jsError': return params.ignore ? `/${params.ignore}/ hariç` : '';
       case 'fontSize': return `≥ ${params.min} ${params.unit}`;
+      case 'actionTimeout': return `≤ ${String(params.maxSeconds ?? '').replace('.', ',')} sn`;
       default: return '';
     }
   })();
@@ -220,11 +249,12 @@ function monitorSentence(type, params, scope, enabled) {
   const v = (value, fallback = '…') => ({ b: value === '' || value === null || value === undefined ? fallback : String(value) });
   const rx = (value) => v(value === '' || value == null ? '' : `/${value}/`);
   const where = scope.scenario ? [v(`"${scope.scenario}"`), ' senaryosunda, testte '] : ['Testte '];
-  const head = scope.kind === 'node' ? [...where, v(scope.name), ' node\'una her varıldığında: ']
+  const offScreen = type.side === 'replay'; // ekrana değil oynatılan adıma bakar: "varıldığında" değil "oynatılırken"
+  const head = scope.kind === 'node' ? [...where, v(scope.name), offScreen ? ' node\'una varan her adımda: ' : ' node\'una her varıldığında: ']
     : scope.kind === 'edge' ? (scope.action
-      ? [...where, v(scope.name), ' edge\'inin ', v(scope.action), ' aksiyonundan hemen sonra: ']
-      : [...where, v(scope.name), ' edge\'inin her aksiyonundan sonra: '])
-      : [...where, 'her adımdan sonra, her node\'da: '];
+      ? [...where, v(scope.name), ' edge\'inin ', v(scope.action), offScreen ? ' aksiyonu oynatılırken: ' : ' aksiyonundan hemen sonra: ']
+      : [...where, v(scope.name), offScreen ? ' edge\'i oynatılırken: ' : ' edge\'inin her aksiyonundan sonra: '])
+      : [...where, offScreen ? 'her adımda: ' : 'her adımdan sonra, her node\'da: '];
   const body = (() => {
     switch (type.id) {
       case 'inputValidation': return [
@@ -234,7 +264,9 @@ function monitorSentence(type, params, scope, enabled) {
       case 'expectedText': return [params.mode === 'absent' ? 'görünen yazıların hiçbirinde ' : 'görünen yazılardan birinde ', v(params.text), params.mode === 'absent' ? ' geçmemeli' : ' geçmeli', params.caseSensitive ? ' (büyük/küçük harf aynı olmalı).' : ' (büyük/küçük harf fark etmez).'];
       case 'expectedImage': return ['yüklenen görüntü (', v(params.image?.width ? `${params.image.width}×${params.image.height} px` : ''), params.mode === 'absent' ? ') ekranda bulunmamalı (benzerlik en az %' : ') ekranda bulunmalı (benzerlik en az %', v(params.similarity), ').'];
       case 'errorText': return ['görünen metinde ', rx(params.pattern), ' gibi hata metni geçmemeli.'];
+      case 'jsError': return ['sayfada yakalanmamış JavaScript hatası oluşmamalı', ...(params.ignore ? [' (', rx(params.ignore), ' desenine uyan hatalar sayılmaz)'] : []), '.'];
       case 'fontSize': return ['görünen hiçbir metin ', v(params.min), ' ', v(params.unit), '\'den küçük olmamalı.'];
+      case 'actionTimeout': return [scope.kind === 'edge' && scope.action ? 'aksiyon ' : 'hiçbir aksiyon ', v(String(params.maxSeconds ?? '').replace('.', ',')), ' saniyeden uzun sürmemeli (kayıttaki beklemeler ve yavaş oynatmanın araları sayılmaz).'];
       default: return [type.text, '.'];
     }
   })();

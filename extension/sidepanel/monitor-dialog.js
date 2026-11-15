@@ -18,7 +18,7 @@ const MONITOR_DIALOG_HTML = `
       <button id="btn-monitor-close" class="icon" title="Kapat" aria-label="Kapat">✕</button>
     </div>
     <div id="monitor-step-type">
-      <p class="hint">Ne kontrol edilsin? Bir tür seçin; ayrıntılar sonraki adımda. Etiket, kontrol biçimini söyler: state tabanlı (ekrana varınca) ya da aksiyon tabanlı (aksiyondan sonra).</p>
+      <p class="hint">Ne kontrol edilsin? Bir tür seçin; ayrıntılar sonraki adımda. Etiket, kontrol biçimini söyler: state tabanlı (ekrana varınca), aksiyon tabanlı (aksiyondan sonra), olay tabanlı (oynatmada bir olay olunca) ya da süre tabanlı (geçen süreye göre).</p>
       <input id="monitor-search" type="search" placeholder="Ara: hata, yazı, desen, süre…" autocomplete="off" spellcheck="false" aria-label="Tür ara">
       <div id="monitor-cards"></div>
       <p id="monitor-cards-empty" class="hint" hidden>Aramaya uyan tür yok.</p>
@@ -193,7 +193,8 @@ function showParamsStep(typeId, existing = null) {
   const graph = dialogGraph();
   $('monitor-node').replaceChildren(...graph.nodes.map((n) => new Option(n.name, n.id)));
   $('monitor-edge').replaceChildren(...graph.edges.map((e) => new Option(edgeLabel(e, graph), e.id)));
-  $('monitor-scope-global-text').textContent = dialogScenarioId ? 'Bu senaryonun tamamı: senaryonun her node\'unda kontrol edilir' : 'Tüm model: her node\'da kontrol edilir';
+  const where = type.side === 'replay' ? ['her adımında', 'her adımda'] : ['her node\'unda', 'her node\'da']; // ekrana bakmayan monitör node'a değil oynatılan adıma bakar
+  $('monitor-scope-global-text').textContent = dialogScenarioId ? `Bu senaryonun tamamı: senaryonun ${where[0]} kontrol edilir` : `Tüm model: ${where[1]} kontrol edilir`;
   const kind = scopeKind(dialogScope, graph);
   setScopeRadio(kind === 'node' || kind === 'edge' ? kind : existing && kind === 'orphan' ? 'node' : 'global');
   if (kind === 'node') $('monitor-node').value = dialogScope;
@@ -446,12 +447,14 @@ function updateTester(wrap) {
 
 // İKİNCİ KATMAN: seçili edge'in aksiyon listesi. "" = edge'in tamamı (her aksiyondan sonra);
 // değer = aksiyonun sırası. Düzenlemede kayıtlı aksiyon edge'de yeniden bulunur (resolveMonitorAction).
+// Metinler kontrol biçimine göre değişebilir (monitor-types.js > MONITOR_WHEN: whole, pick, picked, wait).
 function renderActionPicks(ref = undefined) {
   const select = $('monitor-action');
   const previous = select.value;
   const edge = edgeById($('monitor-edge').value, dialogGraph());
   const actions = edge?.actions ?? [];
-  select.replaceChildren(new Option(actions.length ? 'Edge\'in tamamı (her aksiyondan sonra)' : 'Edge\'de aksiyon yok', ''));
+  const when = MONITOR_WHEN[monitorType(dialogTypeId)?.when] ?? {};
+  select.replaceChildren(new Option(actions.length ? `Edge'in tamamı (${when.whole ?? 'her aksiyondan sonra'})` : 'Edge\'de aksiyon yok', ''));
   select.append(...actions.map((a, i) => new Option(actionText(a, i, actions) + (a.target?.key ? ` (${a.target.key})` : ''), String(i))));
   if (ref !== undefined) {
     const i = ref ? resolveMonitorAction(ref, actions) : -1;
@@ -467,10 +470,12 @@ function renderActionHint() {
   const edge = edgeById($('monitor-edge').value, dialogGraph());
   const i = $('monitor-action').value === '' ? -1 : Number($('monitor-action').value);
   const action = edge?.actions?.[i];
+  const when = MONITOR_WHEN[monitorType(dialogTypeId)?.when] ?? {};
   $('monitor-action-hint').textContent = !edge?.actions?.length ? ''
-    : i < 0 ? `Bu edge'de ${edge.actions.length} aksiyon var. Belirli bir aksiyondan hemen sonra kontrol için (ör. kullanıcı adı yazılınca, bekleme bitince) listeden seçin; seçilmezse her aksiyondan sonra kontrol edilir.`
-      : action.type === 'wait' ? `Bekleme (${waitSeconds(action.ms)}${(() => { const anchor = waitAnchor(edge.actions, i); return anchor ? `, ${anchorText(anchor)} sonrası` : anchor === null ? ', edge başında' : ''; })()}) bittikten hemen sonra kontrol edilir: yüklenmesi beklenen içerik gelmiş mi ("olmalı"), geçici mesaj gitmiş mi ("olmamalı", ör. "Bekleyiniz"). Monitör beklemeyi arkasından geldiği aksiyonla tanır; aksiyonlar silinse de o beklemeye bağlı kalır.`
-        : `Yalnızca bu aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan).${action.type === 'input' && action.target?.key ? ` Alan: ${action.target.key}` : ''}`;
+    : i < 0 ? `Bu edge'de ${edge.actions.length} aksiyon var. ${when.pick ?? 'Belirli bir aksiyondan hemen sonra kontrol için (ör. kullanıcı adı yazılınca, bekleme bitince) listeden seçin; seçilmezse her aksiyondan sonra kontrol edilir.'}`
+      : when.picked ? (action.type === 'wait' && when.wait ? when.wait : when.picked)
+        : action.type === 'wait' ? `Bekleme (${waitSeconds(action.ms)}${(() => { const anchor = waitAnchor(edge.actions, i); return anchor ? `, ${anchorText(anchor)} sonrası` : anchor === null ? ', edge başında' : ''; })()}) bittikten hemen sonra kontrol edilir: yüklenmesi beklenen içerik gelmiş mi ("olmalı"), geçici mesaj gitmiş mi ("olmamalı", ör. "Bekleyiniz"). Monitör beklemeyi arkasından geldiği aksiyonla tanır; aksiyonlar silinse de o beklemeye bağlı kalır.`
+          : `Yalnızca bu aksiyondan hemen sonra kontrol edilir (bir sonraki aksiyon oynatılmadan).${action.type === 'input' && action.target?.key ? ` Alan: ${action.target.key}` : ''}`;
 }
 
 // Aksiyon seçilince: Input Validation gibi alan isteyen türde alan, aksiyonun hedefiyle dolar
@@ -594,6 +599,7 @@ function validateDraft(draft) {
   if (kind === 'orphan') return scopeRadio() === 'edge' ? 'Bir edge seçin.' : `Bir node seçin (graph'ta node yoksa "${dialogScenarioId ? 'Bu senaryonun tamamı' : 'Tüm model'}" seçin).`;
   if (!monitorScopes(type)[kind]) return `Bu tür ${{ global: dialogScenarioId ? 'senaryonun tamamı' : 'tüm model', node: 'tek node', edge: 'tek edge' }[kind]} için tanımlanamaz.`;
   if (kind === 'edge' && $('monitor-action').value !== '' && !draft.action) return 'Seçilen aksiyon bu edge\'de yok; listeden yeniden seçin.';
+  if (type.when === 'temporal' && draft.action?.type === 'wait') return 'Bekleme aksiyonunun süresi ölçülmez (kayıttan gelir); başka bir aksiyon seçin ya da edge\'in tamamına bakın.';
   return null;
 }
 

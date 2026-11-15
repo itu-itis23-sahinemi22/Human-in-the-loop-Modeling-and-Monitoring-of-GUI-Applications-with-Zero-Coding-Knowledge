@@ -18,6 +18,8 @@
 // oranından bağımsızdır. Alan, uyarı kaydedilirken görüntünün kendisinden hesaplanır (shownViewport):
 // oynatmada görüntü, sayfanın ölçtüğü alanın tamamı olmayabilir. Görüntünün ya da görünen alanın dışındaki,
 // taşanı gizleyen bir kutunun dışındaki element görüntüde yoktur: çizilmez, nedeni listede yazar.
+// Ekrana bakmayan monitörde (JavaScript Error, Action Timeout) ekranda bozulan bir element yoktur: işaretlenen,
+// ilgili aksiyonun elementidir (hatanın oluştuğu tıklamanın düğmesi); başlıklar da öyle der (faultWord).
 // Detay: docs/07-monitorler.md > Hata yeri
 // =============================================================================
 
@@ -105,6 +107,16 @@ function isRegionTarget(target) {
   return target.tag === MONITOR_REGION_TAG; // monitor-store.js
 }
 
+// İşaretlenen element monitör için ne? Ekrana bakan monitörde bozulan elementin kendisi; oynatmanın verisine
+// bakan monitörde (monitor-types.js > side: 'replay') ilgili aksiyonun elementi.
+function showsActionElement(m) {
+  return monitorType(m?.type)?.side === 'replay';
+}
+
+function faultWord(m) {
+  return showsActionElement(m) ? 'aksiyonun elementi' : 'bozulan';
+}
+
 
 // -----------------------------------------------------------------------------
 // GÖRÜNTÜ + KUTULAR
@@ -149,15 +161,16 @@ function setShotImage(figure, img, alarmLike) {
 }
 
 // Küçük resim: bozulduğu andaki ekran, bozulan element işaretli; tıklayınca (ya da Enter / boşluk) büyür.
-function shotThumb(alarmLike, onOpen, label, title = 'Bozulduğu andaki ekran: büyütmek için tıklayın') {
+// m: monitör (işaretlenen elementin adı için: "bozulan" / "aksiyonun elementi").
+function shotThumb(alarmLike, onOpen, label, title = 'Bozulduğu andaki ekran: büyütmek için tıklayın', m = null) {
   const figure = document.createElement('span');
   figure.className = 'shot-figure thumb';
   figure.innerHTML = '<span class="shot-canvas"><img class="shot" alt="Bozulduğu andaki ekran"></span>';
   setShotImage(figure, figure.querySelector('img'), alarmLike);
   drawFaultBoxes(figure.querySelector('.shot-canvas'), alarmLike);
   const what = faultSummary(alarmLike);
-  figure.title = title + (what ? ` · bozulan: ${what}` : '');
-  activatable(figure, onOpen, label + (what ? ` (bozulan: ${what})` : '')); // monitor-list.js
+  figure.title = title + (what ? ` · ${faultWord(m)}: ${what}` : '');
+  activatable(figure, onOpen, label + (what ? ` (${faultWord(m)}: ${what})` : '')); // monitor-list.js
   return figure;
 }
 
@@ -192,7 +205,7 @@ function renderShotLocation(m, alarmLike) {
 
   const region = targets.length > 0 && targets.every(isRegionTarget);
   const count = targets.length + (alarmLike.more ?? 0);
-  $('monitor-shot-targets-title').textContent = region ? 'Bozulan bölge' : count > 1 ? `Bozulan elementler (${count})` : 'Bozulan element';
+  $('monitor-shot-targets-title').textContent = showsActionElement(m) ? 'Aksiyonun elementi' : region ? 'Bozulan bölge' : count > 1 ? `Bozulan elementler (${count})` : 'Bozulan element';
   $('monitor-shot-mark').checked = true;
   $('monitor-shot-mark').closest('label').hidden = !drawn;
   figure.classList.remove('no-marks');
@@ -286,7 +299,12 @@ function faultItem(target, { index, numbered, marked, viewport }) {
 // Listenin altındaki açıklama: element yoksa nedeni, listeye sığmayanlar, çizilemeyenler
 function faultNote(m, alarmLike, drawn) {
   const targets = alarmLike.targets;
-  if (targets === null || targets === undefined) return 'Bu uyarıda bozulan element bilgisi yok (element saklanmaya başlamadan önce alınmış ya da sayfada yeri bulunamamış); yalnızca ekran görüntüsü var.';
+  const ofAction = showsActionElement(m);
+  if (targets === null || targets === undefined) {
+    return ofAction ? 'Bu uyarıda aksiyonun elementi bilgisi yok (sayfa o an cevap vermedi); yalnızca ekran görüntüsü var.'
+      : 'Bu uyarıda bozulan element bilgisi yok (element saklanmaya başlamadan önce alınmış ya da sayfada yeri bulunamamış); yalnızca ekran görüntüsü var.';
+  }
+  if (!targets.length && ofAction) return 'İşaretlenecek element yok: bu monitör ekrandaki bir elemente bakmaz; ilgili aksiyonun da bir elementi yok (ör. bekleme, sayfaya gitme) ya da element o an ekranda değildi (aksiyon ekranı değiştirdi).';
   if (!targets.length) {
     const expected = (m?.type === 'expectedText' || m?.type === 'expectedImage') && m.params?.mode !== 'absent';
     return expected
@@ -294,6 +312,7 @@ function faultNote(m, alarmLike, drawn) {
       : 'İşaretlenecek tek bir element yok: bozulan yer tek bir elemente indirilemedi (ör. metin sayfanın ayrı bölümlerine yayılmış).';
   }
   const parts = [];
+  if (ofAction) parts.push('Bu monitör ekrandaki bir elemente bakmaz; gösterilen, ilgili aksiyonun elementidir.');
   if (alarmLike.more > 0) parts.push(`${alarmLike.more} element daha var; ilk ${targets.length} tanesi listelendi (önce ekranda görünenler).`);
   if (!alarmLike.screenshot) parts.push('Ekran görüntüsü alınamadığı için görüntüde işaretlenemedi.');
   else if (!alarmLike.viewport) parts.push('Görüntüde işaretlenemedi: görüntünün sayfanın hangi kısmını gösterdiği bilinmiyor.');

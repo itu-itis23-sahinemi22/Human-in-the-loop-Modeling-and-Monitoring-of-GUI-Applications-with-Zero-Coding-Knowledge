@@ -271,6 +271,8 @@ dialog.monitor-crop { width: min(96vw, 900px); margin-top: 12px; } /* üstten sa
 }
 .type-card .when.state { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
 .type-card .when.action { color: var(--monitor); background: color-mix(in srgb, var(--monitor) 12%, transparent); }
+.type-card .when.event { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.type-card .when.temporal { color: var(--text); background: color-mix(in srgb, var(--muted) 18%, transparent); }
 
 /* ---- LED: monitörün son kontrol sonucu, yalnızca yeşil ya da kırmızı (liste satırında ve
         oynatma kartında) ------------------------------------------------------------------ */

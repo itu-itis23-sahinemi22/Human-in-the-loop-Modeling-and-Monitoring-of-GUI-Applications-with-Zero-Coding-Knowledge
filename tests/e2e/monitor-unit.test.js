@@ -1,9 +1,10 @@
 // Monitör yardımcılarının birim testi: tür kataloğu
 // (monitor-types.js: parametre doğrulama, ağır desen uyarısı, otomatik ad, özet cümlesi),
 // monitor-store.js'ten çıkarılan saf fonksiyonlar (normalize*, aksiyon eşleştirme), görüntü eşleme
-// (monitor-image.js > findImage: yapay görüntüde parça arama) ve hata yeri (monitor-locate.js: kutunun
-// görüntüdeki yeri). Geçti / kaldı kararını etkileyen mantık burada hızlıca sınanır; arayüz ve oynatma
-// uçtan uca testlerde.
+// (monitor-image.js > findImage: yapay görüntüde parça arama), hata yeri (monitor-locate.js: kutunun
+// görüntüdeki yeri) ve ekrana bakmayan monitörlerin sonucu (monitor-run.js'ten çıkarılan saf fonksiyonlar:
+// yakalanan hatanın okunması, JavaScript Error ve Action Timeout kararı, aksiyon sürelerinin toplanması).
+// Geçti / kaldı kararını etkileyen mantık burada hızlıca sınanır; arayüz ve oynatma uçtan uca testlerde.
 // Kullanım: node tests/e2e/monitor-unit.test.js
 const fs = require('fs');
 const path = require('path');
@@ -18,28 +19,34 @@ const typesSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'm
 // monitor-store.js storage ve panel'e bağlı; yalnızca saf fonksiyonlar adlarıyla çıkarılır
 // Satır sonları \n'e çevrilir: Windows'ta core.autocrlf dosyayı \r\n ile çıkarır, desenler \n arar
 const monitorsSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-store.js'), 'utf8').replace(/\r\n/g, '\n');
-const pick = (name) => {
-  const match = monitorsSource.match(new RegExp(`\\n(?:async )?function ${name}\\([^]*?\\n}\\n`));
-  if (!match) throw new Error(`monitor-store.js'te ${name} bulunamadı`);
+const pick = (name, source = monitorsSource, file = 'monitor-store.js') => {
+  const match = source.match(new RegExp(`\\n(?:async )?function ${name}\\([^]*?\\n}\\n`));
+  if (!match) throw new Error(`${file}'te ${name} bulunamadı`);
   return match[0];
 };
 const constants = monitorsSource.match(/^const (MONITORS_KEY_PREFIX|MONITORS_FORMAT|MONITOR_ALARMS_KEY_PREFIX|MONITOR_ALARMS_FORMAT|MONITOR_ALARM_LIMIT|MONITOR_TARGET_LIMIT|MONITOR_REGION_TAG) = [^\n]*$/gm).join('\n');
-const picked = ['emptyMonitors', 'normalizeMonitors', 'emptyAlarms', 'normalizeAlarms', 'normalizeLocation', 'actionTarget', 'waitAnchor', 'sameAnchor', 'waitsAfter', 'sameWait', 'monitorActionRef', 'normalizeActionRef', 'resolveMonitorAction', 'resolveWaitAction', 'actionText', 'waitSeconds', 'anchorText', 'actionRefText'].map(pick).join('\n');
+const picked = ['emptyMonitors', 'normalizeMonitors', 'emptyAlarms', 'normalizeAlarms', 'normalizeLocation', 'actionTarget', 'waitAnchor', 'sameAnchor', 'waitsAfter', 'sameWait', 'monitorActionRef', 'normalizeActionRef', 'resolveMonitorAction', 'resolveWaitAction', 'actionText', 'waitSeconds', 'anchorText', 'actionRefText'].map((name) => pick(name)).join('\n');
 // monitor-image.js: saf kısım DOM'suz yüklenir (panel kısmı fonksiyon tanımı olarak durur, çağrılmaz)
 const imageSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-image.js'), 'utf8');
 // monitor-locate.js: aynı şekilde (kutu hesabı saf; pencereyi dolduran kısım çağrılmaz)
 const locateSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-locate.js'), 'utf8');
-const ctx = { console };
+// monitor-run.js oynatmaya ve panele bağlı; ekrana bakmayan monitörlerin saf karar fonksiyonları adlarıyla çıkarılır
+const runSource = fs.readFileSync(path.join(REPO, 'extension', 'sidepanel', 'monitor-run.js'), 'utf8').replace(/\r\n/g, '\n');
+const runConstants = runSource.match(/^const (MONITOR_ERROR_TEXT) = [^\n]*$/gm).join('\n');
+const runPicked = ['thrownError', 'shortAddress', 'jsErrorVerdict', 'actionTimes', 'secondsText', 'timedName', 'overLimit', 'timeoutVerdict', 'actionBefore', 'alarmAction'].map((name) => pick(name, runSource, 'monitor-run.js')).join('\n');
+const ctx = { console, URL };
 vm.createContext(ctx);
-vm.runInContext(`${typesSource}\n${constants}\n${picked}\n${imageSource}\n${locateSource}\n`
-  + 'this.T = { monitorType, monitorParamProblem, monitorImageProblem, monitorPatternWarning, monitorAutoName, monitorSentence, monitorDefaults, MONITOR_TYPES };\n'
+vm.runInContext(`${typesSource}\n${constants}\n${picked}\n${imageSource}\n${locateSource}\n${runConstants}\n${runPicked}\n`
+  + 'this.R = { thrownError, shortAddress, jsErrorVerdict, actionTimes, secondsText, timedName, overLimit, timeoutVerdict, actionBefore, alarmAction };\n'
+  + 'this.T = { monitorType, monitorParamProblem, monitorImageProblem, monitorPatternWarning, monitorAutoName, monitorSentence, monitorDefaults, MONITOR_TYPES, MONITOR_GROUPS, MONITOR_WHEN, MONITOR_ICON };\n'
   + 'this.M = { normalizeMonitors, normalizeAlarms, normalizeActionRef, monitorActionRef, resolveMonitorAction, actionText, actionRefText };\n'
   + 'this.I = { findImage, needleAnchors };\n'
-  + 'this.L = { normalizeLocation, faultBoxPlace, faultLabelSide, shownViewport, faultVisibilityText, faultTargetName, faultSummary, isRegionTarget, MONITOR_REGION_TAG };', ctx);
-const { T, M, I, L } = ctx;
+  + 'this.L = { normalizeLocation, faultBoxPlace, faultLabelSide, shownViewport, faultVisibilityText, faultTargetName, faultSummary, isRegionTarget, showsActionElement, faultWord, faultNote, MONITOR_REGION_TAG };', ctx);
+const { T, M, I, L, R } = ctx;
 
 // ---- Katalog ----
-check('5 tür: inputValidation (aksiyon), expectedText / expectedImage / errorText / fontSize (state); görüntü panelde', T.MONITOR_TYPES.map((t) => `${t.id}:${t.when}${t.side ? ':' + t.side : ''}`).join(',') === 'inputValidation:action,expectedText:state,expectedImage:state:panel,errorText:state,fontSize:state', T.MONITOR_TYPES.map((t) => t.id).join(','));
+check('7 tür: inputValidation (aksiyon), expectedText / expectedImage / errorText / fontSize (state), jsError (olay), actionTimeout (süre); görüntü panelde, son ikisi oynatmanın verisinde', T.MONITOR_TYPES.map((t) => `${t.id}:${t.when}${t.side ? ':' + t.side : ''}`).join(',') === 'inputValidation:action,expectedText:state,expectedImage:state:panel,errorText:state,jsError:event:replay,fontSize:state,actionTimeout:temporal:replay', T.MONITOR_TYPES.map((t) => t.id).join(','));
+check('her türün grubu ve kontrol biçimi tanımlı (kart etiketi ve ikon)', T.MONITOR_TYPES.every((t) => T.MONITOR_GROUPS.some((g) => g.id === t.group && T.MONITOR_ICON[g.icon]) && T.MONITOR_WHEN[t.when]?.text && T.MONITOR_WHEN[t.when].hint), T.MONITOR_TYPES.filter((t) => !T.MONITOR_WHEN[t.when]).map((t) => t.id).join(','));
 const iv = T.monitorType('inputValidation');
 const pattern = iv.params.find((p) => p.key === 'pattern');
 const min = T.monitorType('fontSize').params.find((p) => p.key === 'min');
@@ -189,6 +196,106 @@ check('expectedImage: görüntü gerekli; biçim, boyut ve en/boy sınırı; ben
   && T.monitorAutoName(ei, { image: png, similarity: 90 }) === 'Expected Image · 120×24 px' && T.monitorAutoName(ei, { image: png, mode: 'absent', similarity: 90 }) === 'Expected Image · 120×24 px yok'
   && T.monitorSentence(ei, { image: png, mode: 'absent', similarity: 90 }, { kind: 'global' }, true).map((p) => p.b ?? p).join('').includes('ekranda bulunmamalı (benzerlik en az %90)'));
 check('import için de aynı doğrulama: {image:"x"} geçersiz', T.monitorImageProblem('x') !== null && T.monitorImageProblem({ data: png.data }) !== null);
+
+// ---- Ekrana bakmayan monitörler: JavaScript Error (olay) ve Action Timeout (süre) ----
+const je = T.monitorType('jsError');
+const at = T.monitorType('actionTimeout');
+const said = (type, params, scope) => T.monitorSentence(type, params, scope, true).map((p) => p.b ?? p).join('');
+check('jsError: yok sayma deseni isteğe bağlı, geçersiz desen reddedilir; ad ve özet', T.monitorParamProblem(je.params[0], '') === null && /Geçersiz desen/.test(T.monitorParamProblem(je.params[0], 'a(')) && T.monitorDefaults(je).ignore === ''
+  && T.monitorAutoName(je, { ignore: '' }) === 'JavaScript Error' && T.monitorAutoName(je, { ignore: 'analytics' }) === 'JavaScript Error · /analytics/ hariç'
+  && said(je, { ignore: '' }, { kind: 'global' }) === 'Testte her adımda: sayfada yakalanmamış JavaScript hatası oluşmamalı. Bozulursa kırmızı yanar.'
+  && said(je, { ignore: 'analytics' }, { kind: 'node', name: 'v_Sepet' }).startsWith('Testte v_Sepet node\'una varan her adımda: sayfada yakalanmamış JavaScript hatası oluşmamalı (/analytics/ desenine uyan hatalar sayılmaz).')
+  && said(je, { ignore: '' }, { kind: 'edge', name: 'e_Ekle' }).startsWith('Testte e_Ekle edge\'i oynatılırken: ')
+  && said(je, { ignore: '' }, { kind: 'edge', name: 'e_Ekle', action: '1. Tıkla Ekle' }).startsWith('Testte e_Ekle edge\'inin 1. Tıkla Ekle aksiyonu oynatılırken: '), said(je, { ignore: 'analytics' }, { kind: 'node', name: 'v_Sepet' }));
+check('actionTimeout: sınır gerekli, 2–60 sn, varsayılan 5; ad ve özet (ondalık virgülle)', T.monitorParamProblem(at.params[0], '') === 'Bu alan gerekli.' && T.monitorParamProblem(at.params[0], 1.5) === 'En az 2 olmalı.' && T.monitorParamProblem(at.params[0], 61) === 'En fazla 60 olmalı.'
+  && T.monitorParamProblem(at.params[0], 2.5) === null && T.monitorDefaults(at).maxSeconds === 5
+  && T.monitorAutoName(at, { maxSeconds: 5 }) === 'Action Timeout · ≤ 5 sn' && T.monitorAutoName(at, { maxSeconds: 2.5 }) === 'Action Timeout · ≤ 2,5 sn'
+  && said(at, { maxSeconds: 5 }, { kind: 'global' }) === 'Testte her adımda: hiçbir aksiyon 5 saniyeden uzun sürmemeli (kayıttaki beklemeler ve yavaş oynatmanın araları sayılmaz). Bozulursa kırmızı yanar.'
+  && said(at, { maxSeconds: 5 }, { kind: 'node', name: 'v_Urunler' }).startsWith('Testte v_Urunler node\'una varan her adımda: hiçbir aksiyon 5 saniyeden uzun sürmemeli')
+  && said(at, { maxSeconds: 5 }, { kind: 'edge', name: 'e_Login' }).startsWith('Testte e_Login edge\'i oynatılırken: hiçbir aksiyon 5 saniyeden uzun sürmemeli')
+  && said(at, { maxSeconds: 2.5 }, { kind: 'edge', name: 'e_Login', action: '3. Tıkla Login' }).startsWith('Testte e_Login edge\'inin 3. Tıkla Login aksiyonu oynatılırken: aksiyon 2,5 saniyeden uzun sürmemeli'), said(at, { maxSeconds: 2.5 }, { kind: 'edge', name: 'e_Login', action: '3. Tıkla Login' }));
+check('formun aksiyon satırı metinleri kontrol biçiminden: olay ve süre kendi metinlerini taşır, state / aksiyon varsayılanı kullanır', ['whole', 'pick', 'picked'].every((k) => T.MONITOR_WHEN.event[k] && T.MONITOR_WHEN.temporal[k]) && Boolean(T.MONITOR_WHEN.temporal.wait)
+  && !T.MONITOR_WHEN.state.whole && !T.MONITOR_WHEN.action.picked);
+
+// Yakalanan hatanın okunması (Runtime.exceptionThrown > exceptionDetails; biçimler Chrome'dan alınmış örnekler)
+const thrown = (description, extra = {}) => ({ exceptionId: 1, text: 'Uncaught', lineNumber: 1, columnNumber: 8, url: 'http://site.test/static/app.js', exception: { type: 'object', subtype: 'error', description }, ...extra });
+let e = R.thrownError(thrown('TypeError: Cannot set properties of undefined (setting \'deger\')\n    at HTMLButtonElement.onclick (http://site.test/static/app.js:2:9)'));
+check('atılan hata: konsoldaki satır ("Uncaught TypeError: …"; çağrı yığını atılır) ve yeri dosya:satır:sütun (1\'den sayılır)', e.message === 'Uncaught TypeError: Cannot set properties of undefined (setting \'deger\')' && e.where === 'app.js:2:9' && e.url === 'http://site.test/static/app.js', JSON.stringify(e));
+e = R.thrownError(thrown('Error: söz reddedildi\n    at …', { text: 'Uncaught (in promise)', url: 'http://site.test/' }));
+check('yakalanmayan Promise reddi: "Uncaught (in promise) …"; ana sayfanın kendi içindeki kod: "sayfa:satır:sütun"', e.message === 'Uncaught (in promise) Error: söz reddedildi' && e.where === 'sayfa:2:9', JSON.stringify(e));
+check('hata nesnesi olmayan atışlar: metin, sayı, düz nesne', R.thrownError({ text: 'Uncaught', exception: { type: 'string', value: 'düz metin' } }).message === 'Uncaught düz metin'
+  && R.thrownError({ text: 'Uncaught', exception: { type: 'number', value: 42, description: '42' } }).message === 'Uncaught 42'
+  && R.thrownError({ text: 'Uncaught', exception: { type: 'object', className: 'Object', description: 'Object' } }).message === 'Uncaught Object'
+  && R.thrownError({ text: 'Uncaught', exception: { type: 'undefined' } }).message === 'Uncaught undefined'
+  && R.thrownError({ text: 'Uncaught SyntaxError: Unexpected token \'}\'' }).message === 'Uncaught SyntaxError: Unexpected token \'}\'');
+check('yeri bilinmeyen hata (adres yok): yer boş; satır / sütun yoksa yalnızca dosya', R.thrownError({ text: 'Uncaught', exception: { description: 'Error: x' } }).where === '' && R.thrownError({ text: 'Uncaught', url: 'http://site.test/a/b/main.js?v=3', exception: { description: 'Error: x' } }).where === 'main.js');
+check('eklenti dosyasından gelen hata sayfanın hatası değil (adresten ya da çağrı yığınından tanınır)', R.thrownError(thrown('Error: x', { url: 'chrome-extension://abcdef/content.js' })) === null
+  && R.thrownError({ text: 'Uncaught', exception: { description: 'Error: x' }, stackTrace: { callFrames: [{ url: 'chrome-extension://abcdef/content.js', lineNumber: 3, columnNumber: 1 }] } }) === null);
+check('çok uzun hata satırı kısaltılır (200 karakter), satır sonları boşluk olur', R.thrownError(thrown('Error: ' + 'x'.repeat(500))).message.length === 200 && R.thrownError({ text: 'Uncaught', exception: { type: 'string', value: 'iki\nsatır' } }).message === 'Uncaught iki satır');
+check('shortAddress: dosya adı (ya da sayfanın adı); adı olmayan ana sayfada "sayfa"; adres değilse olduğu gibi', R.shortAddress('https://www.site.test/static/js/main.6d2f.js') === 'main.6d2f.js' && R.shortAddress('https://site.test/') === 'sayfa' && R.shortAddress('https://site.test/sepet') === 'sepet' && R.shortAddress('adres değil') === 'adres değil');
+
+// JavaScript Error'ın kararı
+const E = (message, where = 'app.js:2:9', url = 'http://site.test/app.js') => ({ message, where, url });
+check('jsError: hata yoksa yeşil; bir hatada kırmızı (satır + yer); birden çokta sayı ve ilki', R.jsErrorVerdict({}, []).status === 'ok' && R.jsErrorVerdict({ ignore: '' }, []).text === 'JavaScript hatası yok'
+  && JSON.stringify(R.jsErrorVerdict({}, [E('Uncaught Error: Failed to add item to the cart.')])) === JSON.stringify({ status: 'fail', text: 'JavaScript hatası: "Uncaught Error: Failed to add item to the cart." (app.js:2:9)' })
+  && R.jsErrorVerdict({}, [E('Uncaught Error: A', ''), E('Uncaught Error: B')]).text === '2 JavaScript hatası; ilki: "Uncaught Error: A"', R.jsErrorVerdict({}, [E('Uncaught Error: A', ''), E('Uncaught Error: B')]).text);
+const noisy3 = [E('Uncaught ResizeObserver loop completed with undelivered notifications.'), E('Uncaught TypeError: x is not a function', 'gtm.js:1:1', 'https://www.googletagmanager.com/analytics/gtm.js'), E('Uncaught Error: gerçek hata')];
+check('jsError yok sayma: desen hata satırında ve dosya adresinde aranır (harf duyarsız); kalan hata yine kırmızı, sayılmayanlar notta', R.jsErrorVerdict({ ignore: 'resizeobserver|ANALYTICS' }, noisy3).text === 'JavaScript hatası: "Uncaught Error: gerçek hata" (app.js:2:9) (2 hata yok sayıldı: desene uyuyor)'
+  && JSON.stringify(R.jsErrorVerdict({ ignore: 'resizeobserver|analytics' }, noisy3.slice(0, 2))) === JSON.stringify({ status: 'ok', text: 'JavaScript hatası yok (2 hata yok sayıldı: desene uyuyor)' }), R.jsErrorVerdict({ ignore: 'resizeobserver|ANALYTICS' }, noisy3).text);
+check('jsError: geçersiz yok sayma deseni kontrol edilemedi (kırmızı değil)', R.jsErrorVerdict({ ignore: 'a(' }, noisy3).status === 'skip');
+
+// Aksiyon süreleri ve Action Timeout'un kararı. Kayıt her aksiyonun arkasına bir bekleme koyar: aksiyonun süresi kendi
+// oynatılması + durulması + o beklemenin durulması; son aksiyonda beklenen ekranın gelmesi de.
+const P = (type, play, settle) => ({ type, play, settle });
+const timing = { actions: [P('input', 120, 330), P('wait', 10, 310), P('click', 5200, 400), P('wait', 3000, 320)], arrival: 350 };
+const times = R.actionTimes(timing);
+check('aksiyon süreleri: her gerçek aksiyon bir ölçüm (kendi + ardındaki beklemenin durulması); son aksiyona beklenen ekranın gelmesi eklenir; beklemenin kendisi sayılmaz', JSON.stringify(times.actions) === JSON.stringify([{ index: 0, ms: 120 + 330 + 310, arrival: false }, { index: 2, ms: 5200 + 400 + 320 + 350, arrival: true }])
+  && times.waited === 3010 && times.total === 760 + 6270, JSON.stringify(times));
+check('aksiyon süreleri: adım sürerken (beklenen ekran henüz yok) son aksiyon açık; baştaki beklemenin durulması ilk aksiyona yazılır', JSON.stringify(R.actionTimes({ actions: [P('wait', 2000, 300), P('click', 100, 350)], arrival: null }).actions) === JSON.stringify([{ index: 1, ms: 750, arrival: false }])
+  && R.actionTimes({ actions: [P('wait', 2000, 300), P('click', 100, 350)], arrival: null }).waited === 2000);
+check('aksiyon süreleri: gerçek aksiyonu olmayan adımda tek ölçüm beklenen ekranın gelmesi (-1); boş / tanımsız kayıt hata vermez', JSON.stringify(R.actionTimes({ actions: [P('wait', 5000, 310)], arrival: 400 }).actions) === JSON.stringify([{ index: -1, ms: 710, arrival: true }])
+  && JSON.stringify(R.actionTimes({ actions: [], arrival: 330 }).actions) === JSON.stringify([{ index: -1, ms: 330, arrival: true }]) && R.actionTimes({ actions: [], arrival: null }).actions.length === 0 && R.actionTimes(undefined).total === 0);
+const acts = [{ type: 'input', label: 'Fill Username' }, { type: 'wait', label: 'Wait', ms: 10 }, { type: 'click', label: 'Login' }, { type: 'wait', label: 'Wait', ms: 3000 }];
+check('ölçümün adı: aksiyonun sırası (beklemeler dahil sayılır) ve etiketi; beklenen ekranın gelmesi', R.timedName(acts, { index: 2 }) === 'aksiyon 3/4 "Login"' && R.timedName(acts, { index: -1 }) === 'beklenen ekranın gelmesi');
+check('sınırı aşan ilk ölçüm: karşılaştırma gösterilen sayıyla (0,1 sn): 5,04 sn aşmaz, 5,05 sn aşar', R.overLimit(5, [{ index: 0, ms: 5040 }]) === null && R.overLimit(5, [{ index: 0, ms: 900 }, { index: 2, ms: 5050 }, { index: 4, ms: 9000 }]).index === 2 && R.overLimit('2.5', [{ index: 0, ms: 2500 }]) === null);
+const tv = (limit, t, options) => R.timeoutVerdict(limit, t, acts, options);
+const fast = R.actionTimes({ actions: [P('input', 60, 330), P('wait', 10, 310), P('click', 90, 420), P('wait', 10, 320)], arrival: 340 });
+check('süre: hepsi sınırın altında, adım bitti: yeşil; en uzun aksiyon ve adımın toplamı yazılı', JSON.stringify(tv(5, fast)) === JSON.stringify({ status: 'ok', text: 'en uzun aksiyon 1,2 sn sürdü (aksiyon 3/4 "Login"; sınır 5 sn) · adım toplam 1,9 sn' }), tv(5, fast).text);
+check('süre: bir aksiyon sınırı aştı: kırmızı, hangi aksiyon ve ne kadar; son aksiyonda beklenen ekranın gelmesi de sayıldıysa öyle yazılır', tv(5, times).text === 'süre aşıldı: aksiyon 3/4 "Login" ve ardından beklenen ekranın gelmesi 6,3 sn sürdü (sınır 5 sn)' && tv(5, times).status === 'fail'
+  && tv(0.5, fast).text === 'süre aşıldı: aksiyon 1/4 "Fill Username" 0,7 sn sürdü (sınır 0,5 sn)', tv(5, times).text);
+const mid = R.actionTimes({ actions: [P('input', 120, 330), P('wait', 10, 310), P('click', 5200, 400)], arrival: null });
+check('süre, aksiyondan sonra (adım sürüyor): aşıldıysa o anda kırmızı; aşılmadıysa sonuç yok (adımın sonunda yazılır)', tv(5, mid, { state: 'action' }).text === 'süre aşıldı: aksiyon 3/4 "Login" 5,6 sn sürdü (sınır 5 sn)' && tv(10, mid, { state: 'action' }) === null);
+check('süre: kayıttaki uzun bekleme sayılmaz ve yeşil sonuçta belirtilir; 10 ms\'lik otomatik beklemeler belirtilmez', tv(10, times).text === 'en uzun aksiyon 6,3 sn sürdü (aksiyon 3/4 "Login"; sınır 10 sn) · adım toplam 7 sn; kayıttaki 3 sn bekleme sayılmadı' && !tv(5, fast).text.includes('bekleme'), tv(10, times).text);
+check('süre, aksiyona bağlı: yalnızca o aksiyona bakılır; başka aksiyon aşsa da yeşil; kendi aşarsa kırmızı; henüz oynatılmadıysa sonuç yok', JSON.stringify(tv(5, times, { only: 0 })) === JSON.stringify({ status: 'ok', text: 'aksiyon 0,8 sn sürdü (sınır 5 sn)' })
+  && tv(5, times, { only: 2 }).text === 'süre aşıldı: aksiyon 3/4 "Login" ve ardından beklenen ekranın gelmesi 6,3 sn sürdü (sınır 5 sn)'
+  && tv(5, R.actionTimes({ actions: [P('input', 120, 330)], arrival: null }), { only: 2, state: 'action' }) === null && tv(5, fast, { only: 9 }).status === 'skip', JSON.stringify(tv(5, times, { only: 0 })));
+const missed = R.actionTimes({ actions: [P('click', 90, 420), P('wait', 10, 320)], arrival: 10300 });
+check('süre: beklenen ekrana varılamadı: sınır aşıldıysa kırmızı; aşılmadıysa son aksiyonun süresi bitmemiştir, değerlendirilmez (önceki aksiyona bağlı monitör yine yeşil)', R.timeoutVerdict(5, missed, [acts[2], acts[3]], { state: 'missed' }).text === 'süre aşıldı: aksiyon 1/2 "Login" sonrası 11,1 sn geçti ve beklenen ekrana varılamadı (sınır 5 sn)'
+  && JSON.stringify(R.timeoutVerdict(60, missed, [acts[2], acts[3]], { state: 'missed' })) === JSON.stringify({ status: 'skip', text: 'beklenen ekrana varılamadı: süre değerlendirilmedi (sınır 60 sn)' })
+  && tv(60, R.actionTimes({ ...timing, arrival: 10300 }), { only: 0, state: 'missed' }).status === 'ok' && tv(60, R.actionTimes({ ...timing, arrival: 10300 }), { only: 2, state: 'missed' }).status === 'skip'
+  && R.timeoutVerdict(5, R.actionTimes({ actions: [], arrival: 10300 }), [], { state: 'missed' }).text === 'süre aşıldı: 10,3 sn geçti ve beklenen ekrana varılamadı (sınır 5 sn)', R.timeoutVerdict(5, missed, [acts[2], acts[3]], { state: 'missed' }).text);
+const broke = R.actionTimes({ actions: [P('input', 120, 330), P('wait', 10, 310), P('click', 10100, 0)], arrival: null });
+check('süre: yarıda kalan adım: sınır aşıldıysa kırmızı (takılan sayfa), aşılmadıysa sonuç yok (adım "tamamlanamadı" kalır)', tv(5, broke, { state: 'broke' }).text === 'süre aşıldı: aksiyon 3/4 "Login" 10,1 sn sürdü ve adım tamamlanamadı (sınır 5 sn)' && tv(60, broke, { state: 'broke' }) === null);
+check('süre: gerçek aksiyonu olmayan adım: beklenen ekranın gelmesi ölçülür', R.timeoutVerdict(5, R.actionTimes({ actions: [P('wait', 5000, 310)], arrival: 400 }), [acts[3]]).text === 'beklenen ekranın gelmesi 0,7 sn sürdü (sınır 5 sn; kayıttaki 5 sn bekleme sayılmadı)'
+  && R.timeoutVerdict(5, R.actionTimes({ actions: [P('wait', 5000, 310)], arrival: 6400 }), [acts[3]]).text === 'süre aşıldı: beklenen ekranın gelmesi 6,7 sn sürdü (sınır 5 sn)', R.timeoutVerdict(5, R.actionTimes({ actions: [P('wait', 5000, 310)], arrival: 400 }), [acts[3]]).text);
+check('süre: geçersiz sınır kontrol edilemedi (kırmızı değil)', tv('', fast).status === 'skip' && tv(0, fast).status === 'skip' && tv('abc', fast).status === 'skip');
+
+check('hatanın aksiyonu: kontrol anındaki aksiyon beklemeyse ondan önceki gerçek aksiyon; yoksa -1', R.actionBefore(acts, 2) === 2 && R.actionBefore(acts, 3) === 2 && R.actionBefore(acts, 1) === 0 && R.actionBefore(acts, 9) === 2 && R.actionBefore([acts[1]], 0) === -1 && R.actionBefore([], -1) === -1);
+// Uyarının yerine yazılan aksiyon: bozulma aksiyonun arkasındaki otomatik beklemede fark edilse de ilgili aksiyon
+const playedWait = { index: 3, count: 4, label: 'Bekle 0,01 sn' };
+const playedLogin = { index: 2, count: 4, label: 'Login' };
+check('uyarının aksiyonu: beklemede fark edilen bozulma ilgili aksiyonla yazılır ("Bekle 0,01 sn" değil); ilgili aksiyon kontrol anındakiyse o kalır', JSON.stringify(R.alarmAction(acts, playedWait, 2)) === JSON.stringify({ index: 2, count: 4, label: 'Login' }) && R.alarmAction(acts, playedLogin, 2) === playedLogin, JSON.stringify(R.alarmAction(acts, playedWait, 2)));
+check('uyarının aksiyonu: ilgili aksiyon bilinmiyorsa (ekrana bakan monitör, beklemeyle başlayan edge) kontrol anındaki kalır; adımın sonunda aksiyon yazılmaz', R.alarmAction(acts, playedWait, undefined) === playedWait && R.alarmAction(acts, playedWait, -1) === playedWait && R.alarmAction(acts, playedWait, 1) === playedWait
+  && R.alarmAction(acts, playedWait, 9) === playedWait && R.alarmAction(undefined, playedWait, 2) === playedWait && R.alarmAction(acts, null, 2) === null);
+
+// Uyarıda işaretlenen element: ekrana bakmayan monitörde "bozulan element" değil, ilgili aksiyonun elementi
+const mJs = { type: 'jsError', params: {} };
+const mEt = { type: 'errorText', params: { pattern: '500' } };
+const oneTarget = { targets: [{ tag: 'button#add', text: 'Add to cart', key: 'button:add', path: [], rect: { x: 0, y: 0, w: 10, h: 10 }, visible: { x: 0, y: 0, w: 10, h: 10 }, hidden: null, note: 'hata bu aksiyon oynatılırken oluştu' }], more: 0, viewport: { width: 100, height: 100 }, screenshot: 'data:image/jpeg;base64,x' };
+check('işaretin adı monitöre göre: ekrana bakan "bozulan", ekrana bakmayan "aksiyonun elementi"', L.faultWord(mEt) === 'bozulan' && L.faultWord(mJs) === 'aksiyonun elementi' && L.faultWord({ type: 'actionTimeout' }) === 'aksiyonun elementi' && L.faultWord(null) === 'bozulan' && L.showsActionElement({ type: 'yok' }) === false);
+check('pencerenin notu: aksiyonun elementi gösterilirken ne olduğu söylenir; element yoksa / sorulamadıysa nedeni', L.faultNote(mJs, oneTarget, 1).startsWith('Bu monitör ekrandaki bir elemente bakmaz; gösterilen, ilgili aksiyonun elementidir.')
+  && L.faultNote(mJs, { ...oneTarget, targets: [] }, 0).startsWith('İşaretlenecek element yok: bu monitör ekrandaki bir elemente bakmaz') && L.faultNote(mJs, { ...oneTarget, targets: null }, 0).includes('sayfa o an cevap vermedi')
+  && L.faultNote(mEt, oneTarget, 1) === '' && L.faultNote(mEt, { ...oneTarget, targets: null }, 0).startsWith('Bu uyarıda bozulan element bilgisi yok'), L.faultNote(mJs, oneTarget, 1));
 
 // ---- Görüntü eşleme (monitor-image.js > findImage): yapay görüntüler ----
 // Rastgele renkli zemin (tekrar üretilebilir), içine parça gömülür; parça zeminin bir kesitidir.

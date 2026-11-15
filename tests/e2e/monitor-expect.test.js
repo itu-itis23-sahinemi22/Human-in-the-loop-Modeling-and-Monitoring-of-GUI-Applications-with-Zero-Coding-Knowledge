@@ -122,7 +122,7 @@ function check(name, ok, detail = '') {
     await panel.evaluate(() => { document.getElementById('monitors').open = true; });
     await $('#btn-monitor-add').click();
     check('tür kartları: Expected Text ve Expected Image "İşlevsel izleme" altında, state tabanlı', (await $('#monitor-cards .type-card[data-type="expectedText"] .when').textContent()) === 'State tabanlı'
-      && (await $('#monitor-cards .type-card[data-type="expectedImage"] .when').textContent()) === 'State tabanlı' && (await $('#monitor-cards .type-card').count()) === 5);
+      && (await $('#monitor-cards .type-card[data-type="expectedImage"] .when').textContent()) === 'State tabanlı' && (await $('#monitor-cards .type-card').count()) === 7);
     await $('#monitor-search').fill('görüntü');
     check('arama: "görüntü" yalnızca Expected Image', (await $('#monitor-cards .type-card').count()) === 1 && (await $('#monitor-cards .type-card[data-type="expectedImage"]').count()) === 1);
     await $('#monitor-cards .type-card[data-type="expectedImage"]').click();

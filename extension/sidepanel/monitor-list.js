@@ -89,12 +89,12 @@ function openMonitorAlarms(m) {
     const li = document.createElement('li');
     li.className = 'alarm';
     li.innerHTML = '<div class="alarm-body"><b></b><small class="when"></small><small class="why"></small><small class="what"></small></div>';
-    if (a.screenshot) li.prepend(shotThumb(a, () => openMonitorShot(m, a), `Bozulduğu andaki ekranı büyüt (${a.where})`, 'Büyütmek için tıklayın')); // monitor-locate.js
+    if (a.screenshot) li.prepend(shotThumb(a, () => openMonitorShot(m, a), `Bozulduğu andaki ekranı büyüt (${a.where})`, 'Büyütmek için tıklayın', m)); // monitor-locate.js
     li.querySelector('b').textContent = a.where || (a.source === 'live' ? 'Şimdi kontrol' : 'Oynatma');
     li.querySelector('.when').textContent = alarmTime(a) + (a.url ? ` · ${a.url}` : '');
     li.querySelector('.why').textContent = a.text;
-    const what = faultSummary(a); // bozulan element(ler)
-    li.querySelector('.what').textContent = what ? `Bozulan: ${what}` : '';
+    const what = faultSummary(a); // bozulan element(ler); ekrana bakmayan monitörde ilgili aksiyonun elementi
+    li.querySelector('.what').textContent = what ? `${showsActionElement(m) ? 'Aksiyonun elementi' : 'Bozulan'}: ${what}` : '';
     li.querySelector('.what').hidden = !what;
     return li;
   }));
@@ -401,7 +401,7 @@ function monitorItem(m, { readOnly = false, tag = false } = {}) {
     row.hidden = false;
     const latest = alarms[0];
     if (verdict?.status === 'fail' && latest.screenshot) {
-      row.append(shotThumb(latest, () => openMonitorShot(m, latest), `Bozulduğu andaki ekranı büyüt (${latest.where})`, `Bozulduğu andaki ekran (${latest.where}): büyütmek için tıklayın`)); // monitor-locate.js
+      row.append(shotThumb(latest, () => openMonitorShot(m, latest), `Bozulduğu andaki ekranı büyüt (${latest.where})`, `Bozulduğu andaki ekran (${latest.where}): büyütmek için tıklayın`, m)); // monitor-locate.js
     }
     const button = document.createElement('button');
     button.className = 'small-btn alarms-open';

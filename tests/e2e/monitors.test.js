@@ -103,11 +103,15 @@ function check(name, ok, detail = '') {
 
     // ---- 1. adım: tür kartları ve arama ----
     await $('#btn-monitor-add').click();
-    check('pencere 1. adımda açıldı: 5 tür kartı, 3 grup', (await dialogOpen()) && (await $('#monitor-cards .type-card').count()) === 5 && (await $('#monitor-cards .type-group').count()) === 3, `${await $('#monitor-cards .type-card').count()} kart`);
+    check('pencere 1. adımda açıldı: 7 tür kartı, 4 grup', (await dialogOpen()) && (await $('#monitor-cards .type-card').count()) === 7 && (await $('#monitor-cards .type-group').count()) === 4, `${await $('#monitor-cards .type-card').count()} kart`);
     check('kartta kontrol biçimi etiketi', (await text('#monitor-cards .type-card[data-type="inputValidation"] .when')) === 'Aksiyon tabanlı'
-      && (await text('#monitor-cards .type-card[data-type="errorText"] .when')) === 'State tabanlı');
+      && (await text('#monitor-cards .type-card[data-type="errorText"] .when')) === 'State tabanlı'
+      && (await text('#monitor-cards .type-card[data-type="jsError"] .when')) === 'Olay tabanlı'
+      && (await text('#monitor-cards .type-card[data-type="actionTimeout"] .when')) === 'Süre tabanlı');
     await $('#monitor-search').fill('hata');
-    check('arama süzüyor', (await $('#monitor-cards .type-card').count()) === 1 && (await $('#monitor-cards .type-card[data-type="errorText"]').count()) === 1);
+    check('arama süzüyor', (await $('#monitor-cards .type-card').count()) === 2 && (await $('#monitor-cards .type-card[data-type="errorText"]').count()) === 1 && (await $('#monitor-cards .type-card[data-type="jsError"]').count()) === 1);
+    await $('#monitor-search').fill('süre');
+    check('arama kontrol biçiminde de arıyor ("süre": Action Timeout)', (await $('#monitor-cards .type-card').count()) === 1 && (await $('#monitor-cards .type-card[data-type="actionTimeout"]').count()) === 1);
     await $('#monitor-search').fill('YAZI');
     check('arama Türkçe büyük/küçük harf duyarsız', (await $('#monitor-cards .type-card[data-type="fontSize"]').count()) === 1);
     await $('#monitor-search').fill('');
