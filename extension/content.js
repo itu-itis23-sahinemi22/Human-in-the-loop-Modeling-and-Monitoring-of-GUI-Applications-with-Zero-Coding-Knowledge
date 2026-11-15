@@ -121,9 +121,19 @@ function multiClickLabel(label, count) {
 // görmezden gelebilir; oynatma ise her zaman gerçek fare olayıyla tıklar (sidepanel/replay.js > click).
 // count > 1: çoklu tıklama (detail 1..count). bot değilse tıklamalar arasında sayfaya sıra verilir
 // (sayfa bir öncekine tepki verebilir); bot ise hepsi bir anda (bkz. docs/01 > Bot tıklama).
-// Form alanında tıklama kaydedilmez (yalnızca odaklanmaktır; değeri 'change' ile gelir).
+// Gerçek fare gibi: tıklama, satırın elementinin ekrandaki ortasına yapılır ve o noktada EN ÜSTTE
+// duran elemente gider (hit test; oynatma da noktaya tıklar). Satır bir sarmalayıcıysa (ör.
+// div#shopping_cart_container) içindeki link, saydam bir açılır listenin altındaki yazıysa liste
+// tıklanır. Çoklu tıklamada her tıklama noktayı yeniden yoklar: sayfa ilk tıklamada butonu
+// yenisiyle değiştirdiyse (React: "Add to cart" → "Remove") sonraki tıklama yenisine gider.
+// Açılır liste (select) panelden açılamaz: tarayıcı sayfanın listesini yalnızca gerçek kullanıcı
+// hareketiyle açar. Cevap { choose }: panel seçenekleri listeler, seçileni chooseFromPanel seçer.
+// Diğer form alanlarında tıklama kaydedilmez (yalnızca odaklanmaktır; değeri 'change' ile gelir).
 async function clickFromPanel(el, count = 1, bot = false) {
-  const target = el.closest(INTERACTIVE) || el;
+  const point = panelPoint(el);
+  if (!point) return { error: 'Element şu an ekranda değil (sayfa kaydırılmış olabilir). Ağaç yenilenince tekrar seçin.' };
+  const { at, hit, target } = point;
+  if (target.tagName === 'SELECT') return { choose: selectChoices(target) };
   if (isFormField(target) || target.isContentEditable) {
     return { error: 'Form alanına tıklamak kaydedilmez (yalnızca odaklanır). Alana sayfada yazın ya da işaretleyin.' };
   }
@@ -132,20 +142,61 @@ async function clickFromPanel(el, count = 1, bot = false) {
   const click = { type: 'click', target: targetOf(target, visible), selector: cssSelector(target), label: visibleText(target) || target.tagName.toLowerCase() };
   const action = count > 1 ? { ...click, type: 'multiclick', count, label: multiClickLabel(click.label, count), ...(bot && { bot: true }) } : click;
   send(action, screen, count > 1 ? { clickLabel: click.label } : {}); // önce aksiyon, sonra sayfanın tepkisi (onClick gibi)
-  const box = target.getBoundingClientRect();
-  const at = { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+  const mouseAt = { clientX: at.x, clientY: at.y };
   for (let detail = 1; detail <= count; detail++) {
     if (detail > 1 && !bot) await new Promise((resolve) => setTimeout(resolve)); // sayfa bir öncekine tepki versin
-    firePanelClick(target, at, detail);
+    const under = detail === 1 ? hit : document.elementFromPoint(at.x, at.y); // sayfa elementi değiştirmiş olabilir
+    if (!under) break; // noktada artık bir şey yok (sayfa gitti)
+    firePanelClick(under, mouseAt, detail);
   }
   return { label: action.label };
+}
+
+// Satırın elementinin tıklanacak noktası ve o noktada gerçek farenin değeceği element: hit en
+// üstteki (en içteki) element, olaylar ona gider; target onun etkileşimli atası, kayda o girer
+// (onClick'teki gibi). Element ekranda değilse null.
+function panelPoint(el) {
+  const at = clickPoint(el);
+  const hit = at && document.elementFromPoint(at.x, at.y);
+  if (!hit) return null;
+  return { at, hit, target: hit.closest(INTERACTIVE) || hit };
+}
+
+// Açılır listenin seçenekleri (panelin menüsü için): label alanın adıdır (Select <ad>).
+function selectChoices(select) {
+  return {
+    label: fieldName(select),
+    options: [...select.options].map((option, index) => ({
+      text: option.text.replace(/\s+/g, ' ').trim() || option.value, disabled: option.disabled, selected: index === select.selectedIndex,
+    })),
+  };
+}
+
+// Panelin menüsünde seçilen seçenek (Ekrandaki elementler > satıra sağ tık > Tıkla > seçenek):
+// liste, satırın noktasında yeniden bulunur; seçenek seçilir ve sayfaya kullanıcının seçimindeki
+// gibi 'input' ve 'change' gönderilir (oynatmadaki 'choose' gibi; React'in onChange'i de çalışır).
+// Kayıt, sayfada seçmekle aynıdır: 'input' aksiyonu (recordValue). Seçenek zaten seçiliyse tarayıcı
+// da 'change' göndermez: kaydedilecek bir şey yoktur (unchanged).
+function chooseFromPanel(el, index) {
+  const select = panelPoint(el)?.target;
+  if (select?.tagName !== 'SELECT') return { error: 'Açılır liste artık bu noktada değil. Ağaç yenilenince tekrar seçin.' };
+  const option = select.options[index];
+  if (!option || option.disabled) return { error: 'Bu seçenek seçilemez.' };
+  const label = `Select ${fieldName(select)}: ${option.text.replace(/\s+/g, ' ').trim() || option.value}`;
+  if (select.selectedIndex === index) return { label, unchanged: true };
+  select.selectedIndex = index;
+  select.dispatchEvent(new Event('input', { bubbles: true }));
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  recordValue(select);
+  return { label };
 }
 
 function firePanelClick(el, at, detail) {
   const mouse = (type, buttons) => new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window, detail, button: 0, buttons, ...at });
   const pointer = (type, buttons) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, view: window, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons, ...at });
   el.dispatchEvent(pointer('pointerdown', 1));
-  if (el.dispatchEvent(mouse('mousedown', 1)) && detail === 1) el.focus?.({ preventScroll: true }); // sayfa engellemediyse odak (gerçek tıklamadaki gibi)
+  // Sayfa engellemediyse odak, gerçek tıklamadaki gibi tıklanan yerin etkileşimli atasına (butonun içindeki yazıya değil)
+  if (el.dispatchEvent(mouse('mousedown', 1)) && detail === 1) (el.closest(INTERACTIVE) || el).focus?.({ preventScroll: true });
   el.dispatchEvent(pointer('pointerup', 0));
   el.dispatchEvent(mouse('mouseup', 0));
   el.dispatchEvent(mouse('click', 0));

@@ -163,12 +163,46 @@ function openTreeMenu(node, event) {
   note.className = 'menu-note';
   note.textContent = blocked;
   note.hidden = !blocked;
-  treeMenu.replaceChildren(head, item('Tıkla', 1), item('Çift tıkla', 2), item('Üçlü tıkla', 3), many, bot, note);
+  treeMenuAt = { x: event.clientX, y: event.clientY };
+  showTreeMenu(head, item('Tıkla', 1), item('Çift tıkla', 2), item('Üçlü tıkla', 3), many, bot, note);
+}
+
+// Menünün açıldığı nokta: açılır listenin seçenekleri de aynı yerde açılır.
+let treeMenuAt = { x: 0, y: 0 };
+
+// Menüyü verilen içerikle treeMenuAt'te açar (pencereden taşmadan) ve ilk açık butona odaklanır.
+function showTreeMenu(...children) {
+  treeMenu.replaceChildren(...children);
   treeMenu.hidden = false;
   const { offsetWidth: width, offsetHeight: height } = treeMenu;
-  treeMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - width - 8))}px`;
-  treeMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - height - 8))}px`;
+  treeMenu.style.left = `${Math.max(8, Math.min(treeMenuAt.x, innerWidth - width - 8))}px`;
+  treeMenu.style.top = `${Math.max(8, Math.min(treeMenuAt.y, innerHeight - height - 8))}px`;
   (treeMenu.querySelector('button:not(:disabled)') ?? treeMenu.querySelector('button'))?.focus();
+}
+
+// Tıklanan yer bir açılır listeydi (cevap { choose }): tarayıcı sayfanın listesini panelden
+// açtırmaz, seçenekleri menü gösterir. Seçili olan işaretlidir; seçilen sayfada seçilir ve
+// kaydedilir (content.js > chooseFromPanel).
+function openChooseMenu(node, { label, options }) {
+  const head = document.createElement('p');
+  head.className = 'menu-head';
+  head.textContent = `Açılır liste${label ? ` "${label}"` : ''}`;
+  const list = document.createElement('div');
+  list.className = 'menu-options';
+  list.append(...options.map((option, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', 'menuitemradio');
+    button.setAttribute('aria-checked', String(option.selected));
+    button.textContent = option.text;
+    button.disabled = option.disabled;
+    button.onclick = () => chooseTreeOption(node, index);
+    return button;
+  }));
+  const note = document.createElement('p');
+  note.className = 'menu-note';
+  note.textContent = 'Seçenek sayfada seçilir ve kaydedilir. (Tarayıcı sayfanın açılır listesini panelden açtırmaz.)';
+  showTreeMenu(head, list, note);
 }
 
 function closeTreeMenu() {
@@ -187,13 +221,33 @@ async function clickTreeElement(node, count) {
   const bot = count > 1 && $('dom-tree-bot').checked;
   closeTreeMenu();
   highlightElement(null);
-  const response = await chrome.tabs.sendMessage(treeTabId, { type: 'DOM_TREE_CLICK', id: node.id, count, bot }, { frameId: 0 }).catch(() => null);
+  const response = await treeRequestToPage({ type: 'DOM_TREE_CLICK', id: node.id, count, bot });
+  if (!response) return;
+  if (response.choose) return openChooseMenu(node, response.choose);
+  showMessage({ notice: `Sayfada yapıldı ve kaydedildi: ${response.label}${bot ? ' (bot)' : ''}.` });
+}
+
+async function chooseTreeOption(node, index) {
+  closeTreeMenu();
+  const response = await treeRequestToPage({ type: 'DOM_TREE_CHOOSE', id: node.id, index });
+  if (!response) return;
+  showMessage({ notice: response.unchanged ? `Zaten seçili: ${response.label}. Kaydedilecek bir değişiklik yok.` : `Sayfada seçildi ve kaydedildi: ${response.label}.` });
+}
+
+// Satırın elementi için sayfaya istek. Element gittiyse, sayfa hata verdiyse ya da ulaşılamadıysa
+// mesajı gösterir ve null döner.
+async function treeRequestToPage(message) {
+  const response = await chrome.tabs.sendMessage(treeTabId, message, { frameId: 0 }).catch(() => null);
   if (response?.gone) {
     scheduleTreeRefresh();
-    return showMessage({ error: 'Element artık sayfada yok; ağaç yenilendi, tekrar seçin.' });
+    showMessage({ error: 'Element artık sayfada yok; ağaç yenilendi, tekrar seçin.' });
+    return null;
   }
-  if (!response || response.error) return showMessage({ error: response?.error ?? 'Sayfaya ulaşılamadı. Sayfayı yenileyip (F5) tekrar deneyin.' });
-  showMessage({ notice: `Sayfada yapıldı ve kaydedildi: ${response.label}${bot ? ' (bot)' : ''}.` });
+  if (!response || response.error) {
+    showMessage({ error: response?.error ?? 'Sayfaya ulaşılamadı. Sayfayı yenileyip (F5) tekrar deneyin.' });
+    return null;
+  }
+  return response;
 }
 
 // Satırın elementini sayfada çerçeveler (id null: çerçeve kalkar). Element sayfadan gittiyse

@@ -1,7 +1,9 @@
 // Ekrandaki elementler kartı (DOM ağacı): yalnızca ekranda görünen elementler, sarmalayıcıların
 // katlanması, gizlilerin atılması, satırın üzerine gelince sayfada çerçeve (sayfanın DOM izleyicisine
 // görünmeden), kayda dokunmama, node oluşturulurken çerçevenin kalkması, satıra sağ tıkla tıklama
-// (sayfada yapılır ve kaydedilir; çoklu, bot, kayıt başka sekmedeyken kapalı), her aksiyondan ve
+// (sayfada yapılır ve kaydedilir; çoklu, bot, kayıt başka sekmedeyken kapalı; gerçek fare gibi
+// noktadaki en üstteki elemente: sarmalayıcının linki, yenilenen buton, saydam açılır listenin
+// seçenekleri menüde), her aksiyondan ve
 // kaydırmadan sonra yenilenme, kapatılan dalın kapalı kalması, okunamayan sayfa.
 // Kullanım: node tests/e2e/dom-tree.test.js
 const http = require('http');
@@ -34,6 +36,21 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Agac</titl
 <p class="far">Aşağıdaki yazı</p>
 </body></html>`;
 const EXPECTED = '0 div#root | 1 main | 2 h1 Ürünler | 2 button#buy Satın al | 2 input#q Ara | 2 p Toplam ürün | 3 b 3 | 2 div Slayt 1 | 2 button#show Göster';
+// Satırdan tıklamanın gerçek fare gibi noktaya gitmesi (saucedemo'daki üç durum): sarmalayıcının
+// içindeki link (sepet), ilk tıklamada yenisiyle değişen buton (React'teki gibi yeniden çizim
+// microtask'ta: "Ekle" → "Çıkar"), saydam açılır listenin altındaki yazı (sıralama).
+const STORE = `<!doctype html><html><head><meta charset="utf-8"><title>Magaza</title></head><body>
+<div id="cart" style="width:60px;height:40px"><a class="cart-link" role="button" style="display:block;width:60px;height:40px" onclick="this.textContent = 'Sepet açık'">Sepet</a></div>
+<div id="slot"></div>
+<span style="position:relative;display:inline-block;width:200px;height:30px"><span id="shown">A'dan Z'ye</span>
+<select id="sort" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0.001"><option value="az">A'dan Z'ye</option><option value="za">Z'den A'ya</option></select></span>
+<script>
+let added = false;
+function render() { document.getElementById('slot').innerHTML = added ? '<button id="remove">Çıkar</button>' : '<button id="add">Ekle</button>'; }
+document.getElementById('slot').addEventListener('click', (e) => { if (e.target.id) { added = e.target.id === 'add'; queueMicrotask(render); } });
+render();
+document.getElementById('sort').onchange = (e) => { document.getElementById('shown').textContent = e.target.selectedOptions[0].text; };
+</script></body></html>`;
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -42,7 +59,7 @@ function check(name, ok, detail = '') {
 }
 
 (async () => {
-  const server = http.createServer((req, res) => { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end(PAGE); });
+  const server = http.createServer((req, res) => { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end(req.url === '/store' ? STORE : PAGE); });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}/`;
   const ctx = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), 'gr-domtree-')), {
@@ -208,6 +225,41 @@ function check(name, ok, detail = '') {
     check('okunamayan sayfada ağaç boş', (await rows()).length === 0 && await panel.textContent('#dom-tree-count') === '');
     await page.goto(base);
     check('sayfa yüklenince ağaç geri geldi', await hasText('Ürünler'));
+
+    // ---- Satırdan tıklama gerçek fare gibi noktaya gider ----
+    await page.goto(base + 'store');
+    check('mağaza sayfasının ağacı geldi', await hasText('Sepet'));
+    await openMenu('div#cart');
+    await menuButton('Tıkla');
+    await sleep(700);
+    action = await lastAction();
+    check('sarmalayıcı satır: noktadaki link tıklandı', await page.textContent('.cart-link') === 'Sepet açık' && await hasText('Sepet açık'));
+    check('sarmalayıcı satır: kaydedilen link (click "Sepet")', action?.type === 'click' && action.label === 'Sepet', JSON.stringify(action));
+    await sleep(500);
+    await openMenu('button#add');
+    await menuButton('Çift tıkla');
+    await sleep(1200);
+    action = await lastAction();
+    check('Çift tıkla: ikinci tıklama yenilenen butona gitti (Ekle → Çıkar → Ekle)', await page.evaluate(() => Boolean(document.getElementById('add'))), await page.innerHTML('#slot'));
+    check('Çift tıkla: multiclick ×2 "Double click Ekle"', action?.type === 'multiclick' && action.count === 2 && action.label === 'Double click Ekle' && !action.bot, JSON.stringify(action));
+    await openMenu('button#add');
+    await panel.evaluate(() => { document.getElementById('dom-tree-bot').checked = true; });
+    await menuButton('Çift tıkla');
+    await sleep(1200);
+    action = await lastAction();
+    check('Bot ile çift tıkla: sayfa arada tepki veremedi (iki tıklama da Ekle\'ye: Çıkar)', await page.evaluate(() => Boolean(document.getElementById('remove'))), await page.innerHTML('#slot'));
+    check('Bot ile çift tıkla: multiclick ×2, bot: true', action?.type === 'multiclick' && action.count === 2 && action.bot === true, JSON.stringify(action));
+    await openMenu('span#shown');
+    await menuButton('Tıkla');
+    const shown = await until(() => !document.getElementById('dom-tree-menu').hidden && document.querySelectorAll('#dom-tree-menu .menu-options button').length > 0);
+    const options = await panel.evaluate(() => [...document.querySelectorAll('#dom-tree-menu .menu-options button')]
+      .map((b) => b.textContent + (b.getAttribute('aria-checked') === 'true' ? '*' : '')).join('|'));
+    check('saydam listenin altındaki yazı: menüde listenin seçenekleri, seçili işaretli', shown && options === "A'dan Z'ye*|Z'den A'ya", options);
+    await menuButton("Z'den A'ya");
+    await sleep(700);
+    action = await lastAction();
+    check('seçenek sayfada seçildi (sayfanın change dinleyicisi çalıştı)', await page.textContent('#shown') === "Z'den A'ya", await page.textContent('#shown'));
+    check('seçim kaydedildi (input "za", select:sort)', action?.type === 'input' && action.value === 'za' && action.target?.key === 'select:sort', JSON.stringify(action));
   } finally {
     await ctx.close();
     server.close();

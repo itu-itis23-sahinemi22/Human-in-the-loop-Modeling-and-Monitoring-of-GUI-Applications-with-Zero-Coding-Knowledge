@@ -31,3 +31,6 @@ details[open] > summary.dom-row::before { content: '▾'; }
 .dom-tree-menu button:disabled { opacity: 0.5; cursor: default; background: transparent; color: var(--text); }
 .dom-tree-menu .menu-note { margin: 4px 10px 2px; max-width: 260px; white-space: normal; color: var(--muted); font-size: 11px; }
 .dom-tree-menu .menu-note[hidden] { display: none; }
+.dom-tree-menu .menu-options { max-height: 240px; overflow-y: auto; }
+.dom-tree-menu button[aria-checked="true"] { font-weight: 600; }
+.dom-tree-menu button[aria-checked="true"]::before { content: "✓ "; }
