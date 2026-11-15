@@ -843,7 +843,7 @@ function actionItem(action) {
   li.querySelector('span').textContent = action.label + value;
   // Hedef state ile aynı düzeyde ("button:Sil #2" = ekrandaki 2. Sil); selector yedek
   const target = action.target?.index ? `${action.target.key} #${action.target.index} · ` : '';
-  li.querySelector('code').textContent = target + (action.selector ?? action.url);
+  li.querySelector('code').textContent = target + (action.selector ?? action.url) + (action.type === 'drag' && action.to ? ` → ${action.to.selector}` : '');
   return li;
 }
 

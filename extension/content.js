@@ -70,6 +70,7 @@ function onClick(event) {
   // isTrusted=false olan olayları sayfanın kendi kodu üretmiştir (ör. el.click()); kullanıcı değil.
   if (!event.isTrusted) return;
   if (selectionGesture) return void (selectionGesture = false); // seçim hareketinin 'click'i
+  if (dragGesture) return void (dragGesture = false); // sürüklemenin 'click'i (bkz. SÜRÜKLE-BIRAK)
 
   // Kullanıcı bir butonun içindeki <span>'e tıklamış olabilir; asıl butonu bul.
   const el = event.target.closest(INTERACTIVE) || event.target;
@@ -107,6 +108,50 @@ function multiClickLabel(label, count) {
   return count === 2 ? `Double click ${label}` : count === 3 ? `Triple click ${label}` : `Click ${label} ×${count}`;
 }
 
+// PANELDEN TIKLAMA (Ekrandaki elementler > satıra sağ tık > Tıkla / Çift tıkla / … ; panelin isteğini
+// dom-tree.js iletir): kullanıcı elementi panelde seçer, tıklama sayfada yapılır ve kullanıcının kendi
+// tıklaması gibi kaydedilir ("Bekleyen aksiyonlar"a düşer, sonrası sayfa durulunca ölçülür).
+// Tıklama elementin kendi tıklama dinleyicilerini tetikleyerek yapılır: fare olayları (pointerdown,
+// mousedown, mouseup, click; ikinci tıklamada dblclick) sayfanın içinden elemente gönderilir. Sayfanın
+// onClick'i (onclick özelliği, addEventListener, React'in dinleyicisi) ve tarayıcının işi (link açmak,
+// formu göndermek) çalışır. DevTools protokolü kullanılmaz: sekmede "hata ayıklanıyor" çubuğu çıkmaz,
+// sayfanın boyutu değişmez (değişseydi kayda 'resize' düşerdi).
+// Bu olaylar sayfanın kendi ürettiği olay sayılır (isTrusted: false): kaydın dinleyicileri onları
+// yok sayar, aksiyon burada bir kez gönderilir. isTrusted'a bakan az sayıdaki sayfa bu tıklamayı
+// görmezden gelebilir; oynatma ise her zaman gerçek fare olayıyla tıklar (sidepanel/replay.js > click).
+// count > 1: çoklu tıklama (detail 1..count). bot değilse tıklamalar arasında sayfaya sıra verilir
+// (sayfa bir öncekine tepki verebilir); bot ise hepsi bir anda (bkz. docs/01 > Bot tıklama).
+// Form alanında tıklama kaydedilmez (yalnızca odaklanmaktır; değeri 'change' ile gelir).
+async function clickFromPanel(el, count = 1, bot = false) {
+  const target = el.closest(INTERACTIVE) || el;
+  if (isFormField(target) || target.isContentEditable) {
+    return { error: 'Form alanına tıklamak kaydedilmez (yalnızca odaklanır). Alana sayfada yazın ya da işaretleyin.' };
+  }
+  const visible = interactableElements();
+  const screen = countElements(visible);
+  const click = { type: 'click', target: targetOf(target, visible), selector: cssSelector(target), label: visibleText(target) || target.tagName.toLowerCase() };
+  const action = count > 1 ? { ...click, type: 'multiclick', count, label: multiClickLabel(click.label, count), ...(bot && { bot: true }) } : click;
+  send(action, screen, count > 1 ? { clickLabel: click.label } : {}); // önce aksiyon, sonra sayfanın tepkisi (onClick gibi)
+  const box = target.getBoundingClientRect();
+  const at = { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+  for (let detail = 1; detail <= count; detail++) {
+    if (detail > 1 && !bot) await new Promise((resolve) => setTimeout(resolve)); // sayfa bir öncekine tepki versin
+    firePanelClick(target, at, detail);
+  }
+  return { label: action.label };
+}
+
+function firePanelClick(el, at, detail) {
+  const mouse = (type, buttons) => new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window, detail, button: 0, buttons, ...at });
+  const pointer = (type, buttons) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, view: window, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons, ...at });
+  el.dispatchEvent(pointer('pointerdown', 1));
+  if (el.dispatchEvent(mouse('mousedown', 1)) && detail === 1) el.focus?.({ preventScroll: true }); // sayfa engellemediyse odak (gerçek tıklamadaki gibi)
+  el.dispatchEvent(pointer('pointerup', 0));
+  el.dispatchEvent(mouse('mouseup', 0));
+  el.dispatchEvent(mouse('click', 0));
+  if (detail === 2) el.dispatchEvent(mouse('dblclick', 0));
+}
+
 function onChange(event) {
   if (!event.isTrusted || !isFormField(event.target)) return;
   recordValue(event.target);
@@ -120,7 +165,7 @@ function onChange(event) {
 // seçimle değiştirir (replaces: o aksiyonun zamanı). Shift+tıklama ve klavyeyle (Shift+oklar)
 // var olan seçimi genişletmek de son seçimin yerini alır. Buton, link gibi elementlere çift
 // tıklamak ya da Shift ile tıklamak seçim sayılmaz.
-let pointerDown = null;        // { x, y }: farenin basıldığı yer
+let pointerDown = null;        // { x, y, el, selected }: farenin basıldığı yer (el, selected: bkz. SÜRÜKLE-BIRAK)
 let gestureStart = 0;          // çoklu tıklama hareketinin ilk basışının zamanı
 let lastSentTime = 0;          // en son gönderilen aksiyonun zamanı (bkz. send)
 let lastSelectTime = -1;       // en son gönderilen seçimin zamanı
@@ -128,9 +173,11 @@ let selectionGesture = false;  // bu hareket seçim olarak kaydedildi: ardından
 
 function onMouseDown(event) {
   if (!event.isTrusted || event.button !== 0) return;
-  pointerDown = { x: event.clientX, y: event.clientY };
+  pointerDown = { x: event.clientX, y: event.clientY, el: dragSource(event), selected: getSelection().toString() };
   if (event.detail <= 1) gestureStart = Date.now();
   selectionGesture = false;
+  dragGesture = false;
+  dragStart = null;
 }
 
 function onMouseUp(event) {
@@ -141,6 +188,9 @@ function onMouseUp(event) {
   const extend = event.shiftKey && !onControl;
   if (!moved && !multiClick && !extend) return; // sıradan tıklama
   const selection = selectionOf(event.target);
+  // Fare eşiği aştı ve yeni bir metin seçilmedi: sürükleme (seçim basmadan önce de varsa ve sayfa
+  // basışta seçimi kaldırmadıysa aynı kalır; o seçim bu hareketin değildir)
+  if (dragStart && (selection?.text ?? '') === pointerDown.selected) return finishPointerDrag(event);
   if (!selection) return;
 
   selectionGesture = true;
@@ -176,6 +226,109 @@ function selectionOf(el) {
   if (selection.isCollapsed || !text.trim()) return null;
   const node = selection.getRangeAt(0).commonAncestorContainer;
   return { el: node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement, text };
+}
+
+// SÜRÜKLE-BIRAK: bir elementi fareyle tutup başka bir yere bırakmak ('drag'). Sayfalar bunu iki
+// yolla yapar, ikisi de aynı aksiyon olur:
+//   - HTML5 sürükleme (draggable="true", dosya listeleri, kanban'ların bir kısmı): tarayıcı
+//     'dragstart' ve bırakılan yerde 'drop' üretir; arada fare olayı (mouseup, click) gelmez.
+//     native: true ile kaydedilir (oynatma tarayıcının sürükleme olaylarını kullanır).
+//   - Fareyle sürükleme (kaydırıcı, harita, çoğu sıralama kütüphanesi): sayfa mousedown /
+//     mousemove / mouseup'ı kendisi izler. Fare basılıyken DRAG_MIN_PX'ten fazla kayıp yeni bir
+//     metin seçilmeden bırakılırsa sürüklemedir; ardından gelen 'click' yok sayılır.
+// Kaydedilen: tutulan element (target, selector: sürükleme BAŞLARKEN, sayfa henüz değişmeden),
+// bırakılan yerin elementi ve o elementin içindeki nokta (to: { target?, selector, x, y }), fare
+// ne kadar kaydı (dx, dy; CSS piksel). Bırakılan yer tutulan elementin kendisi, içi ya da onu
+// içeren bir kutuysa (kaydırıcının izi, aynı listede sıra değiştirmek) to yoktur: oynatma kayıttaki
+// mesafeyi (dx, dy) kullanır. Aksiyonun öncesi sürüklemenin başladığı andaki ekrandır.
+// Form alanlarında (metin seçmek, textarea'yı büyütmek) ve kaydırma çubuğunda sürükleme yoktur;
+// seçili metni sürüklemek de sayılmaz (bırakılan alana yazılan değer 'input' olarak gelir).
+const DRAG_MIN_PX = 8;
+let dragStart = null;    // fareyle sürükleme başladı: dragStartOf'un döndürdüğü (eşik aşıldığı an)
+let nativeDrag = null;   // HTML5 sürükleme sürüyor: dragStartOf'un döndürdüğü
+let dragGesture = false; // bu hareket sürükleme olarak kaydedildi: ardından gelen 'click'i yok say
+
+document.addEventListener('mousemove', onDragMove, true);
+document.addEventListener('dragstart', onDragStart, true);
+document.addEventListener('drop', onDrop, true);
+document.addEventListener('dragend', () => { nativeDrag = null; }, true); // bırakılmadan bitti (Esc, boş yer)
+
+// Basılan yerdeki tutulabilecek element; form alanı, kaydırma çubuğu ve sayfanın boş yeri (body) null
+function dragSource(event) {
+  const el = event.target;
+  if (!(el instanceof Element) || el === document.body || el === document.documentElement) return null;
+  if (isFormField(el) || el.isContentEditable || onScrollbar(el, event)) return null;
+  return el.closest(INTERACTIVE) || el;
+}
+
+// Fare kutunun kaydırma çubuğunda mı? (clientWidth / clientHeight çubuğu içermez)
+function onScrollbar(el, event) {
+  if (el === document.documentElement) return event.clientX >= el.clientWidth || event.clientY >= el.clientHeight;
+  const scrollable = el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth;
+  return scrollable && (event.offsetX >= el.clientWidth || event.offsetY >= el.clientHeight);
+}
+
+// Sürüklemenin başladığı an: tutulan element ve o anki ekran (aksiyonun öncesi)
+function dragStartOf(el, { x, y }) {
+  const visible = interactableElements();
+  return {
+    el, x, y, screen: countElements(visible), selector: cssSelector(el), name: dragName(el),
+    ...(el.matches(INTERACTIVE) && { target: targetOf(el, visible) }),
+  };
+}
+
+function dragName(el) {
+  return shortText(visibleText(el) || el.tagName.toLowerCase());
+}
+
+function onDragMove(event) {
+  if (!event.isTrusted || !pointerDown?.el || dragStart || nativeDrag || !(event.buttons & 1)) return;
+  if (Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) <= DRAG_MIN_PX) return;
+  dragStart = dragStartOf(pointerDown.el, pointerDown);
+}
+
+function finishPointerDrag(event) {
+  const start = dragStart;
+  dragStart = null;
+  dragGesture = true;
+  const under = document.elementsFromPoint(event.clientX, event.clientY).find((el) => el !== start.el && !start.el.contains(el));
+  sendDrag(start, under, event.clientX, event.clientY, false);
+}
+
+function onDragStart(event) {
+  if (!event.isTrusted) return;
+  dragStart = null; // tarayıcının sürüklemesi: bu hareket fareyle sürükleme olarak da kaydedilmesin
+  const el = event.target instanceof Element ? event.target : null; // seçili metin sürükleniyorsa metin düğümü
+  nativeDrag = el && !isFormField(el) ? dragStartOf(el, pointerDown ?? { x: event.clientX, y: event.clientY }) : null;
+  if (pointerDown) pointerDown.el = null;
+}
+
+function onDrop(event) {
+  if (!event.isTrusted || !nativeDrag) return;
+  const start = nativeDrag;
+  nativeDrag = null;
+  sendDrag(start, event.target instanceof Element ? event.target : null, event.clientX, event.clientY, true);
+}
+
+// under: bırakılan noktadaki element. Etkileşimli bir elementin içiyse o element bırakılan yerdir.
+function sendDrag(start, under, x, y, native) {
+  let drop = under?.closest(INTERACTIVE) || under;
+  if (!drop || drop === document.body || drop === document.documentElement || drop.contains(start.el) || start.el.contains(drop)) drop = null;
+  const dx = Math.round(x - start.x);
+  const dy = Math.round(y - start.y);
+  let to = null;
+  if (drop) {
+    const box = drop.getBoundingClientRect();
+    to = {
+      selector: cssSelector(drop), x: Math.round(x - box.left), y: Math.round(y - box.top),
+      ...(drop.matches(INTERACTIVE) && { target: targetOf(drop) }),
+    };
+  }
+  const signed = (n) => (n > 0 ? `+${n}` : String(n));
+  send({
+    type: 'drag', ...(start.target && { target: start.target }), selector: start.selector, to, dx, dy, ...(native && { native: true }),
+    label: `Drag ${start.name} ` + (drop ? `→ ${dragName(drop)}` : `(${signed(dx)}, ${signed(dy)})`),
+  }, start.screen);
 }
 
 // PANO: kopyala, kes, yapıştır. Klavyeden, sağ tık menüsünden ya da Chrome menüsünden
@@ -722,6 +875,8 @@ function sendHover(el) {
 //   choose  : açılır listede değeri seç
 //   scroll  : sayfayı ya da kutuyu kayıttaki konuma kaydır
 //   select  : kayıttaki metin seçimini kur (fingerprint.js > selectRecordedText); { selected }
+//   point   : sürüklemenin bırakılacağı nokta: elementin içinde kayıttaki konum (x, y; kutuya
+//             sığdırılır). Kaydırılmaz (tutulan element yerinden oynamasın); ekranda değilse missing
 async function replayRequest({ op, target, selector, highlight, select, value, x, y, text, start, end }) {
   if (op === 'settled') {
     await settled();
@@ -759,6 +914,13 @@ async function replayRequest({ op, target, selector, highlight, select, value, x
     return { viaSelector };
   }
   if (op === 'select') return { selected: selectRecordedText(el, { text, start, end }), viaSelector };
+  if (op === 'point') {
+    const box = el.getBoundingClientRect();
+    const within = (at, size) => Math.min(Math.max(at ?? size / 2, 0), Math.max(size - 1, 0));
+    const point = { x: box.left + within(x, box.width), y: box.top + within(y, box.height) };
+    if (point.x < 0 || point.y < 0 || point.x >= innerWidth || point.y >= innerHeight) return { missing: true };
+    return { ...point, viaSelector };
+  }
   return { error: `Bilinmeyen istek: ${op}` };
 }
 

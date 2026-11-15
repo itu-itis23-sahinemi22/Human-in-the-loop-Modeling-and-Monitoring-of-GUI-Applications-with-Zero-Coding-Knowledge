@@ -264,6 +264,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `enter` | `press('Enter')` |
 | `key` | `press(key)`, `count` kez. Hedef yoksa (odakta element yoktu) `keyboard.press(key)`. |
 | `contextmenu` | `click({ button: 'right' })` |
+| `drag` | `hover()` ile tutulan elementin ortası, `mouse.down()`, bırakılacak noktaya `mouse.move(…, { steps: 10 })`, `mouse.up()`. Nokta: `to` elementinin içinde kayıttaki konum; element 2 sn'de bulunamazsa ya da ekranda değilse kayıttaki mesafe (`dx`, `dy`), uyarıyla. Playwright'ın faresi Chromium'da HTML5 sürüklemeyi de yürütür. |
 | `hover` | `hover()`: fare elementin ortasına gelir |
 | `focus` | `focus()` |
 | `scroll` | `scrollTo(x, y)`, sayfada ya da kaydırılan kutuda; sayfa yumuşak kaydırma kullansa da konuma hemen varılır |

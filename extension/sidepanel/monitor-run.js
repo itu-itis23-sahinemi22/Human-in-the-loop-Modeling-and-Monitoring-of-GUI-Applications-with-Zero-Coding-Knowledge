@@ -99,13 +99,15 @@ async function monitorScreenshot(tabId) {
   const options = { format: 'jpeg', quality: 40 };
   try {
     const { windowId } = await chrome.tabs.get(tabId);
-    try {
-      return await chrome.tabs.captureVisibleTab(windowId, options);
-    } catch (error) {
-      if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota|exceed/i.test(error?.message ?? '')) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      return await chrome.tabs.captureVisibleTab(windowId, options);
-    }
+    return await withoutMarks(tabId, async () => { // canlı sayfadaki çerçeveler görüntüye girmesin
+      try {
+        return await chrome.tabs.captureVisibleTab(windowId, options);
+      } catch (error) {
+        if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota|exceed/i.test(error?.message ?? '')) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        return await chrome.tabs.captureVisibleTab(windowId, options);
+      }
+    });
   } catch {
     return null;
   }
@@ -136,7 +138,49 @@ async function raiseAlarms(run, replay, step, failing, action = null) {
   } catch (error) {
     console.warn('Monitör uyarıları kaydedilemedi:', error);
   }
+  await markOnPage(run, replay, step, failing); // görüntü alındı: çerçeve artık çizilebilir (görüntüye girmez)
 }
+
+// -----------------------------------------------------------------------------
+// CANLI SAYFADA İŞARET (monitor-probe.js > CANLI SAYFADA İŞARET)
+// -----------------------------------------------------------------------------
+// Oynatmada bozulan monitörün elementi test sürerken sayfanın kendisinde de kırmızı çerçeveyle (üstünde
+// monitörün adı) gösterilir. Çerçeve uyarının görüntüsü alındıktan SONRA çizilir; sonraki her görüntüden
+// önce gizlenip sonra yeniden gösterilir (withoutMarks): hiçbir ekran görüntüsüne girmez. Yeni oynatma
+// başlarken kalkar. İşaretlenen: sayfada kontrol edilen monitörün bozulan elementleri (son kontrolde
+// bulunanlar), ekrana bakmayan monitörde (JavaScript Error, Action Timeout) ilgili aksiyonun elementi.
+// Görüntü monitörü (Expected Image) bir element değil görüntüdeki bir bölge bulur: canlı sayfada işaretlenmez.
+const markedTabs = new Set(); // çerçeve çizilmiş olabilecek sekmeler (görüntüden önce gizlenecek)
+
+async function markOnPage(run, replay, step, failing) {
+  const marks = failing.flatMap((m) => {
+    const side = monitorType(m.type)?.side;
+    if (side === 'panel') return [];
+    const verdict = step.verdicts.get(m.id);
+    if (side !== 'replay') return [{ id: m.id, label: monitorName(m) }]; // monitor-store.js
+    const about = verdict?.about ?? -1;
+    return about >= 0 && step.kept.has(about) ? [{ id: m.id, label: monitorName(m), kept: keptId(run, step, about) }] : [];
+  });
+  if (!marks.length || replay.stopped) return;
+  markedTabs.add(replay.tabId);
+  await askPage(replay.tabId, { type: 'MONITOR_MARK', marks }, MONITOR_LOCATE_TIMEOUT_MS);
+}
+
+// Ekran görüntüsü çerçevesiz alınır: çerçeve gizlenir (sayfa gizli hali boyayınca cevap verir), görüntü alınır,
+// çerçeve geri gelir. Çerçeve çizilmemiş sekmede doğrudan alınır.
+async function withoutMarks(tabId, capture) {
+  if (!markedTabs.has(tabId)) return capture();
+  await askPage(tabId, { type: 'MONITOR_MARK_SHOWN', shown: false }, 500);
+  try {
+    return await capture();
+  } finally {
+    askPage(tabId, { type: 'MONITOR_MARK_SHOWN', shown: true }, 500); // beklenmez: oynatma sürsün
+  }
+}
+
+// capture sarmalanır: adım kalınca alınan görüntü (replay.js) de çerçevesiz olsun
+const captureWithoutMarks = capture; // replay.js
+capture = (replay) => withoutMarks(replay.tabId, () => captureWithoutMarks(replay));
 
 // Uyarının yerine yazılacak aksiyon. played: kontrolün yapıldığı an (az önce oynatılan aksiyon { index, count,
 // label }; adımın sonundaysa null). about: bozulan sonucun ilgili olduğu aksiyonun sırası; ekrana bakmayan monitör
@@ -179,6 +223,8 @@ function appliesTo(m, step) {
 // monitörleri); koşu bitince sonuçlar toplanır.
 const startReplayWithoutMonitors = startReplay; // replay.js
 startReplay = (options) => {
+  if (markedTabs.has(options.tabId)) chrome.tabs.sendMessage(options.tabId, { type: 'MONITOR_MARK_CLEAR' }, { frameId: 0 }).catch(() => { }); // önceki koşunun çerçeveleri
+  markedTabs.clear();
   const run = beginMonitorRun(options.edges, options.scenario ?? null);
   const started = startReplayWithoutMonitors(options);
   run.replay = started;

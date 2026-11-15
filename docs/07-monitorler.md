@@ -272,6 +272,16 @@ Bir monitör bozulduğunda uyarı iki soruyu cevaplar: **hangi ekranda** (bozulm
 - Kontrolün baktığı yer neyse hata yeri de odur: yalnızca ana çerçeve (iframe'lerin ve shadow DOM'un içi kontrol edilmez; Ekrandaki elementler kartı da öyledir).
 - Görüntü monitörünün "bölgesi" bir element değildir; adı ve DOM yolu yoktur.
 
+### Canlı sayfada işaret
+
+Oynatma sürerken bir monitör bozulunca elementi **sayfanın kendisinde** de işaretlenir: kırmızı çerçeve, üstünde monitörün adı. Kullanıcı testi izlerken neyin bozulduğunu sayfada görür; uyarının görüntüsü sonradan bakmak içindir.
+
+- **Ne işaretlenir?** Sayfada kontrol edilen monitörde son kontrolün bulduğu bozulan elementler (uyarıdakilerle aynı, en fazla 10; metinse yalnızca o metin). Ekrana bakmayan monitörde (JavaScript Error, Action Timeout) ilgili aksiyonun elementi. Görüntü monitörü (Expected Image) bir element bulmaz, görüntüde bir bölge bulur: canlı sayfada işaretlenmez. Sayfada en fazla 20 çerçeve durur (eskisi düşer).
+- **Görüntüye girmez.** Çerçeve, uyarının görüntüsü alındıktan **sonra** çizilir. Sonraki her görüntüden (sonraki uyarılar, görüntü monitörünün çekimi, adım kalınca alınan görüntü) önce panel çerçeveleri gizler, sayfa gizli hali boyayınca görüntü alınır, çerçeveler geri gelir (`monitor-run.js > withoutMarks`). Node oluşturulurken de kalkar (`GET_FINGERPRINT`).
+- **Elementi izler.** Çerçeve her karede yeniden ölçülür: sayfa kayınca, element yer değiştirince peşinden gider. Element (ya da metin) sayfadan gidince çerçevesi kalkar; sayfa değişince (yeni adres) hepsi sayfayla gider. Yeni oynatma başlarken öncekiler kaldırılır.
+- **Sayfaya dokunmaz.** Çizim, Ekrandaki elementler kartının çerçevesi gibi `<body>`'nin dışında boyutsuz bir kabın shadow root'undadır (`monitor-probe.js > CANLI SAYFADA İŞARET`): parmak izine, sayfanın görünen metnine, ağaca ve sayfanın DOM izleyicilerine girmez, tıklamayı almaz (oynatma çerçevenin altındaki elemente tıklar).
+- İstekler: `MONITOR_MARK { marks: [{ id, label, kept? }] }`, `MONITOR_MARK_SHOWN { shown }`, `MONITOR_MARK_CLEAR` (panel → sayfa).
+
 ---
 
 ## Veri modeli
@@ -509,6 +519,6 @@ Kontrol ekrana değil oynatma sırasında olana bakıyorsa (bir olay, bir süre)
 3. **Senaryoya özel monitörler:** gerekirse aynı form, scenario.js'teki `monitors: []` yuvalarına bağlanır.
 4. **DOM ağacından monitör:** panelin Ekrandaki elementler kartında ([01 > Ekrandaki elementler](01-mimari.md#ekrandaki-elementler-dom-ağacı)) bir satırdan, o elementin anahtarıyla dolu monitör formu açılır. Kart bugün yalnızca gösterir; satırlar etkileşimli elementlerin parmak izi anahtarını (`input:phone`) zaten taşır.
 5. **Senaryo dosyasından yükleme:** Senaryo kartındaki **Yükle…** dosyadaki monitörleri de alabilir (Emir'in yükleyicisi yeni id verdiği için monitörler yeni senaryoya eşlenir).
-6. **Uyarıdan canlı sayfaya:** sayfa hâlâ bozulduğu ekrandaysa uyarıdaki element canlı sayfada da çerçevelenebilir ve Ekrandaki elementler kartındaki satırı seçilebilir. Kartın ağacı elementleri sırayla numaralar ve numaralar her yenilemede değişir; uyarıdaki elementi ağaçtaki satırla **kesin** eşlemek için `dom-tree.js`'e küçük bir ek gerekir (ör. anahtar ve DOM yoluyla element arayan bir mesaj ya da ağaç düğümlerinde elementin kutusu). Ad benzerliğiyle eşlemek aynı adlı elementlerde (liste satırları) yanlış elementi gösterebileceği için yapılmadı. Runner raporunda da aynı `targets` kullanılabilir.
+6. **Uyarıdan canlı sayfaya:** oynatma sırasında bozulan element canlı sayfada çerçeveleniyor ([Canlı sayfada işaret](#canlı-sayfada-işaret)). Kalan: oynatma bittikten sonra uyarı listesinden bir uyarıya tıklayınca elementin (sayfa hâlâ o ekrandaysa) yeniden çerçevelenmesi ve Ekrandaki elementler kartındaki satırının seçilmesi. Kartın ağacı elementleri sırayla numaralar ve numaralar her yenilemede değişir; uyarıdaki elementi ağaçtaki satırla **kesin** eşlemek için `dom-tree.js`'e küçük bir ek gerekir (ör. anahtar ve DOM yoluyla element arayan bir mesaj ya da ağaç düğümlerinde elementin kutusu). Ad benzerliğiyle eşlemek aynı adlı elementlerde (liste satırları) yanlış elementi gösterebileceği için yapılmadı. Runner raporunda da aynı `targets` kullanılabilir.
 7. **Süre dolduğu anda uyarı:** Action Timeout bugün aksiyon bitince bakar; takılan sayfada kırmızı ışık aksiyon bittiğinde (ya da oynatma 10 sn sonra vazgeçtiğinde) yanar. Bir zamanlayıcıyla, sınır dolduğu anda yakılıp takılı ekranın görüntüsü alınabilir.
 8. **Başka olaylar:** JavaScript Error'ın kullandığı bağlantıdan (`chrome.debugger`) ağ hataları (başarısız istek, 4xx / 5xx cevap: `Network` alanı) ve `console.error` satırları da dinlenebilir; her biri `REPLAY_CHECKS`'e bir değerlendirici ve kataloğa bir kayıttır.

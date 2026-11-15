@@ -36,10 +36,45 @@ export async function playAction(page, action, run) {
     case 'wait': return page.waitForTimeout(action.ms);
     case 'tab': return tab(action, run);
     case 'select': return selectText(page, action, run);
+    case 'drag': return dragAndDrop(page, action, run);
     // Oynatılamayan aksiyon (bugün: clipboard) çalıştırmayı durdurmaz: atlanır, uyarı yazılır.
     // Gerçekten gerekliyse adım doğrulamada kalır (panelde sidepanel/replay.js > skipAction).
     default: return run.warn(`"${action.label}": "${action.type}" aksiyonu runner'da henüz oynatılamıyor; atlandı.`);
   }
+}
+
+// Sürükle-bırak (panelde sidepanel/replay.js > drag): fare tutulan elementin ortasında basılır,
+// bırakılacak noktaya adım adım götürülür ve bırakılır. Bırakılacak nokta kayıttaki bırakılan
+// elementin içinde aynı konum (to); element bulunamazsa ya da to yoksa tutulan noktadan kayıttaki
+// mesafe (dx, dy). Playwright'ın faresi Chromium'da HTML5 sürüklemeyi (draggable) de kendisi yürütür.
+const DRAG_STEPS = 10;
+const DROP_TIMEOUT_MS = 2000; // bırakılacak element bu kadar aranır, sonra mesafe kullanılır
+
+async function dragAndDrop(page, action, run) {
+  const source = await elementOf(page, action, run);
+  await source.hover({ timeout: run.timeout }); // görünür, sabit, üstü kapalı değil; ekrana kaydırılır
+  const box = await source.boundingBox();
+  if (!box) throw new Error(`"${action.label}" elementinin yeri ölçülemedi.`);
+  const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  let to = null;
+  if (action.to) {
+    const drop = await elementOf(page, { ...action.to, label: `${action.label} (bırakılacak yer)` }, { ...run, timeout: DROP_TIMEOUT_MS }).catch(() => null);
+    const area = await drop?.boundingBox();
+    const within = (at, size) => Math.min(Math.max(at ?? size / 2, 0), Math.max(size - 1, 0));
+    const point = area && { x: area.x + within(action.to.x, area.width), y: area.y + within(action.to.y, area.height) };
+    // Ekranın dışındaysa kullanılmaz: ekrana kaydırmak tutulan elementi yerinden oynatırdı (panelde de böyle)
+    const view = run.viewport ?? { width: Infinity, height: Infinity };
+    if (point && point.x >= 0 && point.y >= 0 && point.x < view.width && point.y < view.height) {
+      to = point;
+    } else {
+      run.warn(`"${action.label}": bırakılacak yer bulunamadı; kayıttaki mesafe (${action.dx}, ${action.dy}) kullanıldı.`);
+    }
+  }
+  to ??= { x: from.x + (action.dx ?? 0), y: from.y + (action.dy ?? 0) };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: DRAG_STEPS });
+  await page.mouse.up();
 }
 
 // Metin seçme: kayıttaki seçim sayfada kurulur (eklentinin fingerprint.js > selectRecordedText;

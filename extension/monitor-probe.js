@@ -49,12 +49,16 @@ const MONITOR_PROBE_KEPT = 100;         // akılda tutulan aksiyon elementi say�
 async function monitorProbe(checks) {
   const results = Object.create(null); // id'ler kullanıcı verisi ("__proto__" bile olsa zararsız)
   for (const check of Array.isArray(checks) ? checks : []) {
+    lastLocated = null;
     try {
       const evaluate = MONITOR_PROBES[check.type];
       results[check.id] = evaluate ? await evaluate(check.params ?? {}) : probeSkip('bu tür sayfada kontrol edilmiyor');
     } catch (error) {
       results[check.id] = probeSkip(`kontrol edilemedi: ${error.message}`);
     }
+    // Bozulan parçalar, panel canlı sayfada işaretlemek isterse diye (bkz. CANLI SAYFADA İŞARET)
+    if (results[check.id]?.status === 'fail' && lastLocated?.length) faultParts.set(String(check.id), lastLocated);
+    else faultParts.delete(String(check.id));
   }
   const view = shownView();
   return { url: location.href, title: document.title, viewport: { width: view.width, height: view.height, ratio: view.ratio }, results };
@@ -280,6 +284,9 @@ function located(parts, total = parts.length) {
   const view = shownView();
   const placed = parts.map((part) => ({ ...part, ...visiblePart(part, view) }));
   const listed = [...placed.filter((p) => p.seen), ...placed.filter((p) => !p.seen)].slice(0, MONITOR_PROBE_TARGETS);
+  // Canlı sayfadaki işaret için (monitorProbe saklar). Taşanı gizleyen kutunun dışındaki ya da çizilmeyen parça
+  // sayfada da görünmez: çerçevesi boş bir yere düşerdi. Görünen alanın dışındaki parça kaydırılınca görünür, kalır.
+  lastLocated = placed.filter((p) => p.hidden !== 'clipped' && p.hidden !== 'unrendered').slice(0, MONITOR_PROBE_TARGETS).map((p) => p.range ?? p.el);
   return {
     targets: listed.map((p) => ({ ...describeElement(p.el), rect: viewBox(p.edges, view), visible: viewBox(p.seen, view), hidden: p.hidden, note: p.note })),
     more: Math.max(0, total - listed.length),
@@ -305,12 +312,13 @@ function elementPart(el, note = '') {
   return { el, edges: edgesOf([el.getBoundingClientRect()]), inner: false, note };
 }
 
-// Parça: bir metin düğümünün [start, end) aralığı (elementin içindeki o metin; satır kırılmışsa kutuların birleşimi)
+// Parça: bir metin düğümünün [start, end) aralığı (elementin içindeki o metin; satır kırılmışsa kutuların birleşimi).
+// range, canlı sayfadaki işaret içindir (CANLI SAYFADA İŞARET: metin yerinden oynasa da onu izler).
 function textPart(node, start, end, note = '') {
   const range = document.createRange();
   range.setStart(node, start);
   range.setEnd(node, end);
-  return { el: node.parentElement, edges: edgesOf(range.getClientRects()), inner: true, note };
+  return { el: node.parentElement, range, edges: edgesOf(range.getClientRects()), inner: true, note };
 }
 
 // Kutuların birleşimi { left, top, right, bottom }; çizilen kutu yoksa null
@@ -581,6 +589,109 @@ function actionElement(target, selector) {
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// CANLI SAYFADA İŞARET (MONITOR_MARK): oynatmada bozulan monitörün elementi sayfada çerçevelenir
+// -----------------------------------------------------------------------------
+// Uyarının ekran görüntüsündeki kutu (HATA YERİ) testten sonra bakılır; test oynarken kullanıcı bozulan
+// elementi sayfanın kendisinde de görsün: kırmızı çerçeve ve üstünde monitörün adı. İstekler:
+//   panel → { type: 'MONITOR_MARK', marks: [{ id, label, kept? }] }  bu monitörlerin bozulan parçalarını işaretle
+//     id: son kontroldeki monitör (faultParts); kept: ekrana bakmayan monitörde aksiyonun elementi (keptElements)
+//   panel → { type: 'MONITOR_MARK_SHOWN', shown }  ekran görüntüsünden önce gizle / sonra göster (boyanınca cevap)
+//   panel → { type: 'MONITOR_MARK_CLEAR' }         hepsini kaldır (yeni oynatma)
+// Uyarının görüntüsü çerçeve çizilmeden önce alınır; sonraki her görüntüden (sonraki uyarılar, görüntü monitörü,
+// adım kalınca alınan görüntü) önce panel çerçeveleri gizler: görüntüye girmez. Node oluşturulurken de
+// (GET_FINGERPRINT) kalkar.
+// Çerçeve elementi izler (sayfa kayar, element yer değiştirir): her karede yeniden ölçülür; element (ya da metin)
+// sayfadan gidince çerçevesi de kalkar. Sayfa değişince (yeni adres) hepsi sayfayla gider.
+// Çizim, dom-tree.js'teki çerçeve gibi <body>'nin dışındaki boyutsuz bir kabın shadow root'undadır: parmak izine,
+// ağaca, sayfanın görünen metnine ve sayfanın DOM izleyicilerine girmez; tıklamayı almaz.
+const MONITOR_PROBE_MARKS = 20; // sayfada en fazla bu kadar çerçeve (eskisi düşer)
+
+const faultParts = new Map(); // monitör id -> son kontrolde bozulan parçalar [Element | Range]
+let lastLocated = null;       // located()'ın son yazdığı parçalar (monitorProbe monitörün id'siyle saklar)
+let marks = [];               // [{ part, label, box }]
+let markLayer = null;         // { host, wrap }
+let markFrame = 0;            // requestAnimationFrame kimliği (0: döngü durdu)
+
+function markFaults(list) {
+  for (const { id, label, kept } of Array.isArray(list) ? list : []) {
+    const parts = kept ? [keptElements.get(String(kept))].filter(Boolean) : faultParts.get(String(id)) ?? [];
+    for (const part of parts) {
+      if (marks.some((m) => m.part === part && m.label === label)) continue;
+      marks.push({ part, label: String(label ?? ''), box: null });
+    }
+  }
+  while (marks.length > MONITOR_PROBE_MARKS) marks.shift().box?.remove();
+  if (marks.length && !markFrame) markFrame = requestAnimationFrame(drawMarks);
+  return { marked: marks.length };
+}
+
+function clearMarks() {
+  for (const m of marks) m.box?.remove();
+  marks = [];
+}
+
+// Her karede: parçanın şimdiki kutusu; sayfadan gittiyse çerçevesi kalkar. İşaret kalmayınca döngü durur.
+function drawMarks() {
+  marks = marks.filter((m) => {
+    const rect = markRect(m.part);
+    if (!rect) {
+      m.box?.remove();
+      return false;
+    }
+    m.box ??= markBox(m.label);
+    m.box.style.left = `${rect.left - 3}px`;
+    m.box.style.top = `${rect.top - 3}px`;
+    m.box.style.width = `${rect.right - rect.left + 6}px`;
+    m.box.style.height = `${rect.bottom - rect.top + 6}px`;
+    m.box.lastChild.style.cssText = rect.top < 22 ? 'top:100%;margin-top:2px' : 'bottom:100%;margin-bottom:2px'; // etiket: üstte; sayfanın en üstündeyse altta
+    return true;
+  });
+  markFrame = marks.length ? requestAnimationFrame(drawMarks) : 0;
+}
+
+// Parçanın kutusu (görünen alana göre); parça artık sayfada değilse ya da çizilmiyorsa null
+function markRect(part) {
+  if (part instanceof Range) return part.startContainer.isConnected ? edgesOf(part.getClientRects()) : null;
+  return part?.isConnected ? edgesOf([part.getBoundingClientRect()]) : null;
+}
+
+function markBox(label) {
+  const box = document.createElement('div');
+  box.className = 'mark';
+  const tag = document.createElement('span');
+  tag.textContent = label;
+  box.append(tag);
+  ensureMarkLayer().wrap.append(box);
+  return box;
+}
+
+function ensureMarkLayer() {
+  if (markLayer?.host.isConnected) return markLayer;
+  const host = document.createElement('graph-recorder-marks'); // sayfanın "div" kuralları dokunmasın
+  host.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483646;pointer-events:none;';
+  const root = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = '.mark{position:fixed;box-sizing:border-box;border:3px solid #dc2626;border-radius:4px;'
+    + 'background:rgba(220,38,38,.12);box-shadow:0 0 0 3px rgba(220,38,38,.25);pointer-events:none}'
+    + '.mark span{position:absolute;left:-3px;padding:1px 6px;border-radius:3px;background:#dc2626;color:#fff;'
+    + 'font:600 11px/1.4 system-ui,sans-serif;white-space:nowrap}';
+  const wrap = document.createElement('div');
+  root.append(style, wrap);
+  document.documentElement.append(host);
+  markLayer = { host, wrap };
+  for (const m of marks) if (m.box) wrap.append(m.box); // sayfa kabı sildiyse çerçeveler yeni kaba taşınır
+  return markLayer;
+}
+
+// Görüntüden önce gizlenir; çevap, gizlenmiş hali boyandıktan sonra verilir (görüntü onu alsın)
+function showMarks(shown, respond) {
+  if (markLayer) markLayer.wrap.style.display = shown ? '' : 'none';
+  if (shown || !markLayer) return respond({ ok: true });
+  requestAnimationFrame(() => requestAnimationFrame(() => respond({ ok: true })));
+}
+
 globalThis.monitorProbe = monitorProbe;
 
 // Panelden gelen istek (content script olarak yüklendiğinde). content.js'in dinleyicisi bu türleri
@@ -588,6 +699,16 @@ globalThis.monitorProbe = monitorProbe;
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id) return undefined; // yalnızca bu eklentinin paneli
+    if (message?.type === 'GET_FINGERPRINT') clearMarks(); // node oluşturuluyor: çerçeve ekran görüntüsüne girmesin (cevabı content.js verir)
+    if (message?.type === 'MONITOR_MARK') return void sendResponse(markFaults(message.marks));
+    if (message?.type === 'MONITOR_MARK_CLEAR') {
+      clearMarks();
+      return void sendResponse({ ok: true });
+    }
+    if (message?.type === 'MONITOR_MARK_SHOWN') {
+      showMarks(Boolean(message.shown), sendResponse);
+      return true; // cevap boyandıktan sonra
+    }
     if (message?.type === 'MONITOR_KEEP' || message?.type === 'MONITOR_LOCATE') {
       try {
         sendResponse(message.type === 'MONITOR_KEEP' ? keepActionElement(message.id, message.ref) : locateKeptElement(message.id));

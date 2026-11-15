@@ -27,6 +27,7 @@ const ACTION_TYPES = [
   { type: 'select', text: 'Metin seç' },
   { type: 'clipboard', text: 'Kopyala/Kes/Yapıştır' },
   { type: 'contextmenu', text: 'Sağ tık menüsü' },
+  { type: 'drag', text: 'Sürükle-bırak' },
   { type: 'focus', text: 'Odak (Tab)' },
   { type: 'hover', text: 'Üzerine gelme (fare)', optional: true },
   { type: 'scroll', text: 'Kaydır' },

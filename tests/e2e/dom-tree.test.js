@@ -1,6 +1,7 @@
 // Ekrandaki elementler kartı (DOM ağacı): yalnızca ekranda görünen elementler, sarmalayıcıların
 // katlanması, gizlilerin atılması, satırın üzerine gelince sayfada çerçeve (sayfanın DOM izleyicisine
-// görünmeden), kayda dokunmama, node oluşturulurken çerçevenin kalkması, her aksiyondan ve
+// görünmeden), kayda dokunmama, node oluşturulurken çerçevenin kalkması, satıra sağ tıkla tıklama
+// (sayfada yapılır ve kaydedilir; çoklu, bot, kayıt başka sekmedeyken kapalı), her aksiyondan ve
 // kaydırmadan sonra yenilenme, kapatılan dalın kapalı kalması, okunamayan sayfa.
 // Kullanım: node tests/e2e/dom-tree.test.js
 const http = require('http');
@@ -147,6 +148,51 @@ function check(name, ok, detail = '') {
     await frameLabel('button#buy');
     await createNode();
     check('node oluşturulurken çerçeve kalktı', !(await frame()), JSON.stringify(await frame()));
+
+    // ---- Satıra sağ tık: elemente tıkla (sayfada yapılır, kaydedilir) ----
+    await page.evaluate(() => {
+      window.buyClicks = [];
+      const buy = document.getElementById('buy');
+      buy.addEventListener('click', (e) => window.buyClicks.push(`click${e.detail}`));
+      buy.addEventListener('dblclick', () => window.buyClicks.push('dblclick'));
+    });
+    const openMenu = (tag) => panel.evaluate((t) => {
+      const row = [...document.querySelectorAll('#dom-tree-list .dom-tag')].find((s) => s.textContent === t).closest('.dom-row');
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 5 }));
+    }, tag);
+    const menuButton = (text) => panel.evaluate((t) => [...document.querySelectorAll('#dom-tree-menu button')].find((b) => b.textContent === t).click(), text);
+    const lastAction = async () => (await getState()).buffer.filter((a) => !a.auto).at(-1);
+    const buyClicks = () => page.evaluate(() => window.buyClicks.splice(0).join(','));
+    await openMenu('button#buy');
+    check('sağ tık menüsü açıldı, butonlar açık', await panel.evaluate(() => !document.getElementById('dom-tree-menu').hidden
+      && [...document.querySelectorAll('#dom-tree-menu button')].every((b) => !b.disabled)));
+    await menuButton('Tıkla');
+    await sleep(700);
+    let action = await lastAction();
+    check('Tıkla: sayfanın click dinleyicisi çalıştı', await buyClicks() === 'click1');
+    check('Tıkla: kaydedildi (click "Satın al", button:buy)', action?.type === 'click' && action.label === 'Satın al' && action.target?.key === 'button:buy', JSON.stringify(action));
+    check('menü kapandı, mesaj', await panel.evaluate(() => document.getElementById('dom-tree-menu').hidden) && (await panel.textContent('#message')).includes('kaydedildi'), await panel.textContent('#message'));
+    await openMenu('button#buy');
+    await menuButton('Çift tıkla');
+    await sleep(700);
+    action = await lastAction();
+    check('Çift tıkla: sayfa iki click ve dblclick gördü', await buyClicks() === 'click1,click2,dblclick');
+    check('Çift tıkla: multiclick ×2 "Double click Satın al"', action?.type === 'multiclick' && action.count === 2 && action.label === 'Double click Satın al' && !action.bot, JSON.stringify(action));
+    await openMenu('button#buy');
+    await panel.evaluate(() => { document.getElementById('dom-tree-bot').checked = true; document.querySelector('#dom-tree-menu input[type=number]').value = '4'; });
+    await menuButton('kez tıkla');
+    await sleep(700);
+    action = await lastAction();
+    check('Bot ile 4 kez: sayfa dört click gördü', await buyClicks() === 'click1,click2,dblclick,click3,click4');
+    check('Bot ile 4 kez: multiclick ×4, bot: true', action?.type === 'multiclick' && action.count === 4 && action.bot === true, JSON.stringify(action));
+    const recording = await panel.evaluate(() => state.tabId);
+    await panel.evaluate(() => { state.tabId = -1; });
+    await openMenu('button#buy');
+    check('kayıt başka sekmedeyken: butonlar kapalı, neden yazıyor', await panel.evaluate(() => [...document.querySelectorAll('#dom-tree-menu button')].every((b) => b.disabled)
+      && document.querySelector('#dom-tree-menu .menu-note').textContent.includes('kaydedilmiyor')));
+    await panel.evaluate((id) => { state.tabId = id; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); }, recording);
+    check('Esc ile menü kapandı', await panel.evaluate(() => document.getElementById('dom-tree-menu').hidden));
 
     // ---- Kaydırınca yalnızca ekrana gelenler ----
     await page.bringToFront();

@@ -237,6 +237,7 @@ async function playAction(replay, action, step) {
     case 'wait': return pause(replay, action.ms);
     case 'tab': return tab(replay, action);
     case 'select': return selectText(replay, action, step);
+    case 'drag': return drag(replay, action, step);
     default: return skipAction(action, step);
   }
 }
@@ -464,6 +465,78 @@ async function click(replay, action, step, button = 'left', count = 1) {
     await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button, buttons, clickCount });
     await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button, buttons: 0, clickCount });
   }
+}
+
+// SÜRÜKLE-BIRAK (content.js > SÜRÜKLE-BIRAK; runner/lib/actions.js > dragAndDrop): fare tutulan
+// elementin ortasında basılır, bırakılacak noktaya DRAG_STEPS adımda (adım arası DRAG_STEP_MS)
+// götürülür ve bırakılır. Sıralama kütüphaneleri fareyi izleyerek çalışır: tek sıçrama yetmez.
+// Bırakılacak nokta: kayıttaki bırakılan elementin içinde aynı konum (to); element ekranda yoksa ya
+// da kayıtta to yoksa (kaydırıcı, aynı listede sıra) tutulan noktadan kayıttaki mesafe (dx, dy).
+// HTML5 sürüklemede (native) sahte fare olayları tarayıcının kendi sürükleme döngüsünü başlatamaz:
+// tarayıcıya sürüklemeyi bize bırakması söylenir (Input.setInterceptDrags), sürükleme başlayınca
+// verisi gelir (Input.dragIntercepted) ve bırakılan yerde dragenter / dragover / drop o veriyle
+// gönderilir (Input.dispatchDragEvent). Playwright ve Puppeteer de böyle yapar.
+const DRAG_STEPS = 10;
+const DRAG_STEP_MS = 20;
+const DRAG_START_TIMEOUT_MS = 2000; // HTML5 sürüklemenin başlaması için en fazla
+
+async function drag(replay, action, step) {
+  const found = await locate(replay, action, step);
+  const from = { x: found.x, y: found.y };
+  const to = await dropPoint(replay, action, step, from);
+  await moveMouse(replay, from);
+  const native = Boolean(action.native);
+  const intercepted = native ? dragData(replay) : null;
+  try {
+    if (native) await cdp(replay, 'Input.setInterceptDrags', { enabled: true });
+    await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...from, button: 'left', buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= DRAG_STEPS; i++) {
+      const at = { x: from.x + ((to.x - from.x) * i) / DRAG_STEPS, y: from.y + ((to.y - from.y) * i) / DRAG_STEPS };
+      await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...at, button: 'left', buttons: 1 });
+      await pause(replay, DRAG_STEP_MS);
+    }
+    if (native) {
+      const data = await intercepted.promise;
+      if (!data) throw new Error('tarayıcının sürüklemesi başlamadı (element artık sürüklenebilir değil mi?).');
+      for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp(replay, 'Input.dispatchDragEvent', { type, ...to, data });
+    }
+    await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...to, button: 'left', buttons: 0, clickCount: 1 });
+  } finally {
+    intercepted?.cancel();
+    if (native) await cdp(replay, 'Input.setInterceptDrags', { enabled: false }).catch(() => { });
+  }
+}
+
+async function dropPoint(replay, action, step, from) {
+  if (action.to) {
+    const found = await inPage(replay, { op: 'point', ...ref(action.to), x: action.to.x, y: action.to.y });
+    if (!found.missing) {
+      if (found.viaSelector) warnStep(step, `"${action.label}": bırakılacak yer (${action.to.target.key} #${action.to.target.index}) ekranda yok, selector kullanıldı (${action.to.selector}).`);
+      return { x: found.x, y: found.y };
+    }
+    warnStep(step, `"${action.label}": bırakılacak yer ekranda bulunamadı; kayıttaki mesafe (${action.dx}, ${action.dy}) kullanıldı.`);
+  }
+  return { x: from.x + (action.dx ?? 0), y: from.y + (action.dy ?? 0) };
+}
+
+// HTML5 sürüklemenin verisi: tarayıcı sürüklemeyi başlatınca (Input.dragIntercepted) gelir; gelmezse null.
+function dragData(replay) {
+  let listener = null;
+  let timer = null;
+  const promise = new Promise((resolve) => {
+    listener = (source, method, params) => {
+      if (source.tabId === replay.tabId && method === 'Input.dragIntercepted') resolve(params.data);
+    };
+    chrome.debugger.onEvent.addListener(listener);
+    timer = setTimeout(() => resolve(null), DRAG_START_TIMEOUT_MS);
+  });
+  return {
+    promise,
+    cancel() {
+      chrome.debugger.onEvent.removeListener(listener);
+      clearTimeout(timer);
+    },
+  };
 }
 
 const KEY_CODES = {

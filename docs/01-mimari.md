@@ -252,6 +252,7 @@ Durumların tamamı (`from` = şu anki node):
 | `change` | `input` | text, select, checkbox, radio... Değer kaydedilir. Şifreler maskelenir. |
 | `mouseup` (fare kaydıysa, çift/üçlü tıklandıysa ya da Shift ile tıklandıysa ve seçili metin varsa) | `select` | Metin seçmek tıklama değildir: tarayıcının ardından ürettiği `click` yok sayılır. Seçilen metin ve onu içeren element (metin alanında alan ve `start`/`end` aralığı) kaydedilir. Çift/üçlü tıklamada hareketin önceki tıklaması ya da kelime seçimi zaten gönderilmiştir; background onu bu seçimle değiştirir. Shift+tıklama ve klavyeyle (aşağıda) genişletilen seçim de son seçimin yerini alır. Butona, linke çift tıklamak seçim sayılmaz. |
 | `contextmenu` (sağ tık, menü tuşu, Shift+F10) | `contextmenu` | Sağ tuş `click` üretmez. Sayfa olayı engellediyse (`blocked`) tarayıcının menüsü yerine kendi menüsünü açmıştır. Menü tuşu ve Shift+F10 tuş olarak kaydedilmez. |
+| `dragstart` + `drop` (HTML5 sürükleme) ya da `mousedown` + `mouseup` (fare basılıyken 8 px'ten fazla kaydı, yeni metin seçilmedi) | `drag` | Tutulan element sürükleme **başlarken** (sayfa değişmeden) kaydedilir; bırakılan yerin elementi ve o elementin içindeki nokta (`to`), farenin kaydığı mesafe (`dx`, `dy`). Bırakılan yer tutulan elementin kendisi, içi ya da onu içeren kutuysa (kaydırıcının izi, aynı listede sıra değiştirmek) `to` yoktur, oynatma mesafeyi kullanır. HTML5'te `native: true`: arada fare olayı gelmez. Fareyle sürüklemenin ardından gelen `click` yok sayılır. Form alanında, kaydırma çubuğunda ve seçili metni sürüklerken kaydedilmez (sonuç `input` olarak gelir). |
 | `focusin` (Tab / Shift+Tab sonrası) | `focus` | Tab tuşu kaydedilmez (tekrar oynatırken sayfadaki sıraya bağlı kalırdı); odağın gittiği element kaydedilir. Background yalnızca state'i değiştiren odağı tutar ("içeriğe atla" linkinin görünmesi gibi); formda alandan alana geçmek gürültü olarak düşer. Aksiyonun öncesi Tab'a basıldığı andır. |
 | `copy` / `cut` / `paste` | `clipboard` | Klavyeden, sağ tık menüsünden ya da Chrome menüsünden yapılsa da gelir; bu yüzden Ctrl+C/X/V tuş olarak kaydedilmez. Kopyalanan / yapıştırılan metin ve sayfanın işlemi engelleyip engellemediği (`blocked`: sayfa `preventDefault()` çağırdı) kaydedilir: sitenin kopyalama / yapıştırma iznini test etmek için. Hiçbir şey seçili değilken Chrome `copy` olayı üretmez. |
 | `focusout` (`contenteditable`) | `input` | Zengin metin editörlerinde `change` yoktur; odak alandan çıkınca metin (`innerText`) değiştiyse kaydedilir. |
@@ -354,6 +355,16 @@ Edge oluşmadan önce de yanlışlıkla yapılan bir aksiyon (fazladan bir tıkl
 - **İşaretli:** bot ya da makro gibi. Olaylar DevTools protokolüne sırayla ama cevapları beklenmeden yazılır (`sidepanel/replay.js > click`, runner'da `lib/actions.js > botClick`): sayfa ilk tıklamaya tepki veremeden ötekiler de gelir. Çift sipariş, çift form gönderimi gibi "butonu kapatmayı unutmuş" hataları böyle görülür. `clickCount` yine artar (sayfa `dblclick`'i de görür).
 - Edge'de bekleme süresi gibi bir düzenlemedir: kayıttaki orijinal liste `recordedActions`'ta saklanır, **Geri al** ile geri alınır (`SET_BOT`). Bekleyen aksiyonda geri al yoktur, kutu yeniden değiştirilir (`SET_BUFFERED_BOT`).
 - Senaryo görünümünde (salt okunur) kutu yoktur; satırda `· bot` yazar.
+
+### Sürükle-bırak
+
+Kayıt: [Sayfa içi olaylar](#sayfa-içi-olaylar-contentjs) tablosunda `drag` satırı (`content.js > SÜRÜKLE-BIRAK`). Oynatma: panelde `sidepanel/replay.js > drag`, runner'da `lib/actions.js > dragAndDrop`. Fare tutulan elementin ortasında basılır, bırakılacak noktaya 10 adımda götürülür (sıralama kütüphaneleri fareyi izler; tek sıçrama yetmez) ve bırakılır. HTML5 sürüklemede (`native`) panel tarayıcıya sürüklemeyi kendisine bırakmasını söyler (`Input.setInterceptDrags`), sürükleme başlayınca gelen veriyle bırakılan yerde `dragenter` / `dragover` / `drop` gönderir (`Input.dispatchDragEvent`); runner'da bunu Playwright'ın faresi yapar.
+
+**Sınırlar:**
+
+- Bırakılan yer, sürükleme bittiği anki elementtir; sıralama listelerinde (aynı türden kartlar) sürükleme sırasında liste kayabilir, oynatmada aynı kart başka sırada bulunabilir. Aynı listede sıra değiştirmek çoğu zaman bırakılan yer olmadan, mesafeyle oynatılır (liste tutulan elementi içerir).
+- Bırakılan yer ekranda değilse (sürüklerken sayfa kaydı) oynatma kaydırmaz, mesafeyi kullanır; uzun listede kayıt boyunca kaydırılarak yapılan sürükleme tekrarlanmayabilir.
+- Tıklarken fare 8 px'ten fazla kayarsa tıklama sürükleme olarak kaydedilir. Oynatmada fare yine aynı butonda basılıp bırakıldığı için sayfa tıklamayı görür; yalnızca aksiyonun adı (ve edge'in adı) sürüklemedir.
 
 ---
 
@@ -564,9 +575,10 @@ panel.js ▸ Koşuyu oynat
    ▼
 replay.js ── her edge, her aksiyon ─────────────────────────────────────┐
    │  content.js'e REPLAY {op}: locate / focus / choose / scroll /      │
-   │                           select                                   │
+   │                           select / point                           │
    │  chrome.debugger (CDP): Input.dispatchMouseEvent / KeyEvent,       │
-   │                         Input.insertText, Emulation (resize)       │
+   │                         Input.insertText, Emulation (resize),      │
+   │                         Input.setInterceptDrags / dispatchDragEvent│
    │  chrome.tabs: navigate, back/forward, reload, zoom, sekmeler       │
    │  edge sonunda: REPLAY {op: settled} ▸ compareScreen ↔ hedef node   │
    ▼                                                                    │
@@ -606,6 +618,8 @@ Panelde "Bekleyen aksiyonlar"ın altındaki **Ekrandaki elementler** kartı, aç
 - **Satır:** etiket (`button#buy`, `div[role=dialog]`), metin (form alanında alanın adı, değeri asla; görselde alt metni; diğerlerinde elementin kendi metni) ve etkileşimli türdeki elementlerde parmak izi anahtarı (`button:buy`; monitör formundaki Alan da bu biçimi kullanır). Şu an etkileşimli olanların (node'un edge set'i) etiketi kalındır. Çocuğu olan satır ▸ / ▾ ile kapanıp açılır; kullanıcının kapattığı dal ağaç yenilenince de kapalı kalır.
 - **Vurgu:** satırın üzerine gelince element sayfada mavi bir çerçeve ve etiketle (`button#buy  120×32`) işaretlenir, satırdan çıkınca kalkar. Sayfa kaydırılmaz, tıklanmaz. Çerçeve, sayfanın `<body>`'si dışında bir kez eklenen boyutsuz bir kabın (`<graph-recorder-frame>`) shadow root'unda çizilir. Çerçeve taşınırken yalnızca shadow root'un içi değişir: kaydın "sayfa duruldu mu?" izleyicisi ve sayfanın kendi izleyicileri bunu görmez; kap ağaca, parmak izine ve sayfanın metnine girmez. Eklentinin başka bir isteği sayfaya gelince (node oluşturma, oynatma, monitör kontrolü) çerçeve kalkar, ekran görüntüsüne girmez. Chrome'un DevTools vurgusu (`Overlay.highlightNode`) kullanılmadı: `chrome.debugger`'a bağlanmak "hata ayıklama" çubuğunu açar ve panelde oynatmanın bağlantısıyla çakışır.
 - **Sınırlar:** en fazla 20000 element gezilir (fazlası durum satırında söylenir); iframe ve shadow DOM içi gösterilmez (content script yalnızca ana çerçevede çalışır). Taşma yaklaşıktır: `position:absolute` bir kutunun, konumlandırılmamış bir üst kutunun taşmasından kurtulması ayırt edilmez. Eklentiden önce açılmış sayfada ve tarayıcının kendi sayfalarında kart "okunamadı" der.
+- **Satırdan tıklama** (sağ tık menüsü: Tıkla, Çift tıkla, Üçlü tıkla, N kez tıkla, Bot): tıklama sayfada yapılır ve kullanıcının kendi tıklaması gibi kaydedilir (`content.js > clickFromPanel`): aksiyon "Bekleyen aksiyonlar"a düşer, sayfa da değişir, sonraki "Node oluştur" doğru ekranı alır. Tıklama elementin kendi tıklama dinleyicilerini tetikler: fare olayları (`pointerdown`, `mousedown`, `mouseup`, `click`, ikinci tıklamada `dblclick`) sayfanın içinden elemente gönderilir; sayfanın onClick'i ve tarayıcının işi (link, form gönderme) çalışır. DevTools protokolü kullanılmaz: "hata ayıklanıyor" çubuğu çıkmaz, sayfanın boyutu değişmez (değişseydi kayda `resize` düşerdi). Bot işaretliyse çoklu tıklama bir anda yapılır ve aksiyona `bot: true` yazılır ([Bot tıklama](#bot-tıklama)). Yalnızca kaydın sürdüğü sekmede ve oynatma yokken; form alanında tıklama kaydedilmez (yalnızca odaklanmaktır).
+  - **Sınır:** bu olaylar sayfanın kendi ürettiği olay sayılır (`isTrusted: false`). Buna bakan az sayıdaki sayfa (bot korumalı formlar) tıklamayı yok sayabilir; o zaman elemente sayfada tıklayın. Oynatma her zaman gerçek fare olayıyla tıklar. Ayarlar'da Çoklu tıklama kapalıysa çoklu tıklama tek bir `click` olarak kaydedilir.
 - **Bu sürümde yok:** satırdan monitör ekleme ve sayfadan seçme (sayfada fareyle gezip elementi ağaçta bulmak; seçme tıklaması kayda ve sayfaya ulaşmamalı).
 
 ---
