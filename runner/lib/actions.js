@@ -10,12 +10,15 @@
 import { urlKey } from './state.js';
 
 // run: { timeout, secrets, viewport, setViewport(viewport), warn(text), context, pages, page,
-//        track(page), activate(page), forget(page) } (bkz. run.js > createRun)
+//        track(page), activate(page), forget(page), cdp(page) } (bkz. run.js > createRun)
 export async function playAction(page, action, run) {
   switch (action.type) {
     case 'click': return (await elementOf(page, action, run)).click({ timeout: run.timeout });
-    // Hızlı art arda tıklama: Playwright basıp bırakmaları arada beklemeden, artan clickCount'la gönderir
-    case 'multiclick': return (await elementOf(page, action, run)).click({ clickCount: action.count, timeout: run.timeout });
+    // Hızlı art arda tıklama: Playwright basıp bırakmaları arada beklemeden, artan clickCount'la gönderir.
+    // bot işaretliyse hepsi bir anda (botClick).
+    case 'multiclick':
+      if (action.bot) return botClick(page, action, run);
+      return (await elementOf(page, action, run)).click({ clickCount: action.count, timeout: run.timeout });
     case 'contextmenu': return (await elementOf(page, action, run)).click({ button: 'right', timeout: run.timeout });
     case 'hover': return (await elementOf(page, action, run)).hover({ timeout: run.timeout });
     case 'focus': return (await elementOf(page, action, run)).focus();
@@ -32,8 +35,94 @@ export async function playAction(page, action, run) {
     // da doğrulamadaki tekrar deneme onu yakalar.
     case 'wait': return page.waitForTimeout(action.ms);
     case 'tab': return tab(action, run);
-    default: throw new Error(`"${action.type}" aksiyonu runner'da henüz desteklenmiyor.`);
+    case 'select': return selectText(page, action, run);
+    case 'drag': return dragAndDrop(page, action, run);
+    case 'clipboard': return clipboard(page, action, run);
+    // Oynatılamayan aksiyon çalıştırmayı durdurmaz: atlanır, uyarı yazılır (bugün böyle bir kayıt türü yok).
+    // Gerçekten gerekliyse adım doğrulamada kalır (panelde sidepanel/replay.js > skipAction).
+    default: return run.warn(`"${action.label}": "${action.type}" aksiyonu runner'da henüz oynatılamıyor; atlandı.`);
   }
+}
+
+// Pano (panelde sidepanel/replay.js > clipboard; sayfadaki yardımcılar eklentinin fingerprint.js > PANO):
+// kopyala / kes gerçek kısayolla (Ctrl ya da macOS'ta Cmd); yapıştır kullanıcının panosuna dokunmadan,
+// kayıttaki metinle 'paste' olayı ve sayfa engellemediyse metnin yazılmasıyla. Sayfanın işlemi engelleyip
+// engellemediği kayıttakiyle karşılaştırılır; farklıysa uyarı yazılır, durmaz.
+const CLIPBOARD_WAIT_MS = 500;
+
+async function clipboard(page, action, run) {
+  const verb = { copy: 'kopyalama', cut: 'kesme', paste: 'yapıştırma' }[action.operation] ?? action.operation;
+  const verbObject = { copy: 'kopyalamayı', cut: 'kesmeyi', paste: 'yapıştırmayı' }[action.operation] ?? action.operation;
+  let blocked;
+  if (action.operation === 'paste') {
+    let text = action.text ?? '';
+    if (text === '******') {
+      text = run.secrets[action.target?.key] ?? run.secrets[action.selector] ?? '';
+      if (!text) run.warn(`"${action.label}": yapıştırılan metin maskeli (******) ve --secrets dosyasında yok; boş metinle yapıştırıldı.`);
+    }
+    if (action.target?.index || action.selector) await (await elementOf(page, action, run)).focus();
+    ({ blocked } = await page.evaluate((t) => window.__graphRecorder.firePaste(document.activeElement, t), text));
+    if (!blocked && text) await page.keyboard.insertText(text);
+  } else {
+    await page.evaluate(() => window.__graphRecorder.watchClipboard());
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+${action.operation === 'cut' ? 'X' : 'C'}`);
+    const deadline = Date.now() + CLIPBOARD_WAIT_MS;
+    let seen = null;
+    while (!(seen = await page.evaluate(() => window.__graphRecorder.clipboardSeen())) && Date.now() < deadline) await page.waitForTimeout(50);
+    if (!seen) return run.warn(`"${action.label}": sayfada ${verb} olmadı (seçili bir şey yok mu?).`);
+    ({ blocked } = seen);
+  }
+  if (Boolean(blocked) !== Boolean(action.blocked)) {
+    run.warn(`"${action.label}": kayıtta sayfa ${verbObject} ${action.blocked ? 'engellemişti' : 'engellememişti'}, oynatmada ${blocked ? 'engelledi' : 'engellemedi'}.`);
+  }
+}
+
+// Sürükle-bırak (panelde sidepanel/replay.js > drag): fare tutulan elementin ortasında basılır,
+// bırakılacak noktaya adım adım götürülür ve bırakılır. Bırakılacak nokta kayıttaki bırakılan
+// elementin içinde aynı konum (to); element bulunamazsa ya da to yoksa tutulan noktadan kayıttaki
+// mesafe (dx, dy). Playwright'ın faresi Chromium'da HTML5 sürüklemeyi (draggable) de kendisi yürütür.
+const DRAG_STEPS = 10;
+const DROP_TIMEOUT_MS = 2000; // bırakılacak element bu kadar aranır, sonra mesafe kullanılır
+
+async function dragAndDrop(page, action, run) {
+  const source = await elementOf(page, action, run);
+  await source.hover({ timeout: run.timeout }); // görünür, sabit, üstü kapalı değil; ekrana kaydırılır
+  const box = await source.boundingBox();
+  if (!box) throw new Error(`"${action.label}" elementinin yeri ölçülemedi.`);
+  const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  let to = null;
+  if (action.to) {
+    const drop = await elementOf(page, { ...action.to, label: `${action.label} (bırakılacak yer)` }, { ...run, timeout: DROP_TIMEOUT_MS }).catch(() => null);
+    const area = await drop?.boundingBox();
+    const within = (at, size) => Math.min(Math.max(at ?? size / 2, 0), Math.max(size - 1, 0));
+    const point = area && { x: area.x + within(action.to.x, area.width), y: area.y + within(action.to.y, area.height) };
+    // Ekranın dışındaysa kullanılmaz: ekrana kaydırmak tutulan elementi yerinden oynatırdı (panelde de böyle)
+    const view = run.viewport ?? { width: Infinity, height: Infinity };
+    if (point && point.x >= 0 && point.y >= 0 && point.x < view.width && point.y < view.height) {
+      to = point;
+    } else {
+      run.warn(`"${action.label}": bırakılacak yer bulunamadı; kayıttaki mesafe (${action.dx}, ${action.dy}) kullanıldı.`);
+    }
+  }
+  to ??= { x: from.x + (action.dx ?? 0), y: from.y + (action.dy ?? 0) };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: DRAG_STEPS });
+  await page.mouse.up();
+}
+
+// Metin seçme: kayıttaki seçim sayfada kurulur (eklentinin fingerprint.js > selectRecordedText;
+// panelde sidepanel/replay.js > selectText). Element ya da metin bulunamazsa uyarı yazılır, durmaz.
+async function selectText(page, action, run) {
+  let element;
+  try {
+    element = await elementOf(page, action, run);
+  } catch {
+    return run.warn(`"${action.label}": seçimin yapıldığı element bulunamadı; seçim kurulmadı.`);
+  }
+  const recorded = { text: action.text, start: action.start ?? null, end: action.end ?? null };
+  const selected = await element.evaluate((el, arg) => window.__graphRecorder.selectRecordedText(el, arg), recorded);
+  if (!selected) run.warn(`"${action.label}": seçilen metin sayfada bulunamadı; seçim kurulmadı.`);
 }
 
 // Aksiyonun elementi. Element sayfa durulduktan sonra da gelebilir: hedef ve selector
@@ -71,6 +160,26 @@ async function targetElement(page, target) {
     if (/Execution context was destroyed|Cannot find context/.test(error.message)) return null; // sayfa değişiyor
     throw error;
   }
+}
+
+// BOT TIKLAMA (çoklu tıklamada bot işaretliyse; panelde replay.js > click): Playwright her basıp
+// bırakmayı, sayfa bir öncekini işledikten sonra gönderir; sayfa arada tepki verebilir (ör. butonu
+// kapatır). Bot ya da makro beklemez: basıp bırakmalar DevTools protokolüne sırayla ama cevapları
+// beklenmeden yazılır, sayfa ilk tıklamaya tepki veremeden ötekiler de gelir (çift sipariş, çift
+// gönderim gibi hatalar böyle görülür). clickCount yine artar (sayfa dblclick'i de görür).
+async function botClick(page, action, run) {
+  const element = await elementOf(page, action, run);
+  await element.hover({ timeout: run.timeout }); // tıklamadaki gibi: görünür, sabit, üstü kapalı değil
+  const box = await element.boundingBox();
+  if (!box) throw new Error(`"${action.label}" elementinin yeri ölçülemedi.`);
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const cdp = run.cdp(page);
+  const sent = [];
+  for (let clickCount = 1; clickCount <= action.count; clickCount++) {
+    sent.push(cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button: 'left', buttons: 1, clickCount }));
+    sent.push(cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button: 'left', buttons: 0, clickCount }));
+  }
+  await Promise.all(sent); // hepsi yola çıktı; şimdi cevaplar beklenir
 }
 
 // Şifre alanları kayıtta "******" olarak saklanır (content.js > MASK_PASSWORDS). Gerçek değer

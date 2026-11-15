@@ -17,7 +17,7 @@ const extension = (name) => readFileSync(new URL(`../../extension/${name}`, impo
 export const INIT_SCRIPT = `window.__graphRecorder = (() => {
 ${extension('settings.js')}
 ${extension('fingerprint.js')}
-return { fingerprint, targetElement, settled };
+return { fingerprint, targetElement, settled, selectRecordedText, watchClipboard, clipboardSeen, firePaste };
 })();`;
 
 // window.__graphRecorder'daki bir fonksiyonu sayfada çalıştırır. Sayfa değişirken (aksiyon bir

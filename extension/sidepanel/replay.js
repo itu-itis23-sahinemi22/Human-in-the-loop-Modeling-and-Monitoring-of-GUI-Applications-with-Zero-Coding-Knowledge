@@ -236,7 +236,82 @@ async function playAction(replay, action, step) {
     // Ekranı değiştiren bekleme biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar.
     case 'wait': return pause(replay, action.ms);
     case 'tab': return tab(replay, action);
-    default: throw new Error(`"${action.type}" aksiyonu henüz oynatılamıyor.`);
+    case 'select': return selectText(replay, action, step);
+    case 'drag': return drag(replay, action, step);
+    case 'clipboard': return clipboard(replay, action, step);
+    default: return skipAction(action, step);
+  }
+}
+
+// PANO (kopyala / kes / yapıştır; sayfadaki yardımcılar: fingerprint.js > PANO; runner/lib/actions.js >
+// clipboard aynısını yapar):
+//   - Kopyala / kes: gerçek kısayol (Ctrl+C / Ctrl+X, macOS'ta Cmd), tarayıcının düzenleme komutuyla. Seçim
+//     önceki 'select' aksiyonuyla kurulmuştur. Kopyalama kullanıcının panosuna yazar (kayıtta da öyleydi).
+//   - Yapıştır: kullanıcının panosu okunmaz da yazılmaz da. Kayıttaki metinle 'paste' olayı odaktaki elemente
+//     gönderilir (sayfanın dinleyicisi metni görür); sayfa engellemediyse metin alana yazılır (Input.insertText,
+//     tarayıcının yapıştırması gibi). Şifre alanına yapıştırılan metin kayıtta maskelidir: oynatmadan önce
+//     girilen değer kullanılır, yoksa olay boş metinle gider ve uyarı yazılır (alanın değerini ardından gelen
+//     'input' aksiyonu kurar).
+// Sayfanın işlemi engelleyip engellemediği (blocked) kayıttakiyle karşılaştırılır: farklıysa (ör. site
+// kopyalamayı artık engellemiyor) ya da kopyalama hiç olmadıysa adıma uyarı yazılır; adım durmaz.
+const CLIPBOARD_WAIT_MS = 500; // kısayoldan sonra kopyalama / kesme olayının gelmesi için en fazla
+
+async function clipboard(replay, action, step) {
+  const verb = { copy: 'kopyalama', cut: 'kesme', paste: 'yapıştırma' }[action.operation] ?? action.operation;
+  const verbObject = { copy: 'kopyalamayı', cut: 'kesmeyi', paste: 'yapıştırmayı' }[action.operation] ?? action.operation; // "…yı engelledi"
+  let blocked;
+  if (action.operation === 'paste') {
+    let text = action.text ?? '';
+    if (text === '******') {
+      text = replay.secrets[action.target?.key] ?? replay.secrets[action.selector] ?? '';
+      if (!text) warnStep(step, `"${action.label}": yapıştırılan metin maskeli (******) ve değeri girilmedi; boş metinle yapıştırıldı.`);
+    }
+    if (action.target || action.selector) await focus(replay, action, step);
+    ({ blocked } = await inPage(replay, { op: 'paste', text }));
+    if (!blocked && text) await cdp(replay, 'Input.insertText', { text });
+  } else {
+    await inPage(replay, { op: 'clipboardWatch' });
+    const mod = /Mac/i.test(navigator.userAgentData?.platform ?? navigator.platform) ? 'Meta' : 'Control';
+    await press(replay, `${mod}+${action.operation === 'cut' ? 'x' : 'c'}`, [action.operation]);
+    const deadline = Date.now() + CLIPBOARD_WAIT_MS;
+    let seen = null;
+    while (!(seen = (await inPage(replay, { op: 'clipboardSeen' })).seen) && Date.now() < deadline) await pause(replay, 50);
+    if (!seen) return warnStep(step, `"${action.label}": sayfada ${verb} olmadı (seçili bir şey yok mu?).`);
+    ({ blocked } = seen);
+  }
+  if (Boolean(blocked) !== Boolean(action.blocked)) {
+    warnStep(step, `"${action.label}": kayıtta sayfa ${verbObject} ${action.blocked ? 'engellemişti' : 'engellememişti'}, oynatmada ${blocked ? 'engelledi' : 'engellemedi'}.`);
+  }
+}
+
+// Oynatılamayan aksiyon oynatmayı durdurmaz: atlanır, adıma uyarı yazılır (bugün böyle bir kayıt türü yok;
+// eski bir eklentiyle kaydedilmiş ya da yeni eklenip oynatması yazılmamış bir tür olabilir).
+// Çoğu zaman yan bir harekettir (yanlışlıkla seçilen metin, kopyalanan yazı); aksiyon gerçekten
+// gerekliyse adım doğrulamada kalır ve uyarı nedenini söyler. runner/lib/actions.js aynısını yapar.
+function skipAction(action, step) {
+  const name = ACTION_TYPES.find((t) => t.type === action.type)?.text ?? action.type; // settings.js
+  warnStep(step, `"${action.label}": "${name}" aksiyonu henüz oynatılamıyor; atlandı.`);
+}
+
+function warnStep(step, text) {
+  if (!step.warnings.includes(text)) step.warnings.push(text);
+}
+
+// Metin seçme: kayıttaki seçim sayfada kurulur (fingerprint.js > selectRecordedText). Element sayfa
+// durulduktan sonra da gelebilir: timeout boyunca tekrar denenir. Element ya da metin bulunamazsa
+// adım durmaz, uyarı yazılır: seçim çoğu zaman yan bir harekettir (yanlışlıkla sürüklenen fare).
+// Tıklamadaki gibi "üstü kapalı mı?" diye bakılmaz: seçimi içeren element bir kapsayıcı olabilir.
+async function selectText(replay, action, step) {
+  const deadline = Date.now() + REPLAY_TIMEOUT_MS;
+  for (;;) {
+    const result = await inPage(replay, { op: 'select', ...ref(action), text: action.text, start: action.start, end: action.end });
+    if (!result.missing) {
+      if (result.viaSelector) warnSelector(action, step);
+      if (!result.selected) warnStep(step, `"${action.label}": seçilen metin sayfada bulunamadı; seçim kurulmadı.`);
+      return;
+    }
+    if (Date.now() > deadline) return warnStep(step, `"${action.label}": seçimin yapıldığı element bulunamadı; seçim kurulmadı.`);
+    await pause(replay, 200);
   }
 }
 
@@ -271,8 +346,7 @@ function ref({ target, selector }) {
 }
 
 function warnSelector(action, step) {
-  const text = `"${action.label}": hedef (${action.target.key} #${action.target.index}) ekranda yok, selector kullanıldı (${action.selector}).`;
-  if (!step.warnings.includes(text)) step.warnings.push(text);
+  warnStep(step, `"${action.label}": hedef (${action.target.key} #${action.target.index}) ekranda yok, selector kullanıldı (${action.selector}).`);
 }
 
 // Kayıttaki değer alanın türüne göre: açılır liste (seçenek değeri), checkbox / radio (işaretli
@@ -402,6 +476,11 @@ async function moveMouse(replay, { x, y }) {
 // elementin o anki yerine yapılır (Playwright da tıklamadan önce elementin durmasını bekler).
 // count: çoklu tıklamada tıklama sayısı. Basıp bırakmalar aynı noktada, arada beklemeden ve
 // artan clickCount'la gönderilir: sayfa hızlı art arda tıklamayı (detail 1..N, dblclick) görür.
+// Her olay, sayfa bir öncekini işledikten sonra gönderilir (await); sayfa arada tepki verebilir
+// (ör. butonu kapatır). BOT (çoklu tıklamada action.bot; panel.js > addBotToggle): bot ya da makro
+// beklemez. Olaylar protokole sırayla ama cevapları beklenmeden yazılır, sayfa ilk tıklamaya tepki
+// veremeden ötekiler de gelir (çift sipariş gibi hatalar böyle görülür). runner/lib/actions.js >
+// botClick aynısını yapar.
 async function click(replay, action, step, button = 'left', count = 1) {
   let point = await locate(replay, action, step);
   for (let moves = 0; ; moves++) {
@@ -416,10 +495,91 @@ async function click(replay, action, step, button = 'left', count = 1) {
   const at = { x: point.x, y: point.y };
   const buttons = button === 'left' ? 1 : 2;
   await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...at });
+  if (action.bot && action.type === 'multiclick') {
+    const sent = [];
+    for (let clickCount = 1; clickCount <= count; clickCount++) {
+      sent.push(cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button, buttons, clickCount }));
+      sent.push(cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button, buttons: 0, clickCount }));
+    }
+    await Promise.all(sent); // hepsi yola çıktı; şimdi cevaplar beklenir
+    return;
+  }
   for (let clickCount = 1; clickCount <= count; clickCount++) {
     await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button, buttons, clickCount });
     await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button, buttons: 0, clickCount });
   }
+}
+
+// SÜRÜKLE-BIRAK (content.js > SÜRÜKLE-BIRAK; runner/lib/actions.js > dragAndDrop): fare tutulan
+// elementin ortasında basılır, bırakılacak noktaya DRAG_STEPS adımda (adım arası DRAG_STEP_MS)
+// götürülür ve bırakılır. Sıralama kütüphaneleri fareyi izleyerek çalışır: tek sıçrama yetmez.
+// Bırakılacak nokta: kayıttaki bırakılan elementin içinde aynı konum (to); element ekranda yoksa ya
+// da kayıtta to yoksa (kaydırıcı, aynı listede sıra) tutulan noktadan kayıttaki mesafe (dx, dy).
+// HTML5 sürüklemede (native) sahte fare olayları tarayıcının kendi sürükleme döngüsünü başlatamaz:
+// tarayıcıya sürüklemeyi bize bırakması söylenir (Input.setInterceptDrags), sürükleme başlayınca
+// verisi gelir (Input.dragIntercepted) ve bırakılan yerde dragenter / dragover / drop o veriyle
+// gönderilir (Input.dispatchDragEvent). Playwright ve Puppeteer de böyle yapar.
+const DRAG_STEPS = 10;
+const DRAG_STEP_MS = 20;
+const DRAG_START_TIMEOUT_MS = 2000; // HTML5 sürüklemenin başlaması için en fazla
+
+async function drag(replay, action, step) {
+  const found = await locate(replay, action, step);
+  const from = { x: found.x, y: found.y };
+  const to = await dropPoint(replay, action, step, from);
+  await moveMouse(replay, from);
+  const native = Boolean(action.native);
+  const intercepted = native ? dragData(replay) : null;
+  try {
+    if (native) await cdp(replay, 'Input.setInterceptDrags', { enabled: true });
+    await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...from, button: 'left', buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= DRAG_STEPS; i++) {
+      const at = { x: from.x + ((to.x - from.x) * i) / DRAG_STEPS, y: from.y + ((to.y - from.y) * i) / DRAG_STEPS };
+      await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...at, button: 'left', buttons: 1 });
+      await pause(replay, DRAG_STEP_MS);
+    }
+    if (native) {
+      const data = await intercepted.promise;
+      if (!data) throw new Error('tarayıcının sürüklemesi başlamadı (element artık sürüklenebilir değil mi?).');
+      for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp(replay, 'Input.dispatchDragEvent', { type, ...to, data });
+    }
+    await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...to, button: 'left', buttons: 0, clickCount: 1 });
+  } finally {
+    intercepted?.cancel();
+    if (native) await cdp(replay, 'Input.setInterceptDrags', { enabled: false }).catch(() => { });
+  }
+}
+
+async function dropPoint(replay, action, step, from) {
+  if (action.to) {
+    const found = await inPage(replay, { op: 'point', ...ref(action.to), x: action.to.x, y: action.to.y });
+    if (!found.missing) {
+      if (found.viaSelector) warnStep(step, `"${action.label}": bırakılacak yer (${action.to.target.key} #${action.to.target.index}) ekranda yok, selector kullanıldı (${action.to.selector}).`);
+      return { x: found.x, y: found.y };
+    }
+    warnStep(step, `"${action.label}": bırakılacak yer ekranda bulunamadı; kayıttaki mesafe (${action.dx}, ${action.dy}) kullanıldı.`);
+  }
+  return { x: from.x + (action.dx ?? 0), y: from.y + (action.dy ?? 0) };
+}
+
+// HTML5 sürüklemenin verisi: tarayıcı sürüklemeyi başlatınca (Input.dragIntercepted) gelir; gelmezse null.
+function dragData(replay) {
+  let listener = null;
+  let timer = null;
+  const promise = new Promise((resolve) => {
+    listener = (source, method, params) => {
+      if (source.tabId === replay.tabId && method === 'Input.dragIntercepted') resolve(params.data);
+    };
+    chrome.debugger.onEvent.addListener(listener);
+    timer = setTimeout(() => resolve(null), DRAG_START_TIMEOUT_MS);
+  });
+  return {
+    promise,
+    cancel() {
+      chrome.debugger.onEvent.removeListener(listener);
+      clearTimeout(timer);
+    },
+  };
 }
 
 const KEY_CODES = {
@@ -441,7 +601,10 @@ function parseKey(combo) {
 }
 
 // Tek karakterli tuş yazı da yazar (Ctrl/Alt/Cmd ile değilse); Enter satır sonu yazar (form gönderir).
-async function press(replay, combo) {
+// commands: tuşla birlikte tarayıcının düzenleme komutu (ör. ['copy']). Kopyala / kes kısayolunu
+// tarayıcı her işletim sisteminde kendisi yorumlamaz (macOS'ta menü yapar); komut verilince sayfa
+// her yerde aynı işi yapar (Playwright da böyle).
+async function press(replay, combo, commands = []) {
   const { key, modifiers } = parseKey(combo);
   const name = key === 'Space' ? ' ' : key;
   const single = [...name].length === 1;
@@ -449,7 +612,7 @@ async function press(replay, combo) {
   const code = key === 'Space' ? 'Space' : !single ? key : /[a-z]/i.test(name) ? `Key${name.toUpperCase()}` : /\d/.test(name) ? `Digit${name}` : '';
   const text = key === 'Enter' ? '\r' : single && !(modifiers & (MODIFIER_BITS.Alt | MODIFIER_BITS.Control | MODIFIER_BITS.Meta)) ? name : undefined;
   const base = { key: name, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode, modifiers };
-  await cdp(replay, 'Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, ...(text && { text, unmodifiedText: text }) });
+  await cdp(replay, 'Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, ...(text && { text, unmodifiedText: text }), ...(commands.length && { commands }) });
   await cdp(replay, 'Input.dispatchKeyEvent', { type: 'keyUp', ...base });
 }
 

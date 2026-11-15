@@ -241,6 +241,24 @@ const near = (a, b, tolerance = 1.5) => Math.abs(a - b) <= tolerance;
     const result = await panel.evaluate(() => ({ status: replayResult.status, steps: replayResult.steps.map((x) => `${x.name}:${x.status}${x.error ? ' ' + x.error : ''}`) }));
     check('oynatma geçti (monitörler adımı bozmaz), 6 monitör kırmızı', result.status === 'passed' && (await text('#monitor-run-summary')) === '6 monitör · 6 kırmızı', `${JSON.stringify(result)} ${await text('#monitor-run-summary')}`);
 
+    // ---- Canlı sayfada işaret: bozulan elementler sayfada kırmızı çerçeveli, monitörün adıyla ----
+    const liveMarks = () => page.evaluate(() => [...(document.querySelector('graph-recorder-marks')?.shadowRoot.querySelectorAll('.mark') ?? [])]
+      .filter((m) => m.parentElement.style.display !== 'none')
+      .map((m) => { const r = m.getBoundingClientRect(); return { label: m.textContent, left: r.left, top: r.top, right: r.right, bottom: r.bottom }; }));
+    const marksNow = await liveMarks();
+    const labels = [...new Set(marksNow.map((m) => m.label))].sort().join(',');
+    check('canlı sayfada çerçeveler: Error Text, Expected Text (olmamalı), Font Size; görüntü monitörü ve beklenen metin (yok) işaretsiz', labels === 'Bekleyiniz yok,Hata metni yok,Küçük yazı yok', labels);
+    const errRect = await page.evaluate(() => { const r = document.getElementById('err').getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; });
+    const errMark = marksNow.find((m) => m.label === 'Hata metni yok');
+    check('Error Text çerçevesi hata metninin etrafında (3 px dışında)', Boolean(errMark) && ['left', 'top'].every((k) => near(errMark[k], errRect[k] - 3, 2)) && ['right', 'bottom'].every((k) => near(errMark[k], errRect[k] + 3, 2)), JSON.stringify([errMark, errRect]));
+    check('taşanı gizleyen kutunun dışındaki küçük yazı işaretlenmez (Font Size: görünen ve aşağıdaki, 2 çerçeve)', marksNow.filter((m) => m.label === 'Küçük yazı yok').length === 2, JSON.stringify(marksNow.filter((m) => m.label === 'Küçük yazı yok')));
+    check('çerçeve sayfanın metnine ve DOM ağacına girmedi', !(await page.evaluate(() => document.body.innerText.includes('Hata metni yok'))));
+    await page.evaluate(() => window.scrollBy(0, 30));
+    await sleep(150);
+    const markScrolled = (await liveMarks()).find((m) => m.label === 'Hata metni yok');
+    check('sayfa kayınca çerçeve elementi izler', Boolean(markScrolled) && near(markScrolled.top, errMark.top - 30, 2), JSON.stringify([markScrolled, errMark]));
+    await page.evaluate(() => window.scrollTo(0, 0));
+
     const alarms = (await store('monitor-alarms:' + graphId))['monitor-alarms:' + graphId];
     const alarmOf = (id) => alarms.items.find((a) => a.monitorId === id);
     check('6 uyarı; hepsinde hata yeri alanları (targets dizi, viewport)', alarms.items.length === 6 && alarms.items.every((a) => Array.isArray(a.targets) && (a.targets.length === 0 || a.viewport?.width > 0)), JSON.stringify(alarms.items.map((a) => [a.monitorId, a.targets?.length, a.viewport])));

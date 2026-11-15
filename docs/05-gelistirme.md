@@ -91,7 +91,7 @@ Node sayısı fazla geliyorsa kuralı değil, parmak izini değiştirin: `finger
    }, true);
    ```
 2. **`settings.js`:** `ACTION_TYPES` listesine ekleyin: `{ type: 'middleclick', text: 'Orta tuşla tıkla' }`. Paneldeki adı ve Ayarlar'daki kutusu buradan gelir. Tip varsayılan kapalı olacaksa (gürültülü ya da tahmine dayalıysa, üzerine gelme gibi) `optional: true` ekleyin; o zaman yalnızca işaretlenince kaydedilir (`enabledActions`). Tip başka bir tipe bağlıysa (Çoklu tıklama → Tıkla gibi) `requires: 'click'` ekleyin: o tip kaydedilmiyorsa bu da kaydedilmez, Ayarlar'da kutusu pasif olur.
-3. **`sidepanel/replay.js > playAction()`** ve **`runner/lib/actions.js > playAction()`:** panelde ve runner'da tekrar oynatma karşılığını ekleyin (ör. `element.click({ button: 'middle' })`). Eklenmezse oynatma bu aksiyonda adımı "henüz oynatılamıyor / desteklenmiyor" diye başarısız sayar.
+3. **`sidepanel/replay.js > playAction()`** ve **`runner/lib/actions.js > playAction()`:** panelde ve runner'da tekrar oynatma karşılığını ekleyin (ör. `element.click({ button: 'middle' })`). Eklenmezse oynatma bu aksiyonu atlar ve adıma "henüz oynatılamıyor; atlandı" uyarısı yazar (adım durmaz; aksiyon gerçekten gerekliyse doğrulamada kalır).
 4. **`docs/04-veri-modeli.md`** ve **`runner/README.md`:** aksiyon tipleri tablolarına yeni satırı ekleyin.
 
 Background'da değişiklik gerekmez: gelen her aksiyonu, tipi Ayarlar'da işaretliyse buffer'a ekler.

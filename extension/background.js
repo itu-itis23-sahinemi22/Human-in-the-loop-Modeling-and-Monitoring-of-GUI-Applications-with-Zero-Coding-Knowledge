@@ -382,6 +382,8 @@ async function handle(message, sender) {
     case 'REMOVE_BUFFERED': return removeBuffered(state, message.index, message.time);
     case 'SET_WAIT': return setWait(state, message.edgeId, message.index, message.ms);
     case 'SET_BUFFERED_WAIT': return setBufferedWait(state, message.index, message.time, message.ms);
+    case 'SET_BOT': return setBot(state, message.edgeId, message.index, message.bot);
+    case 'SET_BUFFERED_BOT': return setBufferedBot(state, message.index, message.time, message.bot);
     case 'MERGE_NODES': return mergeNodes(state, message.keepId, message.removeId);
     case 'UNDO': return undo(state);
     case 'REPLAY': return setReplay(state, message);
@@ -1178,6 +1180,33 @@ function checkWaitMs(ms) {
   if (!(Number.isInteger(ms) && ms >= 0 && ms <= MAX_WAIT_MS)) throw new Error(`Bekleme süresi 0 ile ${MAX_WAIT_MS / 1000} sn arasında olmalı.`);
 }
 
+// BOT TIKLAMA: çoklu tıklama "bot gibi" oynatılabilir (bot: true; sidepanel/replay.js > click):
+// tıklamalar sayfanın cevabı beklenmeden bir anda gönderilir. Kayıt bunu bilemez, kullanıcı
+// işaretler. Bekleme süresi gibi düzenlenir: edge'de recordedActions saklanır, geri alınabilir;
+// aksiyon nesnesi değiştirilmez, yenisiyle yer değiştirir. İşaret kalkınca alan da silinir
+// (kayıttaki aksiyonda alan yoktur): geri alınınca edge kayıttaki haline dönebilir (dropRecordedIfSame).
+function setBot(state, edgeId, index, bot) {
+  const edge = state.edges.find((e) => e.id === edgeId);
+  const action = edge?.actions[index];
+  if (action?.type !== 'multiclick' || Boolean(action.bot) === Boolean(bot)) return;
+  edge.recordedActions ??= [...edge.actions];
+  pushUndo(state, { kind: 'bot', edgeId, index, action });
+  edge.actions[index] = withBot(action, bot);
+  return save(state);
+}
+
+function setBufferedBot(state, index, time, bot) {
+  checkBuffered(state, index, time);
+  const action = state.buffer[index];
+  if (action.type !== 'multiclick') return;
+  state.buffer[index] = withBot(action, bot);
+  return save(state);
+}
+
+function withBot({ bot: _old, ...action }, bot) {
+  return bot ? { ...action, bot: true } : action;
+}
+
 
 // -----------------------------------------------------------------------------
 // GERİ AL: node, edge ve edge'den aksiyon silmeleri ("Geri al" butonu / Ctrl+Z)
@@ -1226,6 +1255,13 @@ async function undo(state) {
     edge.actions[entry.index] = entry.action;
     dropRecordedIfSame(edge);
     notice = `"${edge.name}" edge'indeki bekleme ${(entry.action.ms / 1000).toFixed(1).replace('.', ',')} sn'ye döndü.`;
+  } else if (entry.kind === 'bot') {
+    // Bot işaretinin değişmesi: eski aksiyon yerine döner.
+    const edge = state.edges.find((e) => e.id === entry.edgeId);
+    if (edge?.actions[entry.index]?.type !== 'multiclick') return save(state).then(() => ({ notice: 'Bot işareti geri alınamadı: edge ya da çoklu tıklama artık yok.' }));
+    edge.actions[entry.index] = entry.action;
+    dropRecordedIfSame(edge);
+    notice = `"${entry.action.label}" yine ${entry.action.bot ? 'bot gibi (bir anda)' : 'normal'} tıklanacak.`;
   } else {
     // Edge'den silinen aksiyon. Tüm düzenlemeler geri alınınca edge kayıttaki haline döner.
     const edge = state.edges.find((e) => e.id === entry.edgeId);

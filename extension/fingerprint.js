@@ -177,3 +177,100 @@ function visibleText(el) {
     || el.getAttribute('title') || el.querySelector?.('img[alt]')?.alt || '';
   return String(text).replace(/\s+/g, ' ').trim().slice(0, 40);
 }
+
+
+// -----------------------------------------------------------------------------
+// METİN SEÇİMİNİ GERİ KURMAK ('select' aksiyonunun oynatılması)
+// -----------------------------------------------------------------------------
+// Kayıt seçimi şöyle saklar (content.js > selectionOf): metin alanında alanın kendisi ve aralık
+// (start, end); aralık vermeyen alanda (email, number) yalnızca metin; sayfada seçimi içeren en
+// küçük element ve seçilen metin. Oynatma aynı seçimi kurar: panelde content.js > replayRequest
+// ('select'), runner'da lib/actions.js > selectText. İkisi de bu fonksiyonu kullanır.
+// Sayfadaki metin elementin metin düğümlerinde aranır. Tarayıcının seçili metni (toString)
+// boşlukları sayfanın kaynağından farklı yazar (bloklar arasına satır sonu koyar, boşlukları
+// birleştirir); bu yüzden önce birebir, bulunamazsa boşluklar esnek aranır. Seçim kurulunca
+// sayfa 'selectionchange' olayını alır (kullanıcı seçtiğindeki gibi). Döner: kurulduysa true.
+function selectRecordedText(el, { text = '', start = null, end = null } = {}) {
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    el.focus();
+    const from = Number.isInteger(start) ? start : text ? el.value.indexOf(text) : -1;
+    const to = Number.isInteger(end) ? end : from + text.length;
+    if (from < 0) return false;
+    try {
+      el.setSelectionRange(from, Math.min(to, el.value.length));
+    } catch { // email, number: aralık kurulamaz, ancak tamamı seçilebilir
+      if (el.value !== text) return false;
+      el.select();
+    }
+    return true;
+  }
+  const nodes = []; // [{ node, at }]: metin düğümü ve tüm metindeki başlangıcı
+  let all = '';
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    nodes.push({ node, at: all.length });
+    all += node.data;
+  }
+  let at = text ? all.indexOf(text) : -1;
+  let length = text.length;
+  if (at < 0 && text.trim()) {
+    const words = text.trim().split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const match = new RegExp(words.join('\\s*')).exec(all);
+    if (match) {
+      at = match.index;
+      length = match[0].length;
+    }
+  }
+  if (at < 0) return false;
+  const point = (offset) => {
+    const hit = nodes.find(({ node, at: from }) => offset <= from + node.data.length);
+    return hit ? [hit.node, offset - hit.at] : null;
+  };
+  const from = point(at);
+  const to = point(at + length);
+  if (!from || !to) return false;
+  const range = document.createRange();
+  range.setStart(...from);
+  range.setEnd(...to);
+  const selection = getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
+
+// -----------------------------------------------------------------------------
+// PANO ('clipboard' aksiyonunun oynatılması)
+// -----------------------------------------------------------------------------
+// Kayıt kopyala / kes / yapıştır'ı, sayfanın işlemi engelleyip engellemediğiyle (blocked) saklar
+// (content.js > onClipboard). Oynatma (panelde sidepanel/replay.js > clipboard, runner'da
+// lib/actions.js > clipboard) bu fonksiyonlarla sayfaya bakar:
+//   - Kopyala / kes gerçek kısayolla yapılır (seçim, önceki 'select' aksiyonuyla kurulmuştur). Önce
+//     watchClipboard, kısayoldan sonra clipboardSeen: işlem oldu mu, sayfa engelledi mi?
+//   - Yapıştır kullanıcının panosuna dokunmaz: kayıttaki metinle 'paste' olayı odaktaki elemente
+//     gönderilir (firePaste; sayfanın yapıştırma dinleyicisi metni görür). Sayfa engellemediyse metin
+//     oynatma tarafından alana yazılır (tarayıcının yapıştırması gibi).
+let clipboardEvent = null; // watchClipboard'dan sonra gelen kopyalama / kesme: { operation, blocked }
+
+function watchClipboard() {
+  clipboardEvent = null;
+  const seen = (event) => {
+    document.removeEventListener('copy', seen, true);
+    document.removeEventListener('cut', seen, true);
+    setTimeout(() => { clipboardEvent = { operation: event.type, blocked: event.defaultPrevented }; }); // sayfa olayı işledikten sonra
+  };
+  document.addEventListener('copy', seen, true);
+  document.addEventListener('cut', seen, true);
+  return true;
+}
+
+function clipboardSeen() {
+  return clipboardEvent;
+}
+
+function firePaste(el, text) {
+  const data = new DataTransfer();
+  data.setData('text/plain', String(text ?? ''));
+  const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true, clipboardData: data });
+  return { blocked: !(el ?? document.body).dispatchEvent(event) };
+}

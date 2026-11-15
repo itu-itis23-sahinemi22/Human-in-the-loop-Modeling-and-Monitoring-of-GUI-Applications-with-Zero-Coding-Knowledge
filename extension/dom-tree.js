@@ -2,10 +2,15 @@
 // dom-tree.js — EKRANDAKİ ELEMENTLER (panelin DOM ağacı kartı)
 // -----------------------------------------------------------------------------
 // Panel isteyince sayfanın ŞU AN ekranda görünen kısmını sade bir ağaç olarak döndürür; panelde
-// üzerine gelinen satırın elementini sayfada çerçeveler. Kayda dokunmaz: olay dinlemez, sayfayı
-// kaydırmaz, tıklamaz.
+// üzerine gelinen satırın elementini sayfada çerçeveler. Olay dinlemez, sayfayı kaydırmaz. Yalnızca
+// panel isteyince (satıra sağ tık > Tıkla…) satırın noktasına tıklar ya da oradaki açılır listede
+// seçer; tıklamayı, seçimi ve kaydı content.js yapar (clickFromPanel, chooseFromPanel).
 //   panel → { type: 'DOM_TREE' }                sayfa → { url, title, count, truncated, tree }
 //   panel → { type: 'DOM_TREE_HIGHLIGHT', id }  sayfa → { ok: true } | { gone: true }
+//   panel → { type: 'DOM_TREE_CLICK', id, count, bot }  sayfa → { label } | { choose } | { gone: true } | { error }
+//   panel → { type: 'DOM_TREE_CHOOSE', id, index }      sayfa → { label, unchanged? } | { gone: true } | { error }
+// choose: tıklanan yer bir açılır listeydi; { label, options: [{ text, disabled, selected }] }. Panel
+// seçenekleri listeler, seçilenin sırası (index) DOM_TREE_CHOOSE ile gelir.
 // tree: [{ id, tag, text, key, interactive, children }]. id, elementin son ağaçtaki sırasıdır;
 // çerçeve isteği bununla gelir (ağaç yeniden alınınca id'ler de yenilenir). id null: çerçeve kalkar.
 //
@@ -191,7 +196,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Eklentinin başka bir isteği (node oluşturma, oynatma, monitör kontrolü) ekran görüntüsü
   // alabilir: çerçeve önce kalkar, görüntüye girmesin.
   if (message?.type !== 'DOM_TREE_HIGHLIGHT') hideFrame();
+  if (message?.type === 'DOM_TREE_CLICK') { // satırın elementine tıkla ve kaydet (content.js > clickFromPanel)
+    const el = elements[message.id];
+    if (!el?.isConnected) return void sendResponse({ gone: true });
+    clickFromPanel(el, message.count ?? 1, Boolean(message.bot)).then(sendResponse, (error) => sendResponse({ error: error.message }));
+    return true; // cevap asenkron
+  }
   try {
+    if (message?.type === 'DOM_TREE_CHOOSE') { // açılır listede seçeneği seç ve kaydet (content.js > chooseFromPanel)
+      const el = elements[message.id];
+      sendResponse(el?.isConnected ? chooseFromPanel(el, message.index) : { gone: true });
+    }
     if (message?.type === 'DOM_TREE') sendResponse(domTree());
     if (message?.type === 'DOM_TREE_HIGHLIGHT') sendResponse(highlight(message.id));
   } catch (error) {

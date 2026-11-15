@@ -580,6 +580,7 @@ function editableActionItems(edge) {
     if (action.type === 'wait') {
       addWaitEdit(li, action, `edge:${edge.id}:${i}`, renderDetails, (ms) => send({ type: 'SET_WAIT', edgeId: edge.id, index: i, ms }));
     }
+    if (action.type === 'multiclick') addBotToggle(li, action, (bot) => send({ type: 'SET_BOT', edgeId: edge.id, index: i, bot }));
 
     const remove = document.createElement('button');
     remove.className = 'icon delete-action';
@@ -631,6 +632,22 @@ function addWaitEdit(li, action, key, redraw, save) {
   queueMicrotask(() => input.focus());
 }
 
+// BOT TIKLAMA (çoklu tıklamada; bekleyen aksiyonlarda ve edge'de; background.js > setBot): kutu
+// işaretliyse oynatma tıklamaları bot ya da makro gibi bir anda gönderir (replay.js > click).
+// Salt okunur listede (senaryo görünümü) kutu yoktur, satırda "· bot" yazar (actionItem); burada o
+// yazının yerini kutu alır.
+function addBotToggle(li, action, save) {
+  const label = document.createElement('label');
+  label.className = 'bot-toggle';
+  label.title = 'İşaretliyse tıklamalar bot ya da makro gibi bir anda gönderilir: sayfa ilk tıklamaya tepki veremeden (ör. butonu kapatamadan) ötekiler de gelir. İşaretsizken her tıklama, sayfa öncekini işledikten sonra gönderilir.';
+  const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: Boolean(action.bot) });
+  box.onchange = () => save(box.checked);
+  label.append(box, ' Bot');
+  const span = li.querySelector('span');
+  span.textContent = action.label;
+  span.after(label);
+}
+
 // Silme isteği: ekranı değiştirmemiş aksiyon doğrudan silinir (geri alınabilir). Ekranı
 // değiştirmiş ya da etkisi bilinmeyen aksiyon için önce gerekçeli uyarı gösterilir.
 function requestRemoveAction(edge, i) {
@@ -675,6 +692,7 @@ function undoText(entry) {
   if (entry.kind === 'edge') return `"${entry.edge.name}" edge'inin silinmesini geri al`;
   if (entry.kind === 'merge') return `"${entry.node.name}" node'unun birleştirilmesini geri al`;
   if (entry.kind === 'wait') return `Bekleme süresinin değişmesini geri al (${seconds(entry.action.ms)})`;
+  if (entry.kind === 'bot') return `"${entry.action.label}" için bot işaretinin değişmesini geri al`;
   return `"${entry.action.label}" aksiyonunun silinmesini geri al`;
 }
 
@@ -710,6 +728,7 @@ function renderBuffer() {
     if (action.type === 'wait') {
       addWaitEdit(li, action, `buffer:${action.time}`, renderBuffer, (ms) => send({ type: 'SET_BUFFERED_WAIT', index: i, time: action.time, ms }));
     }
+    if (action.type === 'multiclick') addBotToggle(li, action, (bot) => send({ type: 'SET_BUFFERED_BOT', index: i, time: action.time, bot }));
     const remove = document.createElement('button');
     remove.className = 'icon delete-action';
     remove.textContent = '✕';
@@ -817,13 +836,14 @@ function actionItem(action) {
           : action.type === 'wait' ? ` → ${seconds(action.ms)}`
             : action.type === 'tab' && action.by === 'page' ? ' · önceki aksiyon açtı'
               : action.type === 'clipboard' && action.blocked ? ' · sayfa engelledi'
-                : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü' : '';
+                : action.type === 'contextmenu' && action.blocked ? ' · sayfanın kendi menüsü'
+                  : action.type === 'multiclick' && action.bot ? ' · bot' : '';
   li.innerHTML = '<b></b> <span></span> <code></code>';
   li.querySelector('b').textContent = ACTION_TEXT[action.type] ?? action.type;
   li.querySelector('span').textContent = action.label + value;
   // Hedef state ile aynı düzeyde ("button:Sil #2" = ekrandaki 2. Sil); selector yedek
   const target = action.target?.index ? `${action.target.key} #${action.target.index} · ` : '';
-  li.querySelector('code').textContent = target + (action.selector ?? action.url);
+  li.querySelector('code').textContent = target + (action.selector ?? action.url) + (action.type === 'drag' && action.to ? ` → ${action.to.selector}` : '');
   return li;
 }
 

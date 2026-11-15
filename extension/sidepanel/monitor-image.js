@@ -211,15 +211,18 @@ async function bitmapToJpeg(bitmap, quality = 0.4) {
 
 // Sekmenin görünen kısmı, kayıpsız (png): eşleme için. Chrome saniyede 2 görüntüyle sınırlar; sınır
 // aşılırsa kısa bekleyip bir kez daha denenir (monitor-run.js > monitorScreenshot ile aynı).
+// Canlı sayfadaki monitör çerçeveleri görüntüye girmez (monitor-run.js > withoutMarks): eşlemeyi bozardı.
 async function captureTabPng(tabId) {
   const { windowId } = await chrome.tabs.get(tabId);
-  try {
-    return await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
-  } catch (error) {
-    if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota|exceed/i.test(error?.message ?? '')) throw error;
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    return chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
-  }
+  return withoutMarks(tabId, async () => {
+    try {
+      return await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+    } catch (error) {
+      if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota|exceed/i.test(error?.message ?? '')) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+    }
+  });
 }
 
 // Görüntü monitörlerini bir ekran görüntüsünde kontrol eder (hepsi için TEK çekim).
