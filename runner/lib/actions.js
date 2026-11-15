@@ -10,12 +10,15 @@
 import { urlKey } from './state.js';
 
 // run: { timeout, secrets, viewport, setViewport(viewport), warn(text), context, pages, page,
-//        track(page), activate(page), forget(page) } (bkz. run.js > createRun)
+//        track(page), activate(page), forget(page), cdp(page) } (bkz. run.js > createRun)
 export async function playAction(page, action, run) {
   switch (action.type) {
     case 'click': return (await elementOf(page, action, run)).click({ timeout: run.timeout });
-    // Hızlı art arda tıklama: Playwright basıp bırakmaları arada beklemeden, artan clickCount'la gönderir
-    case 'multiclick': return (await elementOf(page, action, run)).click({ clickCount: action.count, timeout: run.timeout });
+    // Hızlı art arda tıklama: Playwright basıp bırakmaları arada beklemeden, artan clickCount'la gönderir.
+    // bot işaretliyse hepsi bir anda (botClick).
+    case 'multiclick':
+      if (action.bot) return botClick(page, action, run);
+      return (await elementOf(page, action, run)).click({ clickCount: action.count, timeout: run.timeout });
     case 'contextmenu': return (await elementOf(page, action, run)).click({ button: 'right', timeout: run.timeout });
     case 'hover': return (await elementOf(page, action, run)).hover({ timeout: run.timeout });
     case 'focus': return (await elementOf(page, action, run)).focus();
@@ -32,8 +35,25 @@ export async function playAction(page, action, run) {
     // da doğrulamadaki tekrar deneme onu yakalar.
     case 'wait': return page.waitForTimeout(action.ms);
     case 'tab': return tab(action, run);
-    default: throw new Error(`"${action.type}" aksiyonu runner'da henüz desteklenmiyor.`);
+    case 'select': return selectText(page, action, run);
+    // Oynatılamayan aksiyon (bugün: clipboard) çalıştırmayı durdurmaz: atlanır, uyarı yazılır.
+    // Gerçekten gerekliyse adım doğrulamada kalır (panelde sidepanel/replay.js > skipAction).
+    default: return run.warn(`"${action.label}": "${action.type}" aksiyonu runner'da henüz oynatılamıyor; atlandı.`);
   }
+}
+
+// Metin seçme: kayıttaki seçim sayfada kurulur (eklentinin fingerprint.js > selectRecordedText;
+// panelde sidepanel/replay.js > selectText). Element ya da metin bulunamazsa uyarı yazılır, durmaz.
+async function selectText(page, action, run) {
+  let element;
+  try {
+    element = await elementOf(page, action, run);
+  } catch {
+    return run.warn(`"${action.label}": seçimin yapıldığı element bulunamadı; seçim kurulmadı.`);
+  }
+  const recorded = { text: action.text, start: action.start ?? null, end: action.end ?? null };
+  const selected = await element.evaluate((el, arg) => window.__graphRecorder.selectRecordedText(el, arg), recorded);
+  if (!selected) run.warn(`"${action.label}": seçilen metin sayfada bulunamadı; seçim kurulmadı.`);
 }
 
 // Aksiyonun elementi. Element sayfa durulduktan sonra da gelebilir: hedef ve selector
@@ -71,6 +91,26 @@ async function targetElement(page, target) {
     if (/Execution context was destroyed|Cannot find context/.test(error.message)) return null; // sayfa değişiyor
     throw error;
   }
+}
+
+// BOT TIKLAMA (çoklu tıklamada bot işaretliyse; panelde replay.js > click): Playwright her basıp
+// bırakmayı, sayfa bir öncekini işledikten sonra gönderir; sayfa arada tepki verebilir (ör. butonu
+// kapatır). Bot ya da makro beklemez: basıp bırakmalar DevTools protokolüne sırayla ama cevapları
+// beklenmeden yazılır, sayfa ilk tıklamaya tepki veremeden ötekiler de gelir (çift sipariş, çift
+// gönderim gibi hatalar böyle görülür). clickCount yine artar (sayfa dblclick'i de görür).
+async function botClick(page, action, run) {
+  const element = await elementOf(page, action, run);
+  await element.hover({ timeout: run.timeout }); // tıklamadaki gibi: görünür, sabit, üstü kapalı değil
+  const box = await element.boundingBox();
+  if (!box) throw new Error(`"${action.label}" elementinin yeri ölçülemedi.`);
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const cdp = run.cdp(page);
+  const sent = [];
+  for (let clickCount = 1; clickCount <= action.count; clickCount++) {
+    sent.push(cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button: 'left', buttons: 1, clickCount }));
+    sent.push(cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button: 'left', buttons: 0, clickCount }));
+  }
+  await Promise.all(sent); // hepsi yola çıktı; şimdi cevaplar beklenir
 }
 
 // Şifre alanları kayıtta "******" olarak saklanır (content.js > MASK_PASSWORDS). Gerçek değer

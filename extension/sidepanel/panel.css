@@ -422,6 +422,12 @@ dialog.compare {
   margin-left: 2px;
 }
 
+.actions .bot-toggle {
+  margin-left: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .actions .wait-input {
   width: 64px;
   font: inherit;

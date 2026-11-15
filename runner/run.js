@@ -209,6 +209,10 @@ function createRun(context, options) {
       sessions.get(run.page).viewport = next;
       await setViewport(sessions.get(run.page).cdp, next);
     },
+    // Sayfanın DevTools protokolü oturumu (bot tıklama, lib/actions.js > botClick)
+    cdp(page) {
+      return sessions.get(page).cdp;
+    },
   };
   return run;
 }

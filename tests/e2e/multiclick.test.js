@@ -1,6 +1,7 @@
 // Çoklu tıklama testi: Ayarlar (varsayılan açık, Tıkla'ya bağlı kutu), çift / üçlü / beşli
 // tıklamanın tek aksiyon olarak kaydı, metne çift tıklamanın yine metin seçimi olması, ayar
-// kapalıyken ayrı tıklamalar, panelde ve runner'da oynatma (sayfa dblclick ve tıklama sayacını görür).
+// kapalıyken ayrı tıklamalar, Bot kutusu (bekleyende ve edge'de, geri al, dışa aktarım), panelde ve
+// runner'da oynatma (sayfa dblclick ve tıklama sayacını görür; beşli tıklama bot ile).
 // Kullanım: node tests/e2e/multiclick.test.js
 const http = require('http');
 const path = require('path');
@@ -116,9 +117,44 @@ const afterReplay = (actions) => actions.filter((a) => a.type !== 'resize');
     await sleep(800);
     s = await getState();
     check('beşli tıklama: tek multiclick ×5 "Click Logo ×5"', types(s.buffer) === 'multiclick×5' && s.buffer.at(-1).label === 'Click Logo ×5', `${types(s.buffer)} ${s.buffer.at(-1)?.label}`);
+
+    // ---- 2b) Bot kutusu: bekleyen aksiyonda ----
+    const bufferBot = '#buffer li:last-child .bot-toggle input';
+    await panel.bringToFront();
+    check('bekleyen çoklu tıklamada Bot kutusu, işaretsiz', await panel.locator(bufferBot).count() === 1 && !(await panel.isChecked(bufferBot)));
+    await panel.check(bufferBot);
+    await sleep(300);
+    s = await getState();
+    check('bekleyende Bot işaretlenince aksiyona bot: true', s.buffer.at(-1).bot === true, JSON.stringify(s.buffer.at(-1)));
+    await panel.uncheck(bufferBot);
+    await sleep(300);
+    s = await getState();
+    check('işaret kalkınca bot alanı silinir', !('bot' in s.buffer.at(-1)), JSON.stringify(s.buffer.at(-1)));
+
     s = await createNode();
     check('kayıt: 4 node, 3 edge', s.nodes.length === 4 && s.edges.length === 3, `${s.nodes.length} node, ${s.edges.length} edge`);
     const edges = s.edges.map((e) => e.id);
+
+    // ---- 2c) Bot kutusu: edge detayında (düzenleme, geri al) ----
+    const logoEdge = edges[2];
+    const edgeBot = '#details-actions .bot-toggle input';
+    await panel.evaluate((id) => { selectedId = id; renderDetails(); }, logoEdge);
+    check('edge detayında Bot kutusu, işaretsiz', await panel.locator(edgeBot).count() === 1 && !(await panel.isChecked(edgeBot)));
+    await panel.check(edgeBot);
+    await sleep(300);
+    s = await getState();
+    let logo = s.edges.find((e) => e.id === logoEdge);
+    check('edge\'de Bot: aksiyona bot: true, kayıttaki liste saklandı', logo.actions.find((a) => a.type === 'multiclick')?.bot === true && Array.isArray(logo.recordedActions), JSON.stringify(logo.actions.map((a) => a.type + (a.bot ? ':bot' : ''))));
+    check('Geri al butonunun açıklaması', (await panel.getAttribute('#btn-undo', 'title')).startsWith('"Click Logo ×5" için bot işaretinin değişmesini geri al'), await panel.getAttribute('#btn-undo', 'title'));
+    await send({ type: 'UNDO' });
+    s = await getState();
+    logo = s.edges.find((e) => e.id === logoEdge);
+    check('geri al: bot kalktı, edge kayıttaki haline döndü', !logo.actions.some((a) => a.bot) && !logo.recordedActions);
+    await panel.evaluate(() => renderDetails());
+    await panel.check(edgeBot);
+    await sleep(300);
+    s = await getState();
+    check('yeniden işaretlendi (oynatma bot ile)', s.edges.find((e) => e.id === logoEdge).actions.some((a) => a.bot === true));
 
     // ---- 3) Panelde oynatma ----
     await panel.evaluate(async (ids) => {
@@ -136,8 +172,10 @@ const afterReplay = (actions) => actions.filter((a) => a.type !== 'resize');
     if (await panel.evaluate(() => !document.getElementById('replay-check').hidden)) await panel.evaluate(() => document.getElementById('btn-replay-anyway').click());
     await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 60000 });
     const result = await panel.evaluate(() => ({ status: replayResult.status, steps: replayResult.steps.map((x) => `${x.name}:${x.status}${x.error ? ' ' + x.error : ''}`) }));
-    check('panelde oynatma geçti (dblclick, 3. ve 5. tıklama sayfada)', result.status === 'passed', JSON.stringify(result.steps));
+    check('panelde oynatma geçti (dblclick, 3. ve bot ile 5. tıklama sayfada)', result.status === 'passed', JSON.stringify(result.steps));
     model = await panel.evaluate(() => graphWalkerModel());
+    const exported = model.models[0].edges.find((e) => e.id === logoEdge)?.properties?.uiActions ?? [];
+    check('GraphWalker JSON\'unda bot: true', exported.some((a) => a.type === 'multiclick' && a.bot === true), JSON.stringify(exported.map((a) => a.type)));
 
     // ---- 4) Metne çift tıklamak yine metin seçimi ----
     await page.bringToFront();

@@ -721,7 +721,8 @@ function sendHover(el) {
 //   focus   : elemente odaklan; select ise içeriğini seç (yazılacak metin eskisinin yerine geçer)
 //   choose  : açılır listede değeri seç
 //   scroll  : sayfayı ya da kutuyu kayıttaki konuma kaydır
-async function replayRequest({ op, target, selector, highlight, select, value, x, y }) {
+//   select  : kayıttaki metin seçimini kur (fingerprint.js > selectRecordedText); { selected }
+async function replayRequest({ op, target, selector, highlight, select, value, x, y, text, start, end }) {
   if (op === 'settled') {
     await settled();
     return fingerprint();
@@ -757,6 +758,7 @@ async function replayRequest({ op, target, selector, highlight, select, value, x
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return { viaSelector };
   }
+  if (op === 'select') return { selected: selectRecordedText(el, { text, start, end }), viaSelector };
   return { error: `Bilinmeyen istek: ${op}` };
 }
 

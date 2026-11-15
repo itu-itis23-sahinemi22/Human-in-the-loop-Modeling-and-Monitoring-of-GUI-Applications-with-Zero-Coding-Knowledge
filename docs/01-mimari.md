@@ -141,6 +141,7 @@ Parçalar `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` ile JSON mesa
 | `REMOVE_ACTION` | panel → background | `{ edgeId, index }` | Edge'den bir aksiyonu siler. Tek aksiyon kaldıysa reddeder. İlk silmede orijinal liste `recordedActions`'a kopyalanır; silinen aksiyon geri al yığınına (`state.undo`) girer. |
 | `RECORD_NAVIGATE` | panel → background | `{ tabId, url }` | Panelin açacağı gezinmeyi ("Başlangıç node'una dön") kayıt sekmesindeyse `navigate` aksiyonu olarak ekler; gezinmeden önce gönderilir. Bkz. [Panelde oynatma](#panelde-oynatma) |
 | `REMOVE_BUFFERED` | panel → background | `{ index, time }` | "Bekleyen aksiyonlar"dan bir aksiyonu siler. `index` sırasındaki aksiyonun zamanı `time` değilse (liste bu arada değişti) ya da "aynı node mu?" sorusu bekliyorsa reddeder. Geri al yığınına girmez. Bkz. [Bekleyen aksiyonları silme](#bekleyen-aksiyonları-silme) |
+| `SET_BOT` / `SET_BUFFERED_BOT` | panel → background | `{ edgeId, index, bot }` / `{ index, time, bot }` | Çoklu tıklamanın **Bot** kutusu: aksiyona `bot: true` yazar ya da alanı siler. Edge'de bekleme süresi gibi düzenlemedir (`recordedActions`, geri al); bekleyende geri al yoktur. Bkz. [Bot tıklama](#bot-tıklama) |
 | `UNDO` | panel → background | (boş) | Son silmeyi ya da birleştirmeyi geri alır; ne geri getirildiğini `{ notice }` ile bildirir. Bkz. [Geri al](#geri-al) |
 | `MERGE_NODES` | panel → background | `{ keepId, removeId }` | `removeId` node'unu `keepId`'ye birleştirir. URL şablonu ya da edge set'i farklıysa ya da bekleyen bir soru varsa reddeder. Bkz. [Node birleştirme](#node-birleştirme) |
 | `CANCEL_PENDING` | panel → background | (boş) | Şu anki node seçilip "Node oluşturma, aksiyonlara devam et" denince: bekleyen karar atılır, kesilen aksiyonlar buffer'a geri döner (karar beklerken yapılanların önüne). |
@@ -344,6 +345,15 @@ Edge oluşmadan önce de yanlışlıkla yapılan bir aksiyon (fazladan bir tıkl
 - Otomatik bekleme kaydedilen beklemeden ayrı bir türdür (*Bekle (otomatik)*): yalnızca otomatik beklemeler gizlenebilir.
 - İki listenin filtresi ayrıdır; edge filtresi bütün edge'lerde geçerlidir. Başlıkta kaç aksiyonun gizlendiği yazar (*Filtrele · 3 gizli*).
 - Seçim bu tarayıcıda hatırlanır (`localStorage > actionFilters`); panel yeniden açılınca aynı türler gizli gelir.
+
+### Bot tıklama
+
+Çoklu tıklamanın (`multiclick`) satırında, "Bekleyen aksiyonlar"da ve edge detayında, **Bot** kutusu vardır. Kayıt insanın mı bir botun mu tıkladığını bilemez; kullanıcı işaretler (`bot: true`).
+
+- **İşaretsiz (varsayılan):** oynatma basıp bırakmaları arada beklemeden ama tek tek gönderir: her olay, sayfa bir öncekini işledikten sonra gider. Sayfa arada tepki verebilir (ör. ilk tıklamada butonu kapatır, sonrakiler boşa düşer).
+- **İşaretli:** bot ya da makro gibi. Olaylar DevTools protokolüne sırayla ama cevapları beklenmeden yazılır (`sidepanel/replay.js > click`, runner'da `lib/actions.js > botClick`): sayfa ilk tıklamaya tepki veremeden ötekiler de gelir. Çift sipariş, çift form gönderimi gibi "butonu kapatmayı unutmuş" hataları böyle görülür. `clickCount` yine artar (sayfa `dblclick`'i de görür).
+- Edge'de bekleme süresi gibi bir düzenlemedir: kayıttaki orijinal liste `recordedActions`'ta saklanır, **Geri al** ile geri alınır (`SET_BOT`). Bekleyen aksiyonda geri al yoktur, kutu yeniden değiştirilir (`SET_BUFFERED_BOT`).
+- Senaryo görünümünde (salt okunur) kutu yoktur; satırda `· bot` yazar.
 
 ---
 
@@ -553,7 +563,8 @@ panel.js ▸ Koşuyu oynat
    │ 2. REPLAY {active: true} ──▶ background: kayıt durur
    ▼
 replay.js ── her edge, her aksiyon ─────────────────────────────────────┐
-   │  content.js'e REPLAY {op}: locate / focus / choose / scroll        │
+   │  content.js'e REPLAY {op}: locate / focus / choose / scroll /      │
+   │                           select                                   │
    │  chrome.debugger (CDP): Input.dispatchMouseEvent / KeyEvent,       │
    │                         Input.insertText, Emulation (resize)       │
    │  chrome.tabs: navigate, back/forward, reload, zoom, sekmeler       │
@@ -572,6 +583,7 @@ panel: graph'ta ilerleme (yeşil / kesik / kırmızı), adım listesi ◀──�
 - **Başlangıç boyutu** (`replay.js > fitStart`). Oynatma, sekmeye bağlandıktan hemen sonra görünen alanı başlangıç node'unun kaydedildiği boyuta getirir. Pencere değil, `resize` aksiyonu gibi taklit (`Emulation.setDeviceMetricsOverride`, DevTools'un cihaz modu) kullanılır: pencereyi büyütmek yan panel, kenarlıklar ve ekran ölçeği yüzünden birkaç piksel kaçırabiliyordu, eklenti de panelin genişliğini değiştiremez (Chrome'un API'si izin vermez); taklit panelden ve pencereden bağımsız, piksel piksel tutar. Önce piksel oranı için sekmenin yakınlaştırması ayarlanır (piksel oranı = ekran ölçeği × yakınlaştırma; Chrome bunu site başına saklar, oynatmadan sonra da kalır). Taklidin boyutu ekran pikseli, görünen alan CSS pikselidir: boyut yakınlaştırmayla çarpılıp kurulur, ölçülür, kalan fark düzeltilir. Sonra ekran başlangıç node'uyla karşılaştırılır; tutmazsa ilk adıma uyarı yazılır, oynatma sürer ("Yine de oynat" gibi; ilk edge'in doğrulaması asıl sonucu verir). Taklit oynatma bitince kaldırılır, sekme kendi boyutuna döner: kayıt oradan sürerse fark sonraki ekranda `resize` aksiyonu olarak kaydedilir.
 - **Gerçek olaylar.** Fare, klavye ve metin girişi DevTools protokolüyle (`chrome.debugger`) gönderilir: sayfa bunları gerçek kullanıcı olayı (`isTrusted`) olarak görür; CSS `:hover`, sayfanın tuş dinleyicileri, `target=_blank` link çalışır. Sayfanın içinden üretilen olaylar (`dispatchEvent`) bunları yapamazdı. Bedeli: `debugger` izni ve Chrome'un oynatma boyunca gösterdiği "hata ayıklama başlatıldı" çubuğu. Çubukta "İptal"e basılırsa oynatma durur.
 - **Aksiyonlar runner'la aynı tablodur** ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)): element önce kayıttaki hedefle ("türün n'incisi"), yoksa selector'la bulunur; tıklamadan önce fare elementin üzerine gelir, element kaydıysa ya da üstü bir katmanla kapalıysa yeniden bulunur (Playwright'ın tıklamadan önce elementin durmasını beklemesi gibi). Her aksiyondan sonra sayfanın durulması beklenir (`fingerprint.js > settled`); her edge'in sonunda varılan ekran hedef node'la karşılaştırılır, eşleşene kadar 10 sn tekrar denenir. `select` ve `clipboard` henüz oynatılmaz.
+- **Oynatılamayan aksiyon durdurmaz.** Karşılığı henüz olmayan aksiyon (bugün `clipboard`) atlanır, adıma "henüz oynatılamıyor; atlandı" uyarısı yazılır. Çoğu zaman yan bir harekettir; gerçekten gerekliyse adım doğrulamada kalır ve uyarı nedenini söyler. Metin seçimi (`select`) kayıttaki seçimi geri kurar; seçilen metin artık sayfada yoksa yine uyarı yazılır, adım durmaz (yanlışlıkla sürüklenen fare bütün edge'i kilitlemesin).
 - **Şifreler.** Kayıtta `******` olan alanlar için panel şifre kutusu gösterir; değer yalnızca panel açıkken bellekte durur, saklanmaz.
 - **Kayıt durur.** Oynatılan olaylar gerçek olay gibi geldiği için oynatma sürerken background kayda giden her yolu (aksiyon, ekran, gezinme, yakınlaştırma, sekme olayları) yok sayar. Bayrak `chrome.storage.session`'dadır: service worker uyuyup uyansa da kalır. Panel oynatma sürerken kapanırsa bir sonraki açılışta bayrak temizlenir.
 - **Bitince.** Koşu geçtiyse kayıt vardığı node'dan, oynatmanın bittiği sekmede sürer ("Buradan devam et" gibi). Kaldıysa ya da durdurulduysa tarayıcının hangi ekranda olduğu bilinmez: şu anki node boşalır, kullanıcı bir node seçip "Buradan devam et"e basar. Kalınan adımda fark listesi görünür; **Beklenen ekranla karşılaştır** kalınan ekranın görüntüsünü, beklenen node'un kayıttaki görüntüsüyle onay kartındaki görünümlerle (Fark, Perde, Yan yana) karşılaştırır.

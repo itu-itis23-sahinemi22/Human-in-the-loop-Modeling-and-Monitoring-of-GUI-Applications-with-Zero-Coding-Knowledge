@@ -259,7 +259,7 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | Aksiyon | Playwright karşılığı |
 |---|---|
 | `click` | `click()` |
-| `multiclick` | `click({ clickCount: count })`: hızlı art arda `count` tıklama (`dblclick` de oluşur) |
+| `multiclick` | `click({ clickCount: count })`: hızlı art arda `count` tıklama (`dblclick` de oluşur). `bot: true` ise basıp bırakmalar DevTools protokolüyle, cevapları beklenmeden bir anda gönderilir (bot ya da makro gibi; `botClick`) |
 | `input` | Alanın türüne göre `fill()`, `selectOption()` ya da `setChecked()`. `******` değeri secrets dosyasından gelir. |
 | `enter` | `press('Enter')` |
 | `key` | `press(key)`, `count` kez. Hedef yoksa (odakta element yoktu) `keyboard.press(key)`. |
@@ -274,7 +274,8 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `zoom` | Görünen alan varılan boyuta ve piksel oranına ayarlanır. Eski kayıtlarda varılan boyut yoktur; yakınlaştırma oranlarından hesaplanır. |
 | `tab` | `open`: önceki aksiyonun açtığı sayfaya geçilir (`by: page`; sayfa henüz yoksa beklenir) ya da yeni sayfa açılıp adrese gidilir (`by: user`). `switch`: adresi (URL şablonu) tutan, en son kullanılan sekmeye geçilir. `close`: o sekme kapanır; aktif sekme kapandıysa en son kullanılan sekme öne gelir. Yeni sekme aktif sekmenin görünen alanıyla açılır. |
 | `wait` | `ms` kadar beklenir. Ekranı değiştiren bekleme (oturum zaman aşımı) biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar. |
-| `select`, `clipboard` | Henüz oynatılmıyor; adım "desteklenmiyor" diye başarısız olur |
+| `select` | Kayıttaki seçim kurulur (eklentinin `fingerprint.js > selectRecordedText`): metin alanında `start`/`end` aralığı, sayfada metin elementin içinde aranıp seçilir (boşluklar esnek). Element ya da metin bulunamazsa uyarı yazılır, adım durmaz. |
+| `clipboard` | Henüz oynatılmıyor: atlanır, adıma uyarı yazılır (adım durmaz; aksiyon gerçekten gerekliyse doğrulamada kalır) |
 
 ---
 

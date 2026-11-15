@@ -109,11 +109,11 @@ Tipler:
 | `type` | Kaynağı | Ek alan | `label` örneği | Tekrar oynatırken (replay) karşılığı |
 |---|---|---|---|---|
 | `click` | content.js | | `"Login"`, `"Add to cart"` | `click(selector)` |
-| `multiclick` | content.js | `count` (`number`): hızlı art arda kaç tıklama (2 ya da fazla) | `"Double click Login"`, `"Triple click Satır"`, `"Click Logo ×5"` | `click(selector, { clickCount: count })`: basıp bırakmalar arada beklemeden, artan `clickCount`'la; sayfa `dblclick`'i de görür. Ayarlar'da Çoklu tıklama kapalıysa kaydedilmez, tıklamalar ayrı `click` olur ([01 > Aksiyonlar](01-mimari.md#sayfa-içi-olaylar-contentjs)). |
+| `multiclick` | content.js | `count` (`number`): hızlı art arda kaç tıklama (2 ya da fazla); `bot` (`true`, opsiyonel): panelde işaretlenir, bot gibi oynatılır | `"Double click Login"`, `"Triple click Satır"`, `"Click Logo ×5"` | `click(selector, { clickCount: count })`: basıp bırakmalar arada beklemeden, artan `clickCount`'la; sayfa `dblclick`'i de görür. Her olay sayfa öncekini işledikten sonra gönderilir. `bot` varsa olaylar DevTools protokolüyle cevapları beklenmeden bir anda gönderilir: sayfa ilk tıklamaya tepki veremeden (ör. butonu kapatamadan) ötekiler gelir ([01 > Bot tıklama](01-mimari.md#bot-tıklama)). Ayarlar'da Çoklu tıklama kapalıysa kaydedilmez, tıklamalar ayrı `click` olur ([01 > Aksiyonlar](01-mimari.md#sayfa-içi-olaylar-contentjs)). |
 | `input` | content.js | `value` (`string` ya da checkbox için `boolean`; düzenlenebilir alanda metni) | `"Fill Username"`, `"Select Sort"`, `"Check Remember me"` | `fill(selector, value)` / `selectOption` / `check` |
 | `enter` | content.js | | `"Submit Username"` | `press(selector, "Enter")` |
 | `key` | content.js | `key` (`string`): Playwright biçiminde tuş (`"Escape"`, `"Control+Enter"`, `"/"`); `count` (`number`): art arda kaç kez basıldığı | `"Press Escape"`, `"Press ArrowDown ×3"` | `selector` varsa `press(selector, key)`, `null` ise `keyboard.press(key)`; `count` kez |
-| `select` | content.js | `text` (`string`): seçilen metin; metin alanında `start`, `end` (`number`): seçim aralığı. `selector` seçimi içeren element ya da alan | `"Select \"Merhaba dunya\""` | Alanda `setSelectionRange(start, end)`; sayfada `selector` içinde `text`'i bulup `Range` ile seçmek |
+| `select` | content.js | `text` (`string`): seçilen metin; metin alanında `start`, `end` (`number`): seçim aralığı. `selector` seçimi içeren element ya da alan | `"Select \"Merhaba dunya\""` | Alanda `setSelectionRange(start, end)`; sayfada `selector` içinde `text`'i bulup `Range` ile seçmek (`fingerprint.js > selectRecordedText`; panel ve runner aynı kodu kullanır). Bulunamazsa uyarı, adım durmaz. |
 | `contextmenu` | content.js | `blocked` (`boolean`): sayfa tarayıcının menüsünü engelledi, kendi menüsünü açtı | `"Right click Dosya.pdf"` | `click(selector, { button: "right" })` |
 | `hover` | content.js | `target` yalnızca etkileşimli bir elementteyse | `"Hover Ürünler"` | `hover(selector)`. Yalnızca state'i değiştiren ve Ayarlar'da işaretliyse (varsayılan kapalı) kaydedilir ([01 > Fareyle üzerine gelme](01-mimari.md#fareyle-üzerine-gelme)). |
 | `focus` | content.js | | `"Focus İçeriğe atla"` | `focus(selector)`. Yalnızca state'i değiştiren odaklar kaydedilir. |
@@ -129,7 +129,7 @@ Tipler:
 
 Şifre alanlarında `value` her zaman `"******"` olarak saklanır.
 
-Runner bu karşılıkları uygular; maskeli değerleri bir secrets dosyasından alır. `select` ve `clipboard` henüz oynatılmıyor ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)).
+Runner bu karşılıkları uygular; maskeli değerleri bir secrets dosyasından alır. `clipboard` henüz oynatılmıyor: panelde ve runner'da atlanır, adıma uyarı yazılır ([runner/README.md > Aksiyonların karşılığı](../runner/README.md#aksiyonların-karşılığı)).
 
 ---
 

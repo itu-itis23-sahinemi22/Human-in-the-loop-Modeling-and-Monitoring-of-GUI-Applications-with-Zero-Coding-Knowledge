@@ -236,7 +236,38 @@ async function playAction(replay, action, step) {
     // Ekranı değiştiren bekleme biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar.
     case 'wait': return pause(replay, action.ms);
     case 'tab': return tab(replay, action);
-    default: throw new Error(`"${action.type}" aksiyonu henüz oynatılamıyor.`);
+    case 'select': return selectText(replay, action, step);
+    default: return skipAction(action, step);
+  }
+}
+
+// Oynatılamayan aksiyon (bugün: clipboard) oynatmayı durdurmaz: atlanır, adıma uyarı yazılır.
+// Çoğu zaman yan bir harekettir (yanlışlıkla seçilen metin, kopyalanan yazı); aksiyon gerçekten
+// gerekliyse adım doğrulamada kalır ve uyarı nedenini söyler. runner/lib/actions.js aynısını yapar.
+function skipAction(action, step) {
+  const name = ACTION_TYPES.find((t) => t.type === action.type)?.text ?? action.type; // settings.js
+  warnStep(step, `"${action.label}": "${name}" aksiyonu henüz oynatılamıyor; atlandı.`);
+}
+
+function warnStep(step, text) {
+  if (!step.warnings.includes(text)) step.warnings.push(text);
+}
+
+// Metin seçme: kayıttaki seçim sayfada kurulur (fingerprint.js > selectRecordedText). Element sayfa
+// durulduktan sonra da gelebilir: timeout boyunca tekrar denenir. Element ya da metin bulunamazsa
+// adım durmaz, uyarı yazılır: seçim çoğu zaman yan bir harekettir (yanlışlıkla sürüklenen fare).
+// Tıklamadaki gibi "üstü kapalı mı?" diye bakılmaz: seçimi içeren element bir kapsayıcı olabilir.
+async function selectText(replay, action, step) {
+  const deadline = Date.now() + REPLAY_TIMEOUT_MS;
+  for (;;) {
+    const result = await inPage(replay, { op: 'select', ...ref(action), text: action.text, start: action.start, end: action.end });
+    if (!result.missing) {
+      if (result.viaSelector) warnSelector(action, step);
+      if (!result.selected) warnStep(step, `"${action.label}": seçilen metin sayfada bulunamadı; seçim kurulmadı.`);
+      return;
+    }
+    if (Date.now() > deadline) return warnStep(step, `"${action.label}": seçimin yapıldığı element bulunamadı; seçim kurulmadı.`);
+    await pause(replay, 200);
   }
 }
 
@@ -271,8 +302,7 @@ function ref({ target, selector }) {
 }
 
 function warnSelector(action, step) {
-  const text = `"${action.label}": hedef (${action.target.key} #${action.target.index}) ekranda yok, selector kullanıldı (${action.selector}).`;
-  if (!step.warnings.includes(text)) step.warnings.push(text);
+  warnStep(step, `"${action.label}": hedef (${action.target.key} #${action.target.index}) ekranda yok, selector kullanıldı (${action.selector}).`);
 }
 
 // Kayıttaki değer alanın türüne göre: açılır liste (seçenek değeri), checkbox / radio (işaretli
@@ -402,6 +432,11 @@ async function moveMouse(replay, { x, y }) {
 // elementin o anki yerine yapılır (Playwright da tıklamadan önce elementin durmasını bekler).
 // count: çoklu tıklamada tıklama sayısı. Basıp bırakmalar aynı noktada, arada beklemeden ve
 // artan clickCount'la gönderilir: sayfa hızlı art arda tıklamayı (detail 1..N, dblclick) görür.
+// Her olay, sayfa bir öncekini işledikten sonra gönderilir (await); sayfa arada tepki verebilir
+// (ör. butonu kapatır). BOT (çoklu tıklamada action.bot; panel.js > addBotToggle): bot ya da makro
+// beklemez. Olaylar protokole sırayla ama cevapları beklenmeden yazılır, sayfa ilk tıklamaya tepki
+// veremeden ötekiler de gelir (çift sipariş gibi hatalar böyle görülür). runner/lib/actions.js >
+// botClick aynısını yapar.
 async function click(replay, action, step, button = 'left', count = 1) {
   let point = await locate(replay, action, step);
   for (let moves = 0; ; moves++) {
@@ -416,6 +451,15 @@ async function click(replay, action, step, button = 'left', count = 1) {
   const at = { x: point.x, y: point.y };
   const buttons = button === 'left' ? 1 : 2;
   await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...at });
+  if (action.bot && action.type === 'multiclick') {
+    const sent = [];
+    for (let clickCount = 1; clickCount <= count; clickCount++) {
+      sent.push(cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button, buttons, clickCount }));
+      sent.push(cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button, buttons: 0, clickCount }));
+    }
+    await Promise.all(sent); // hepsi yola çıktı; şimdi cevaplar beklenir
+    return;
+  }
   for (let clickCount = 1; clickCount <= count; clickCount++) {
     await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button, buttons, clickCount });
     await cdp(replay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button, buttons: 0, clickCount });
