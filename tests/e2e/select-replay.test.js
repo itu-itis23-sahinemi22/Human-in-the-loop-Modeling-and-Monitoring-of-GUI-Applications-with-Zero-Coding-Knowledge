@@ -1,7 +1,7 @@
-// Metin seçme ve oynatılamayan aksiyon testi: sayfadaki metne çift tıklayarak ve alanda
-// Shift+okla seçim kaydı ('select'), Ctrl+C ('clipboard'); panelde ve runner'da oynatma. Seçim
-// geri kurulmazsa sayfa ekranı değiştirmez (seçime tepki veren butonlar çıkmaz) ve adım kalır.
-// clipboard henüz oynatılamaz: atlanır, adıma uyarı yazılır, adım yine geçer.
+// Metin seçme ve pano testi: sayfadaki metne çift tıklayarak ve alanda Shift+okla seçim kaydı
+// ('select'), Ctrl+C ve Ctrl+V ('clipboard': kopyala, yapıştır, sayfanın engellediği yapıştırma);
+// panelde ve runner'da oynatma. Seçim ya da pano işlemi doğru oynatılmazsa sayfa ekranı değiştirmez
+// (tepki veren butonlar çıkmaz) ve adım kalır; sayfanın engellemesi kayıttakinden farklıysa uyarı çıkar.
 // Kullanım: node tests/e2e/select-replay.test.js
 const http = require('http');
 const path = require('path');
@@ -13,12 +13,15 @@ const OUT = outDir('select-replay');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Sayfa seçime tepki verir: "dunya" seçilince Paylas, alanda "Veli" seçilince Tamam butonu çıkar
-// (ör. alıntı paylaşma balonu). Ileri'ye basınca Bitti çıkar.
+// (ör. alıntı paylaşma balonu). Kopyalanınca Kopyalandi; Not alanına "Veli" yapıştırılınca Yapistirildi;
+// Kod alanı yapıştırmayı engeller ve Yapistirma kapali gösterir. Ileri'ye basınca Bitti çıkar.
 const PAGE = `<!doctype html><html><head><title>Secim</title></head><body>
 <p id="quote">Merhaba dunya</p>
 <p><input id="who" value="Ali Veli"></p>
 <p><span id="shareSlot"></span> <span id="okSlot"></span></p>
 <p><button id="next">Ileri</button> <span id="doneSlot"></span></p>
+<p><textarea id="note"></textarea> <input id="code" placeholder="Kod"></p>
+<p><span id="copySlot"></span> <span id="pasteSlot"></span> <span id="refuseSlot"></span></p>
 <script>
   const $ = (id) => document.getElementById(id);
   document.addEventListener('selectionchange', () => {
@@ -29,6 +32,14 @@ const PAGE = `<!doctype html><html><head><title>Secim</title></head><body>
     if (f.value.slice(f.selectionStart, f.selectionEnd) === 'Veli' && !$('ok')) $('okSlot').innerHTML = '<button id="ok">Tamam</button>';
   });
   $('next').addEventListener('click', () => { $('doneSlot').innerHTML = '<button id="done">Bitti</button>'; });
+  document.addEventListener('copy', () => { if (!$('copied')) $('copySlot').innerHTML = '<button id="copied">Kopyalandi</button>'; });
+  $('note').addEventListener('paste', (e) => {
+    if (e.clipboardData.getData('text/plain') === 'Veli' && !$('pasted')) $('pasteSlot').innerHTML = '<button id="pasted">Yapistirildi</button>';
+  });
+  $('code').addEventListener('paste', (e) => {
+    e.preventDefault();
+    if (!$('refused')) $('refuseSlot').innerHTML = '<button id="refused">Yapistirma kapali</button>';
+  });
 </script></body></html>`;
 
 let failures = 0;
@@ -103,9 +114,26 @@ const types = (actions) => real(actions).map((a) => a.type).join(', ');
     await page.click('#next');
     await sleep(800);
     s = await getState();
-    check('Ctrl+C ve Ileri: clipboard, click', types(s.buffer) === 'clipboard, click', types(s.buffer));
+    const copy = real(s.buffer).find((a) => a.type === 'clipboard');
+    check('Ctrl+C ve Ileri: clipboard (copy "Veli", engellenmedi), click', types(s.buffer) === 'clipboard, click' && copy.operation === 'copy' && copy.text === 'Veli' && !copy.blocked, `${types(s.buffer)} ${JSON.stringify(copy)}`);
     s = await createNode();
-    check('kayıt: 4 node, 3 edge', s.nodes.length === 4 && s.edges.length === 3, `${s.nodes.length} node, ${s.edges.length} edge`);
+
+    await page.click('#note');
+    await page.keyboard.press('Control+V');
+    await sleep(800);
+    s = await getState();
+    const paste = real(s.buffer).find((a) => a.type === 'clipboard');
+    check('Not alanına Ctrl+V: paste "Veli" (textarea:note), engellenmedi', paste?.operation === 'paste' && paste.text === 'Veli' && !paste.blocked && paste.target?.key === 'textarea:note', `${types(s.buffer)} ${JSON.stringify(paste)}`);
+    s = await createNode();
+
+    await page.click('#code');
+    await page.keyboard.press('Control+V');
+    await sleep(800);
+    s = await getState();
+    const refused = real(s.buffer).find((a) => a.type === 'clipboard');
+    check('Kod alanına Ctrl+V: paste, sayfa engelledi (blocked)', refused?.operation === 'paste' && refused.blocked === true, `${types(s.buffer)} ${JSON.stringify(refused)}`);
+    s = await createNode();
+    check('kayıt: 6 node, 5 edge', s.nodes.length === 6 && s.edges.length === 5, `${s.nodes.length} node, ${s.edges.length} edge`);
     const edges = s.edges.map((e) => e.id);
 
     // ---- 2) Panelde oynatma ----
@@ -125,9 +153,10 @@ const types = (actions) => real(actions).map((a) => a.type).join(', ');
     await panel.waitForFunction(() => replayResult && !replay, null, { timeout: 60000 });
     const result = await panel.evaluate(() => ({ status: replayResult.status, steps: replayResult.steps.map((x) => ({ status: x.status, error: x.error ?? null, warnings: x.warnings })) }));
     const summary = JSON.stringify(result.steps);
-    check('panelde oynatma geçti (seçimler geri kuruldu: Paylas ve Tamam çıktı)', result.status === 'passed', summary);
-    check('seçim adımlarında uyarı yok', result.steps.slice(0, 2).every((x) => !x.warnings.some((w) => w.includes('seçim'))), summary);
-    check('clipboard atlandı, uyarısı adımda', result.steps[2]?.warnings.some((w) => w.includes('henüz oynatılamıyor; atlandı')), summary);
+    check('panelde oynatma geçti (seçimler geri kuruldu, kopyalandı, yapıştırıldı, engellenen yapıştırma yine engellendi)', result.status === 'passed', summary);
+    check('seçim ve pano uyarısı yok (atlanan, olmayan, engellemesi farklı işlem yok)', result.steps.every((x) => !x.warnings.some((w) => /seçim|atlandı|olmadı|engelle/.test(w))), summary);
+    const fields = await page.evaluate(() => ({ note: document.getElementById('note').value, code: document.getElementById('code').value }));
+    check('yapıştırılan metin Not alanında, engellenen Kod alanı boş', fields.note === 'Veli' && fields.code === '', JSON.stringify(fields));
     model = await panel.evaluate(() => graphWalkerModel());
     check('konsolda hata yok', errors.length === 0, errors.join(' | '));
   } finally {
@@ -147,7 +176,7 @@ const types = (actions) => real(actions).map((a) => a.type).join(', ');
     child.on('exit', resolve);
   });
   check('runner geçti (seçimler geri kuruldu)', code === 0, `çıkış kodu ${code}`);
-  check('runner: clipboard atlandı uyarısı', output.includes('henüz oynatılamıyor; atlandı'));
+  check('runner: pano ve seçim uyarısı yok', !/atlandı|olmadı|engelle|seçim kurulmadı/.test(output));
   server.close();
   console.log(failures ? `\n${failures} kontrol başarısız` : '\nTüm kontroller geçti');
   process.exit(failures ? 1 : 0);

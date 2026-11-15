@@ -276,7 +276,8 @@ Testi çalıştıranın ekranı ne olursa olsun sayfa kayıttaki boyutu görür 
 | `tab` | `open`: önceki aksiyonun açtığı sayfaya geçilir (`by: page`; sayfa henüz yoksa beklenir) ya da yeni sayfa açılıp adrese gidilir (`by: user`). `switch`: adresi (URL şablonu) tutan, en son kullanılan sekmeye geçilir. `close`: o sekme kapanır; aktif sekme kapandıysa en son kullanılan sekme öne gelir. Yeni sekme aktif sekmenin görünen alanıyla açılır. |
 | `wait` | `ms` kadar beklenir. Ekranı değiştiren bekleme (oturum zaman aşımı) biraz geç sonuçlansa da doğrulamadaki tekrar deneme onu yakalar. |
 | `select` | Kayıttaki seçim kurulur (eklentinin `fingerprint.js > selectRecordedText`): metin alanında `start`/`end` aralığı, sayfada metin elementin içinde aranıp seçilir (boşluklar esnek). Element ya da metin bulunamazsa uyarı yazılır, adım durmaz. |
-| `clipboard` | Henüz oynatılmıyor: atlanır, adıma uyarı yazılır (adım durmaz; aksiyon gerçekten gerekliyse doğrulamada kalır) |
+| `clipboard` | Kopyala / kes: `keyboard.press('Control+C')` / `'Control+X'` (macOS'ta Meta); seçimi önceki `select` kurar. Yapıştır: kullanıcının panosuna dokunulmaz; kayıttaki metinle `paste` olayı odaktaki elemente gönderilir, sayfa engellemediyse `keyboard.insertText(text)`. Maskeli metin `--secrets`'tan. Sayfanın engelleyip engellemediği (`blocked`) kayıttakiyle karşılaştırılır; farklıysa ya da kopyalama olmadıysa uyarı. |
+| (karşılığı olmayan tür) | Atlanır, adıma uyarı yazılır (adım durmaz; aksiyon gerçekten gerekliyse doğrulamada kalır) |
 
 ---
 

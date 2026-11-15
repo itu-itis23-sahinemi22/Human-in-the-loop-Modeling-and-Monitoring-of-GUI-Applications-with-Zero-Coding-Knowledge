@@ -877,11 +877,17 @@ function sendHover(el) {
 //   select  : kayıttaki metin seçimini kur (fingerprint.js > selectRecordedText); { selected }
 //   point   : sürüklemenin bırakılacağı nokta: elementin içinde kayıttaki konum (x, y; kutuya
 //             sığdırılır). Kaydırılmaz (tutulan element yerinden oynamasın); ekranda değilse missing
+//   clipboardWatch / clipboardSeen : kopyala / kes kısayolundan önce izlemeye başla / sonra ne oldu
+//             (fingerprint.js > PANO); { operation, blocked } ya da null
+//   paste   : odaktaki elemente kayıttaki metinle 'paste' olayı (fingerprint.js > firePaste); { blocked }
 async function replayRequest({ op, target, selector, highlight, select, value, x, y, text, start, end }) {
   if (op === 'settled') {
     await settled();
     return fingerprint();
   }
+  if (op === 'clipboardWatch') return { watching: watchClipboard() };
+  if (op === 'clipboardSeen') return { seen: clipboardSeen() };
+  if (op === 'paste') return firePaste(document.activeElement, text);
   if (op === 'scroll') {
     const box = selector ? document.querySelector(selector) : window;
     if (!box) return { missing: true };

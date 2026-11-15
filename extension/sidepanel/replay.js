@@ -238,11 +238,54 @@ async function playAction(replay, action, step) {
     case 'tab': return tab(replay, action);
     case 'select': return selectText(replay, action, step);
     case 'drag': return drag(replay, action, step);
+    case 'clipboard': return clipboard(replay, action, step);
     default: return skipAction(action, step);
   }
 }
 
-// Oynatılamayan aksiyon (bugün: clipboard) oynatmayı durdurmaz: atlanır, adıma uyarı yazılır.
+// PANO (kopyala / kes / yapıştır; sayfadaki yardımcılar: fingerprint.js > PANO; runner/lib/actions.js >
+// clipboard aynısını yapar):
+//   - Kopyala / kes: gerçek kısayol (Ctrl+C / Ctrl+X, macOS'ta Cmd), tarayıcının düzenleme komutuyla. Seçim
+//     önceki 'select' aksiyonuyla kurulmuştur. Kopyalama kullanıcının panosuna yazar (kayıtta da öyleydi).
+//   - Yapıştır: kullanıcının panosu okunmaz da yazılmaz da. Kayıttaki metinle 'paste' olayı odaktaki elemente
+//     gönderilir (sayfanın dinleyicisi metni görür); sayfa engellemediyse metin alana yazılır (Input.insertText,
+//     tarayıcının yapıştırması gibi). Şifre alanına yapıştırılan metin kayıtta maskelidir: oynatmadan önce
+//     girilen değer kullanılır, yoksa olay boş metinle gider ve uyarı yazılır (alanın değerini ardından gelen
+//     'input' aksiyonu kurar).
+// Sayfanın işlemi engelleyip engellemediği (blocked) kayıttakiyle karşılaştırılır: farklıysa (ör. site
+// kopyalamayı artık engellemiyor) ya da kopyalama hiç olmadıysa adıma uyarı yazılır; adım durmaz.
+const CLIPBOARD_WAIT_MS = 500; // kısayoldan sonra kopyalama / kesme olayının gelmesi için en fazla
+
+async function clipboard(replay, action, step) {
+  const verb = { copy: 'kopyalama', cut: 'kesme', paste: 'yapıştırma' }[action.operation] ?? action.operation;
+  const verbObject = { copy: 'kopyalamayı', cut: 'kesmeyi', paste: 'yapıştırmayı' }[action.operation] ?? action.operation; // "…yı engelledi"
+  let blocked;
+  if (action.operation === 'paste') {
+    let text = action.text ?? '';
+    if (text === '******') {
+      text = replay.secrets[action.target?.key] ?? replay.secrets[action.selector] ?? '';
+      if (!text) warnStep(step, `"${action.label}": yapıştırılan metin maskeli (******) ve değeri girilmedi; boş metinle yapıştırıldı.`);
+    }
+    if (action.target || action.selector) await focus(replay, action, step);
+    ({ blocked } = await inPage(replay, { op: 'paste', text }));
+    if (!blocked && text) await cdp(replay, 'Input.insertText', { text });
+  } else {
+    await inPage(replay, { op: 'clipboardWatch' });
+    const mod = /Mac/i.test(navigator.userAgentData?.platform ?? navigator.platform) ? 'Meta' : 'Control';
+    await press(replay, `${mod}+${action.operation === 'cut' ? 'x' : 'c'}`, [action.operation]);
+    const deadline = Date.now() + CLIPBOARD_WAIT_MS;
+    let seen = null;
+    while (!(seen = (await inPage(replay, { op: 'clipboardSeen' })).seen) && Date.now() < deadline) await pause(replay, 50);
+    if (!seen) return warnStep(step, `"${action.label}": sayfada ${verb} olmadı (seçili bir şey yok mu?).`);
+    ({ blocked } = seen);
+  }
+  if (Boolean(blocked) !== Boolean(action.blocked)) {
+    warnStep(step, `"${action.label}": kayıtta sayfa ${verbObject} ${action.blocked ? 'engellemişti' : 'engellememişti'}, oynatmada ${blocked ? 'engelledi' : 'engellemedi'}.`);
+  }
+}
+
+// Oynatılamayan aksiyon oynatmayı durdurmaz: atlanır, adıma uyarı yazılır (bugün böyle bir kayıt türü yok;
+// eski bir eklentiyle kaydedilmiş ya da yeni eklenip oynatması yazılmamış bir tür olabilir).
 // Çoğu zaman yan bir harekettir (yanlışlıkla seçilen metin, kopyalanan yazı); aksiyon gerçekten
 // gerekliyse adım doğrulamada kalır ve uyarı nedenini söyler. runner/lib/actions.js aynısını yapar.
 function skipAction(action, step) {
@@ -558,7 +601,10 @@ function parseKey(combo) {
 }
 
 // Tek karakterli tuş yazı da yazar (Ctrl/Alt/Cmd ile değilse); Enter satır sonu yazar (form gönderir).
-async function press(replay, combo) {
+// commands: tuşla birlikte tarayıcının düzenleme komutu (ör. ['copy']). Kopyala / kes kısayolunu
+// tarayıcı her işletim sisteminde kendisi yorumlamaz (macOS'ta menü yapar); komut verilince sayfa
+// her yerde aynı işi yapar (Playwright da böyle).
+async function press(replay, combo, commands = []) {
   const { key, modifiers } = parseKey(combo);
   const name = key === 'Space' ? ' ' : key;
   const single = [...name].length === 1;
@@ -566,7 +612,7 @@ async function press(replay, combo) {
   const code = key === 'Space' ? 'Space' : !single ? key : /[a-z]/i.test(name) ? `Key${name.toUpperCase()}` : /\d/.test(name) ? `Digit${name}` : '';
   const text = key === 'Enter' ? '\r' : single && !(modifiers & (MODIFIER_BITS.Alt | MODIFIER_BITS.Control | MODIFIER_BITS.Meta)) ? name : undefined;
   const base = { key: name, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode, modifiers };
-  await cdp(replay, 'Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, ...(text && { text, unmodifiedText: text }) });
+  await cdp(replay, 'Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, ...(text && { text, unmodifiedText: text }), ...(commands.length && { commands }) });
   await cdp(replay, 'Input.dispatchKeyEvent', { type: 'keyUp', ...base });
 }
 

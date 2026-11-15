@@ -237,3 +237,40 @@ function selectRecordedText(el, { text = '', start = null, end = null } = {}) {
   selection.addRange(range);
   return true;
 }
+
+
+// -----------------------------------------------------------------------------
+// PANO ('clipboard' aksiyonunun oynatılması)
+// -----------------------------------------------------------------------------
+// Kayıt kopyala / kes / yapıştır'ı, sayfanın işlemi engelleyip engellemediğiyle (blocked) saklar
+// (content.js > onClipboard). Oynatma (panelde sidepanel/replay.js > clipboard, runner'da
+// lib/actions.js > clipboard) bu fonksiyonlarla sayfaya bakar:
+//   - Kopyala / kes gerçek kısayolla yapılır (seçim, önceki 'select' aksiyonuyla kurulmuştur). Önce
+//     watchClipboard, kısayoldan sonra clipboardSeen: işlem oldu mu, sayfa engelledi mi?
+//   - Yapıştır kullanıcının panosuna dokunmaz: kayıttaki metinle 'paste' olayı odaktaki elemente
+//     gönderilir (firePaste; sayfanın yapıştırma dinleyicisi metni görür). Sayfa engellemediyse metin
+//     oynatma tarafından alana yazılır (tarayıcının yapıştırması gibi).
+let clipboardEvent = null; // watchClipboard'dan sonra gelen kopyalama / kesme: { operation, blocked }
+
+function watchClipboard() {
+  clipboardEvent = null;
+  const seen = (event) => {
+    document.removeEventListener('copy', seen, true);
+    document.removeEventListener('cut', seen, true);
+    setTimeout(() => { clipboardEvent = { operation: event.type, blocked: event.defaultPrevented }; }); // sayfa olayı işledikten sonra
+  };
+  document.addEventListener('copy', seen, true);
+  document.addEventListener('cut', seen, true);
+  return true;
+}
+
+function clipboardSeen() {
+  return clipboardEvent;
+}
+
+function firePaste(el, text) {
+  const data = new DataTransfer();
+  data.setData('text/plain', String(text ?? ''));
+  const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true, clipboardData: data });
+  return { blocked: !(el ?? document.body).dispatchEvent(event) };
+}

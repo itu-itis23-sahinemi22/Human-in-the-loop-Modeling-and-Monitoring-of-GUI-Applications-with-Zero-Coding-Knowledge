@@ -37,9 +37,43 @@ export async function playAction(page, action, run) {
     case 'tab': return tab(action, run);
     case 'select': return selectText(page, action, run);
     case 'drag': return dragAndDrop(page, action, run);
-    // Oynatılamayan aksiyon (bugün: clipboard) çalıştırmayı durdurmaz: atlanır, uyarı yazılır.
+    case 'clipboard': return clipboard(page, action, run);
+    // Oynatılamayan aksiyon çalıştırmayı durdurmaz: atlanır, uyarı yazılır (bugün böyle bir kayıt türü yok).
     // Gerçekten gerekliyse adım doğrulamada kalır (panelde sidepanel/replay.js > skipAction).
     default: return run.warn(`"${action.label}": "${action.type}" aksiyonu runner'da henüz oynatılamıyor; atlandı.`);
+  }
+}
+
+// Pano (panelde sidepanel/replay.js > clipboard; sayfadaki yardımcılar eklentinin fingerprint.js > PANO):
+// kopyala / kes gerçek kısayolla (Ctrl ya da macOS'ta Cmd); yapıştır kullanıcının panosuna dokunmadan,
+// kayıttaki metinle 'paste' olayı ve sayfa engellemediyse metnin yazılmasıyla. Sayfanın işlemi engelleyip
+// engellemediği kayıttakiyle karşılaştırılır; farklıysa uyarı yazılır, durmaz.
+const CLIPBOARD_WAIT_MS = 500;
+
+async function clipboard(page, action, run) {
+  const verb = { copy: 'kopyalama', cut: 'kesme', paste: 'yapıştırma' }[action.operation] ?? action.operation;
+  const verbObject = { copy: 'kopyalamayı', cut: 'kesmeyi', paste: 'yapıştırmayı' }[action.operation] ?? action.operation;
+  let blocked;
+  if (action.operation === 'paste') {
+    let text = action.text ?? '';
+    if (text === '******') {
+      text = run.secrets[action.target?.key] ?? run.secrets[action.selector] ?? '';
+      if (!text) run.warn(`"${action.label}": yapıştırılan metin maskeli (******) ve --secrets dosyasında yok; boş metinle yapıştırıldı.`);
+    }
+    if (action.target?.index || action.selector) await (await elementOf(page, action, run)).focus();
+    ({ blocked } = await page.evaluate((t) => window.__graphRecorder.firePaste(document.activeElement, t), text));
+    if (!blocked && text) await page.keyboard.insertText(text);
+  } else {
+    await page.evaluate(() => window.__graphRecorder.watchClipboard());
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+${action.operation === 'cut' ? 'X' : 'C'}`);
+    const deadline = Date.now() + CLIPBOARD_WAIT_MS;
+    let seen = null;
+    while (!(seen = await page.evaluate(() => window.__graphRecorder.clipboardSeen())) && Date.now() < deadline) await page.waitForTimeout(50);
+    if (!seen) return run.warn(`"${action.label}": sayfada ${verb} olmadı (seçili bir şey yok mu?).`);
+    ({ blocked } = seen);
+  }
+  if (Boolean(blocked) !== Boolean(action.blocked)) {
+    run.warn(`"${action.label}": kayıtta sayfa ${verbObject} ${action.blocked ? 'engellemişti' : 'engellememişti'}, oynatmada ${blocked ? 'engelledi' : 'engellemedi'}.`);
   }
 }
 
